@@ -86,3 +86,40 @@ def employeeAPI(request, id=0):
         employee.delete()
         return JsonResponse({"detail": "Deleted successfully!"}, status=204)
 
+
+def productAPI(request, id=0):
+    if request.method == 'GET':
+        products = Products.objects.all()
+        products_serializer = ProductSerializer(products, many=True)
+        return JsonResponse(products_serializer.data, status=200)
+    
+    elif request.method == 'POST':
+        product_data = JSONParser().parse(request)
+        product_serializer = ProductSerializer(data=product_data)
+        if product_serializer.is_valid():
+            product_serializer.save()
+            return JsonResponse({"detail": "Added successfully!"}, status=201)
+        return JsonResponse({"detail": "Failed to add": product_serializer.errors}, status=400)
+    
+    elif request.method == 'PUT':
+
+        product_data = JSONParser().parse(request)
+        try:
+            product = Products.objects.get(ProductID=product_data['ProductID'])
+        except ObjectDoesNotExist:
+            return JsonResponse({"detail":"Product not found"}, status=404)
+            
+        product_serializer = ProductSerializer(product,data=product_data)
+        if product_serializer.is_valid():
+            product_serializer.save()
+            return JsonResponse({"detail": "Updated successfully!"}, status=200)
+        return JsonResponse({"detail": "Failed to update": product_serializer.errors}, status=400)    
+
+    elif request.method == 'DELETE':
+        try:
+            product = Products.objects.get(ProductID=id)
+        except ObjectDoesNotExist:
+            return JsonResponse({"detail":"Product not found"}, status=404)
+
+        product.delete()
+        return JsonResponse({"detail": "Deleted successfully!"}, status=204)
