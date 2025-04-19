@@ -17,8 +17,13 @@ Including another URLconf
 from django.contrib import admin
 from django.shortcuts import render
 from django.urls import path, include
+from app.views import EmployeesView, ProductsView
+from app.views import CustomPasswordResetView, CustomPasswordResetDoneView, CustomPasswordResetConfirmView, CustomPasswordResetCompleteView
 
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('app/', include('app.urls')),
+    #path('emp/empview', EmployeesView.as_view(), name = 'empview'),
+    #path('prod/', ProductsView.as_view(), name = 'prodview'),
+    # path('auth/', include('app.urls')),
 ]
