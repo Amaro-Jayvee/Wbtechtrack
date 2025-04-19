@@ -10,14 +10,65 @@ from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_POST
 from django.views.decorators.csrf import csrf_exempt
 from django.core.exceptions import ObjectDoesNotExist
+from django.contrib.auth.models import User
+from django.contrib.auth import views as auth_views
+from django.contrib.auth.views import (
+    PasswordResetView,
+    PasswordResetDoneView,
+    PasswordResetConfirmView,
+    PasswordResetCompleteView
+)
 
-from app.models import Employees
-from app.serializers import EmployeeSerializer
+from app.models import Employees, Products
+from app.serializers import EmployeeSerializer, ProductSerializer
+
+from rest_framework import generics # For testing
+
+# This function is a predefined account for the user
+def user_account():
+    username = "__blank__" # Set this according to the needs
+    email = "__blank__" # Set this according to the needs
+    password = "__blank__" # Set this according to the needs
+    
+    # These are the credentials provided for the user
+    if User.objects.filter(username=username).exists():
+        print("User already exists. Skipping creation.")
+        return
+    
+    User.objects.create_user(username=username, email=email, password=password)
+    print("User created successfully!")
+
+# Resetting password using built-in method and customized functions
+
+class CustomPasswordResetView(auth_views.PasswordResetView):
+    def form_valid(self, form):
+        form.save(self.request)
+        return JsonResponse({"detail": "Password reset email sent!"}, status=200)   
+    
+    def form_invalid(self, form):
+        return JsonResponse({"detail": "Invalid email address."}, status=400)
+
+class CustomPasswordResetDoneView(auth_views.PasswordResetDoneView):
+    def get(self, request, *args, **kwargs):
+        return JsonResponse({"detail": "Password reset email sent successfully!"}, status=200)
+
+class CustomPasswordResetConfirmView(auth_views.PasswordResetConfirmView):
+    def form_valid(self, form):
+        form.save()
+        return JsonResponse({"detail": "Password reset successul!"}, status=200)
+    
+    def form_invalid(self, form):
+         return JsonResponse({"detail": "Invalid password."}, status=400)
+
+class CustomPasswordResetCompleteView(auth_views.PasswordResetCompleteView):
+      def get(self, request, *args, **kwargs):
+        return JsonResponse({"detail": "Password reset completed successfully!"}, status=200)
 
 @require_POST
 def login_view(request):
     data = JSONParser().parse(request)
     username = data.get("username")
+    email = data.get("email")
     password = data.get("password")
 
     if username is None or password is None:
@@ -47,7 +98,9 @@ def whoami_view(request):
     if not request.user.is_authenticated:
         return JsonResponse({"isAuthenticated": False})
     return JsonResponse({"username":request.user.username})
-    
+
+# These are the API methods for employee and product models
+"""
 @csrf_exempt
 def employeeAPI(request, id=0):
     if request.method == 'GET':
@@ -123,3 +176,22 @@ def productAPI(request, id=0):
 
         product.delete()
         return JsonResponse({"detail": "Deleted successfully!"}, status=204)
+"""
+
+# Testing the API methods via django app
+
+class EmployeesView(generics.RetrieveUpdateDestroyAPIView):
+    queryset = Employees.objects.all()
+    serializer_class = EmployeeSerializer
+
+class AddEmployees(generics.CreateAPIView):
+    queryset = Employees.objects.all()
+    serializer_class = EmployeeSerializer
+
+class ProductsView(generics.RetrieveUpdateDestroyAPIView):
+    queryset = Products.objects.all()
+    serializer_class = ProductSerializer
+
+class AddProducts(generics.CreateAPIView):
+    queryset = Products.objects.all()
+    serializer_class = ProductSerializer

@@ -37,7 +37,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    'app.apps.AppConfig',
+    'app',
     'rest_framework',
     'corsheaders',
 ]
@@ -151,3 +151,10 @@ STATICFILE_DIRS = (
 
 # Import os if joinpath does not work
 # os.path.join instead of joinpath
+
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = 'smtp.gmail.com'
+EMAIL_PORT = 587
+EMAIL_USE_TLS = True
+EMAIL_HOST_USER = '__blank__' # Set this according to needs
+EMAIL_HOST_PASSWORD = '__blank__' # Same with here
