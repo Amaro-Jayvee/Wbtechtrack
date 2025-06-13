@@ -40,6 +40,13 @@ INSTALLED_APPS = [
     'app',
     'rest_framework',
     'corsheaders',
+    'django.contrib.sites',
+    # 'oauth2_provider',
+    # 'social_django',
+    # 'allauth',
+    # 'allauth.account',
+    # 'allauth.socialaccount',
+    # 'allauth.socialaccount.providers.google',
 ]
 
 MIDDLEWARE = [
@@ -51,9 +58,29 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'corsheaders.middleware.CorsMiddleware',
+    # 'allauth.account.middleware.AccountMiddleware',
+    # 'django.middleware.csrf.CsrfViewMiddleware',
 ]
+SITE_ID = 1
+
+# AUTHENTICATION_BACKENDS = (
+#     'social_core.backends.google.GoogleOAuth2',
+#     'django.contrib.auth.backends.ModelBackend',
+# )
+
+# ACCOUNT_AUTHENTICATION_METHOD = "email"
+# ACCOUNT_EMAIL_REQUIRED = True
+# ACCOUNT_EMAIL_VERIFICATION = "optional"
+# ACCOUNT_ADAPTER = "allauth.account.adapter.DefaultAccountAdapter"
+
+# SOCIAL_AUTH_GOOGLE_OAUTH2_KEY = '94867612755-utbpioqr7p2ligps1edsdd9b37dqiese.apps.googleusercontent.com'
+# SOCIAL_AUTH_GOOGLE_OAUTH2_SECRET = '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'
 
 CORS_ORIGIN_ALLOW_ALL = True
+
+CSRF_TRUSTED_ORIGINS = ['http://127.0.0.1:8000']
+# DEFAULT_DOMAIN = "127.0.0.1:8000"  # Change this to your actual domain if needed
+
 
 REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': [
@@ -87,8 +114,12 @@ WSGI_APPLICATION = 'djangomonitor.wsgi.application'
 
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+        'ENGINE': 'django.db.backends.mysql',
+        'NAME': 'myDB',
+        'USER': 'root',
+        'PASSWORD': 'H3LLsP4RADISe',
+        'HOST': 'localhost',
+        'PORT': '3306'
     }
 }
 
@@ -156,5 +187,10 @@ EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 EMAIL_HOST = 'smtp.gmail.com'
 EMAIL_PORT = 587
 EMAIL_USE_TLS = True
-EMAIL_HOST_USER = '__blank__' # Set this according to needs
-EMAIL_HOST_PASSWORD = '__blank__' # Same with here
+EMAIL_HOST_USER = 'wbtechnologies8@gmail.com' # Set this according to needs
+EMAIL_HOST_PASSWORD = 'fbbx hhgk soch gqgv' # Same with here
+
+#   #yhcl jqnv nlwe hkkc
+
+# PASSWORD_RESET_TIMEOUT = 3600  
+
