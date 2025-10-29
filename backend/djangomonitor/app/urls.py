@@ -21,17 +21,11 @@ urlpatterns = [
     path('reset/<uidb64>/<token>/', auth_views.PasswordResetConfirmView.as_view(), name='password_reset_confirm'),
     path('reset_password_complete/', auth_views.PasswordResetCompleteView.as_view(), name='password_reset_complete'),   
 
-    path('employee/', employeeAPI, name='employee-api'),
-    path('employee/<int:id>/', employeeAPI, name='employee-api-PUT-DELETE'),
-
-    path('product/', productAPI, name='product-api'),
-    path('product/<int:id>/', productAPI, name='product-api-PUT-DELETE'),
+    path('worker/', workerAPI, name='worker-api'),
+    path('worker/<int:id>/', workerAPI, name='worker-api-PUT-DELETE'),
 
     path('request/', requestAPI, name='request-api'),
     path('request/<int:id>/', requestAPI, name='request-api-PUT-DELETE'),
-
-    path('quota/', dailyquotaAPI, name='daily-quota-api'),
-    path('quota/<int:id>/', dailyquotaAPI, name='daily-quota-api-PUT-DELETE'),
 
     path('process/', processAPI, name='process-api'),
     path('process/<int:id>/', processAPI, name='process-api-PUT-DELETE'),
@@ -39,5 +33,14 @@ urlpatterns = [
     path('prodname/', productnameAPI, name='product-name-api'),
     path('prodname/<int:id>/', productnameAPI, name='product-name-api-PUT-DELETE'),
 
-    path('product-progress/<int:product_id>/', product_progress_view, name='product-progress-api')
+    path('product/', productProcessAPI, name='product-api'),
+    path('product/<int:id>/', productProcessAPI, name='product-api-PUT-DELETE'),
+
+    path('process_temp/', producttemplateAPI, name='process-temp-api'),
+    path('process_temp/<int:id>/', producttemplateAPI, name='process-temp-api-PUT-DELETE'),
+
+    path('register/', register_customer, name='register-customer'),
+    path('verify/', verify_customer, name='verify-customer'),
+
+    path('users/<int:id>/', delete_user, name='delete_user'),
 ]

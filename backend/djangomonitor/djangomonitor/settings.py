@@ -192,5 +192,5 @@ EMAIL_HOST_PASSWORD = 'fbbx hhgk soch gqgv' # Same with here
 
 #   #yhcl jqnv nlwe hkkc
 
-# PASSWORD_RESET_TIMEOUT = 3600  
+PASSWORD_RESET_TIMEOUT = 3600 # 1 hour
 

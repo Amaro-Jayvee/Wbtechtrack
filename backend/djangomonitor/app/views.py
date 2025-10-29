@@ -6,12 +6,14 @@ from django.shortcuts import render
 from rest_framework.parsers import JSONParser
 from django.contrib.auth import authenticate, login, logout
 from django.http import JsonResponse
-from django.views.decorators.csrf import ensure_csrf_cookie
-from django.views.decorators.http import require_POST
+from django.views.decorators.csrf import ensure_csrf_cookie, csrf_protect
+from django.views.decorators.http import require_http_methods, require_POST
 from django.views.decorators.csrf import csrf_exempt
 from django.core.exceptions import ObjectDoesNotExist
 from django.contrib.auth.models import User
 from django.contrib.auth import views as auth_views
+from django.contrib.auth.decorators import login_required
+# from .permissions import manager_or_admin_required
 # from django.contrib.auth.views import (
 #     PasswordResetView,
 #     PasswordResetDoneView,
@@ -19,7 +21,7 @@ from django.contrib.auth import views as auth_views
 #     PasswordResetCompleteView
 # )
 
-from app.models import Employees, Products, Requests, DailyQuota
+from app.models import *
 from app.serializers import *
 
 # from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
@@ -31,7 +33,41 @@ from app.serializers import *
 from django.shortcuts import get_object_or_404
 from datetime import date
 from django.utils.timezone import now
+from django.db.models.functions import TruncDate
+# from functools import wraps
+from .permissions import role_required
+from django.core.mail import send_mail
+from django.conf import settings
 
+@csrf_exempt
+@require_POST
+def register_customer(request):
+    data = JSONParser().parse(request)
+    username = data.get("username")
+    password = data.get("password")
+    email = data.get("email")
+    full_name = data.get("full_name")
+    company_name = data.get("company_name")
+    contact_number = data.get("contact_number")
+
+    if not all([username, password, email, full_name, company_name, contact_number]):
+        return JsonResponse({"detail": "All fields are required"}, status=400)
+    
+    if User.objects.filter(username=username).exists():
+        return JsonResponse({"detail": "Username already taken"}, status=400)
+
+    user = User.objects.create_user(username=username, password=password, email=email)
+    UserProfile.objects.create(
+        user=user,
+        full_name=full_name,
+        company_name=company_name,
+        contact_number=contact_number,
+        role=Roles.CUSTOMER, # default role
+    )
+
+    return JsonResponse({"detail": "Account created. Awaiting manager approval."}, status=201)
+
+@csrf_exempt
 @require_POST
 def login_view(request):
     data = JSONParser().parse(request)
@@ -40,21 +76,26 @@ def login_view(request):
     password = data.get("password")
 
     if username is None or password is None:
-        return JsonResponse({"detail":"Please provide username and password"}, status=400)
+        return JsonResponse({"detail": "Please provide username and password"}, status=400)
 
     user = authenticate(username=username, password=password)
     if user is None:
         return JsonResponse({"detail":"Invalid credentials"}, status=400)
 
-    login(request, user)
-    return JsonResponse({"detail":"Successfully logged in"}, status=200)
+    profile = getattr(user, 'userprofile', None)
+    if profile and not profile.is_verified:
+        return JsonResponse({"detail": "Account not yet verified"}, status=403)
 
+    login(request, user)
+    return JsonResponse({"detail": "Successfully logged in"}, status=200)
+
+@csrf_protect
 def logout_view(request):
     if not request.user.is_authenticated:
-        return JsonResponse({"detail":"You are not logged in"}, status=400)
+        return JsonResponse({"detail": "You are not logged in"}, status=400)
         
     logout(request)
-    return JsonResponse({"detail":"Successfully logged out"}, status=204)
+    return JsonResponse({"detail": "Successfully logged out"}, status=204)
 
 @ensure_csrf_cookie
 def session_view(request):
@@ -62,69 +103,92 @@ def session_view(request):
         return JsonResponse({"isAuthenticated": False})
     return JsonResponse({"isAuthenticated": True})
 
+@csrf_protect
 def whoami_view(request):
     if not request.user.is_authenticated:
         return JsonResponse({"isAuthenticated": False})
     return JsonResponse({"username":request.user.username})
 
 @csrf_exempt
-def employeeAPI(request, id=0):
+def workerAPI(request, id=0):
     if request.method == 'GET':
-        employees = Employees.objects.all()
-        employees_serializer = EmployeeSerializer(employees, many=True)
-        return JsonResponse(employees_serializer.data, safe=False)
+        workers = Worker.objects.all()
+        workers_serializer = WorkerSerializer(workers, many=True)
+        return JsonResponse(workers_serializer.data, safe=False)
     
     elif request.method == 'POST':
-        employee_data = JSONParser().parse(request)
-        employee_serializer = EmployeeSerializer(data=employee_data)
-        if employee_serializer.is_valid():
-            employee_serializer.save()
+        worker_data = JSONParser().parse(request)
+        workers_serializer = WorkerSerializer(data=worker_data)
+        if workers_serializer.is_valid():
+            workers_serializer.save()
             return JsonResponse("Added successfully!", safe=False)
         return JsonResponse("Failed to add", safe=False)
     
     elif request.method == 'PUT':
-        employee_data = JSONParser().parse(request)
-        employee = Employees.objects.get(EmployeeID=employee_data['EmployeeID']) 
-        employee_serializer = EmployeeSerializer(employee,data=employee_data)
-        if employee_serializer.is_valid():
-            employee_serializer.save()
+        worker_data = JSONParser().parse(request)
+        worker = Worker.objects.get(WorkerID=worker_data['EmployeeID']) 
+        workers_serializer = WorkerSerializer(worker,data=worker_data)
+        if workers_serializer.is_valid():
+            workers_serializer.save()
             return JsonResponse("Updated successfully!", safe=False)
         return JsonResponse("Failed to update", safe=False)    
 
     elif request.method == 'DELETE':
-        employee = get_object_or_404(Employees, EmployeeID=id)
-        employee.delete()
+        worker = get_object_or_404(Worker, WorkerID=id)
+        worker.delete()
         return JsonResponse("Deleted successfully!", safe=False)
 
+@role_required('admin', 'manager')
 @csrf_exempt
-def productAPI(request, id=0):
-    if request.method == 'GET':
-        products = Products.objects.all()
-        products_serializer = ProductSerializer(products, many=True)
-        return JsonResponse(products_serializer.data, safe=False)
-    
-    elif request.method == 'POST':
-        product_data = JSONParser().parse(request)
-        product_serializer = ProductSerializer(data=product_data)
-        if product_serializer.is_valid():
-            product_serializer.save()
-            return JsonResponse("Added successfully!", safe=False)
-        return JsonResponse("Failed to add", safe=False)
-    
-    elif request.method == 'PUT':
-        product_data = JSONParser().parse(request)
-        product = Products.objects.get(ProductID=product_data['ProductID'])
-        product_serializer = ProductSerializer(product,data=product_data)
-        if product_serializer.is_valid():
-            product_serializer.save()
-            return JsonResponse("Updated successfully!", safe=False)
-        return JsonResponse("Failed to update", safe=False)    
+@require_POST
+def verify_customer(request):
+    if not request.user.is_authenticated:
+        return JsonResponse({"detail": "Authentication required"}, status=401)
 
-    elif request.method == 'DELETE':
-        product = get_object_or_404(Products, ProductID=id)
-        product.delete()
-        return JsonResponse("Deleted successfully!", safe=False)
+    # profile = getattr(request.user, 'userprofile', None)
+    # if not profile or profile.role not in [Roles.MANAGER, Roles.ADMIN]:
+    #     return JsonResponse({"detail": "Access denied. Manager/Admin role required."}, status=403)
+    
+    data = JSONParser().parse(request)
+    username = data.get("username")
 
+    if not username:
+        return JsonResponse({"detail": "Username is required"}, status=400)
+
+    try:
+        target_profile = UserProfile.objects.get(user__username=username)
+
+        if target_profile.is_verified:
+            return JsonResponse({
+                "detail": f"User '{username}' is already verified.",
+                "verified_at": target_profile.verified_at
+            })
+
+        target_profile.is_verified = True
+        target_profile.verified_at = timezone.now()
+        target_profile.save()
+
+        recipient_email = target_profile.user.email
+        if not recipient_email or '@' not in recipient_email:
+            return JsonResponse({"detail": "User email is invalid or missing"}, status=400)
+
+        sent = send_mail(
+            subject="Your Account Is Now Verified",
+            message=f"Hi {target_profile.full_name},\n\nYour account has been approved by the manager.",
+            from_email=settings.EMAIL_HOST_USER,
+            recipient_list=[recipient_email],
+            fail_silently=False
+        )
+        return JsonResponse({
+            "detail": f"Account for {username} has been verified and notified.",
+            "verified_at": target_profile.verified_at,
+            "email_sent": bool(sent)
+        }, status=200)
+
+    except UserProfile.DoesNotExist:
+        return JsonResponse({"detail": "User not found"}, status=404)
+
+@role_required('admin', 'manager')
 @csrf_exempt
 def requestAPI(request, id=0):
     if request.method == 'GET':
@@ -142,11 +206,13 @@ def requestAPI(request, id=0):
         return JsonResponse("Failed to update", safe=False, status=400)  
     
     elif request.method == 'POST':
+        user_profile = UserProfile.objects.get(user=request.user) #Blocking normal users
+
         request_data = JSONParser().parse(request)
         request_serializer = RequestSerializer(data=request_data)
         if request_serializer.is_valid():
-            request_serializer.save()
-            return JsonResponse("Added successfully!", safe=False)
+            request_serializer.save(created_by=request.user) #New tweak
+            return JsonResponse("Added successfully!", safe=False, status=201)
         return JsonResponse("Failed to add", safe=False)
     
     elif request.method == 'DELETE':
@@ -155,48 +221,7 @@ def requestAPI(request, id=0):
         return JsonResponse("Deleted successfully!", safe=False)
 
 @csrf_exempt
-def dailyquotaAPI(request, id=0):
-    if request.method == 'GET':
-        quotas = DailyQuota.objects.all()
-        quota_serializer = DailyQuotaSerializer(quotas, many=True)
-        return JsonResponse(quota_serializer.data, safe=False)
-
-    elif request.method == 'POST':
-        quota_data = JSONParser().parse(request)
-        today = date.today()
-
-        product = get_object_or_404(Products, ProductID=quota_data["product"])
-        request_deadline = product.request.deadline
-
-        if today > request_deadline:
-            return JsonResponse("You cannot add quota beyond the deadline.", safe=False, status=403)
-
-        existing_quota = DailyQuota.objects.filter(product=product, date=date.today()).exists()
-        if existing_quota:
-            return JsonResponse("Quota already exists.", safe=False, status=403)
-        
-        quota_serializer = DailyQuotaSerializer(data=quota_data)
-        if quota_serializer.is_valid():
-            quota_serializer.save()
-            return JsonResponse("Added successfully!", safe=False)
-        return JsonResponse("Failed to add", safe=False)
-
-    elif request.method == 'PUT':
-        quota_data = JSONParser().parse(request)
-        quota =get_object_or_404(DailyQuota, QuotaID=quota_data['QuotaID'])
-            
-        quota_serializer = DailyQuotaSerializer(quota, data=quota_data)
-        if quota_serializer.is_valid(): 
-            quota_serializer.save()
-            return JsonResponse("Updated successfully!", safe=False)
-        return JsonResponse("Failed to update", safe=False)    
-
-    elif request.method == 'DELETE':
-        quota = get_object_or_404(DailyQuota, QuotaID=id)
-        quota.delete()
-        return JsonResponse("Deleted successfully!", safe=False)
-
-@csrf_exempt
+@role_required('admin')
 def processAPI(request, id=0):
     if request.method == 'GET':
         processes = ProcessName.objects.all()
@@ -226,6 +251,7 @@ def processAPI(request, id=0):
         return JsonResponse("Deleted successfully!", safe=False)
 
 @csrf_exempt
+@role_required('admin')
 def productnameAPI(request, id=0):
     if request.method == 'GET':
         prodnames = ProductName.objects.all()
@@ -255,15 +281,120 @@ def productnameAPI(request, id=0):
         return JsonResponse("Deleted successfully!", safe=False)
 
 @csrf_exempt
-def product_progress_view(request, product_id):
-    product = get_object_or_404(Products, ProductID=product_id)
-    requested_quantity = product.request.quantity if product.request else 0
-    produced_quantity = DailyQuota.objects.filter(product=product).aggregate(Sum('quantity'))['quantity__sum'] or 0
-    progress_percentage = (produced_quantity / requested_quantity) * 100 if requested_quantity else 0
+@role_required('admin', 'manager')
+def productProcessAPI(request, id=0):
+    if request.method == 'GET':
+        all_steps = ProductProcess.objects.all()
+        serializer = ProductProcessSerializer(all_steps, many=True)
+        return JsonResponse(serializer.data, safe=False)
 
-    return JsonResponse({
-        "product_id": product_id,
-        "requested_quantity": requested_quantity,
-        "produced_quantity": produced_quantity,
-        "progress_percentage": round(progress_percentage, 2)
-    })
+    elif request.method == 'PATCH':
+        data = JSONParser().parse(request)
+        step = ProductProcess.objects.get(id=id)
+
+    # Fetch related request instance
+        today = date.today()
+        request_instance = step.request
+        
+        deadline = request_instance.deadline
+        product = request_instance.product_name
+
+    # Deadline check
+        if today > deadline:
+            return JsonResponse("You cannot update quota/worker beyond the deadline.", safe=False, status=403)
+
+    # Duplication check - For future request constraint
+        # existing_quota = ProductProcess.objects.annotate(
+        #     created_date=TruncDate("created_at")).filter(
+        #         request__product_name=product, created_date=today).exclude(pk=step.id).exists()
+        # return JsonResponse("Matched quota entries.,", safe=False)
+        # print("Matched quota entries:", existing_quota)
+        # if not step.is_completed and existing_quota.exists():
+        #     return JsonResponse("Quota already exists for today.", safe=False, status=403)
+
+    # Proceed with patch update
+        serializer = ProductProcessSerializer(step, data=data, partial=True)
+
+        if serializer.is_valid():
+            updated_step = serializer.save()
+            updated_step.mark_completed_if_ready()
+            return JsonResponse("Quota/Worker updated successfully!", safe=False)
+
+        print("Serializer errors:", serializer.errors)
+        return JsonResponse("Failed to add/update quota/worker.", safe=False)
+
+
+    elif request.method == 'POST':
+        data = JSONParser().parse(request)
+        
+        serializer = ProductProcessSerializer(data=data)
+        if serializer.is_valid():
+            base_process = serializer.save()
+
+            templates = ProcessTemplate.objects.filter(product_name=base_process.request.product_name)
+
+            for template in templates:
+                if ProductProcess.objects.filter(
+                    request=base_process.request, process=template.process
+                ).exists():
+                    continue
+
+                ProductProcess.objects.create(
+                    request=base_process.request,
+                    # worker=base_process.worker,
+                    process=template.process,
+                    step_order=template.step_order,
+                    production_date=base_process.production_date
+                    )
+
+            return JsonResponse("Fixed process steps assigned and initial step added!", safe=False)
+
+        print("Serializer errors:", serializer.errors)
+        return JsonResponse("Failed to add step.", safe=False)
+
+    elif request.method == 'DELETE':
+        step = get_object_or_404(ProductProcess, id=id)
+        step.delete()
+        return JsonResponse("Step deleted successfully!", safe=False)
+
+@role_required('admin')
+@csrf_exempt
+def producttemplateAPI(request, id=0):
+    if request.method == 'GET':
+        prodtemp = ProcessTemplate.objects.all()
+        prodtemp_serializer = ProcessTemplateSerializer(prodtemp, many=True)
+        return JsonResponse(prodtemp_serializer.data, safe=False)
+
+    elif request.method == 'POST':
+        prodtemp_data = JSONParser().parse(request)
+        prodtemp_serializer = ProcessTemplateSerializer(data=prodtemp_data)
+        if prodtemp_serializer.is_valid():
+            prodtemp_serializer.save()
+            return JsonResponse("Added successfully!", safe=False)
+        return JsonResponse("Failed to add", safe=False)
+
+    elif request.method == 'PUT':
+        prodtemp_data = JSONParser().parse(request)
+        prodtemp = ProcessTemplate.objects.get(id=prodtemp_data["id"])
+        prodtemp_serializer = ProcessTemplateSerializer(prodtemp, data=prodtemp_data)
+        if prodtemp_serializer.is_valid():
+            prodtemp_serializer.save()
+            return JsonResponse("Updated successfully!", safe=False)
+        return JsonResponse("Failed to update", safe=False)
+
+    elif request.method == 'DELETE':
+        prodtemp = get_object_or_404(ProcessTemplate, id=id)
+        prodtemp.delete()
+        return JsonResponse("Deleted successfully!", safe=False)
+
+@csrf_exempt
+# @login_required
+@role_required('admin')
+@require_http_methods(["DELETE"])
+def delete_user(request, id):
+    try:
+        user = User.objects.get(pk=id)
+        user.delete()
+        return JsonResponse({"detail": f"User {id} deleted successfully."}, status=200)
+    except User.DoesNotExist:
+        return JsonResponse({"detail": "User not found."}, status=400)

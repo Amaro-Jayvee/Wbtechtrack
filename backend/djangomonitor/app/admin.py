@@ -1,9 +1,8 @@
 from django.contrib import admin
-from app.models import Employees, Products, Requests, DailyQuota
+from app.models import *
 
 # Register your models here.
 
-admin.site.register(Employees)
-admin.site.register(Products)
+# admin.site.register(Employees)
+# admin.site.register(Products)
 admin.site.register(Requests)
-admin.site.register(DailyQuota)
