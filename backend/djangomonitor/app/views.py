@@ -38,6 +38,13 @@ from django.db.models.functions import TruncDate
 from .permissions import role_required
 from django.core.mail import send_mail
 from django.conf import settings
+from django.db.models import F
+from django.db.models import Sum
+import datetime
+from django.core.signing import TimestampSigner, BadSignature, SignatureExpired
+import json
+
+signer = TimestampSigner()
 
 @csrf_exempt
 @require_POST
@@ -109,6 +116,7 @@ def whoami_view(request):
         return JsonResponse({"isAuthenticated": False})
     return JsonResponse({"username":request.user.username})
 
+@role_required('admin', 'manager')
 @csrf_exempt
 def workerAPI(request, id=0):
     if request.method == 'GET':
@@ -124,10 +132,10 @@ def workerAPI(request, id=0):
             return JsonResponse("Added successfully!", safe=False)
         return JsonResponse("Failed to add", safe=False)
     
-    elif request.method == 'PUT':
+    elif request.method == 'PATCH':
         worker_data = JSONParser().parse(request)
-        worker = Worker.objects.get(WorkerID=worker_data['EmployeeID']) 
-        workers_serializer = WorkerSerializer(worker,data=worker_data)
+        worker =get_object_or_404(Worker, WorkerID=id) 
+        workers_serializer = WorkerSerializer(worker,data=worker_data, partial=True)
         if workers_serializer.is_valid():
             workers_serializer.save()
             return JsonResponse("Updated successfully!", safe=False)
@@ -196,22 +204,26 @@ def requestAPI(request, id=0):
         request_serializer = RequestSerializer(requests, many=True)
         return JsonResponse(request_serializer.data, safe=False)
 
-    elif request.method == 'PUT':
+    elif request.method in ['PUT', 'PATCH']:
         request_data = JSONParser().parse(request)
-        request = Requests.objects.get(RequestID=request_data['RequestID'])
-        request_serializer = RequestSerializer(request,data=request_data)
+
+        try: 
+            request_instance = Requests.objects.get(RequestID=id)
+        except Requests.DoesNotExist:
+            return JsonResponse("Request not found", safe=False, status=404)
+
+        request_serializer = RequestSerializer(request_instance, data=request_data, partial=True)
+
         if request_serializer.is_valid():
             request_serializer.save()
             return JsonResponse("Updated successfully!", safe=False)
         return JsonResponse("Failed to update", safe=False, status=400)  
     
     elif request.method == 'POST':
-        user_profile = UserProfile.objects.get(user=request.user) #Blocking normal users
-
         request_data = JSONParser().parse(request)
-        request_serializer = RequestSerializer(data=request_data)
+        request_serializer = RequestSerializer(data=request_data, context={'request': request})
         if request_serializer.is_valid():
-            request_serializer.save(created_by=request.user) #New tweak
+            request_serializer.save()
             return JsonResponse("Added successfully!", safe=False, status=201)
         return JsonResponse("Failed to add", safe=False)
     
@@ -288,20 +300,61 @@ def productProcessAPI(request, id=0):
         serializer = ProductProcessSerializer(all_steps, many=True)
         return JsonResponse(serializer.data, safe=False)
 
+    # elif request.method == 'PATCH':
+    #     data = JSONParser().parse(request)
+    #     step = ProductProcess.objects.get(id=id)
+
+    #     request_instance = step.request_product.request
+    #     today = date.today()
+    #     deadline = request_instance.deadline
+
+    #     if today > deadline:
+    #         return JsonResponse("You cannot update quota/worker beyond the deadline.", safe=False, status=403)
+
+    #     if 'completed_quota' in data:
+    #         step.completed_quota = data['completed_quota']
+    #         step.save()
+    #         step.mark_completed_if_ready()
+
+    #     serializer = ProductProcessSerializer(step, data=data, partial=True)
+    #     if serializer.is_valid():
+    #         serializer.save()
+    #         return JsonResponse("Step updated sucessfully!", safe=False)
+    #     return JsonResponse(serializer.errors, status=400)
+
     elif request.method == 'PATCH':
         data = JSONParser().parse(request)
         step = ProductProcess.objects.get(id=id)
 
-    # Fetch related request instance
+        request_product = step.request_product
+        request_instance = request_product.request
         today = date.today()
-        request_instance = step.request
-        
-        deadline = request_instance.deadline
-        product = request_instance.product_name
 
-    # Deadline check
-        if today > deadline:
-            return JsonResponse("You cannot update quota/worker beyond the deadline.", safe=False, status=403)
+    # ✅ Use global deadline + per-product extension if approved
+        base_deadline = request_instance.deadline
+        effective_deadline = (
+            request_product.deadline_extension
+            if request_product.deadline_extension and request_product.extension_status == "approved"
+            else base_deadline
+        )
+
+        if today > effective_deadline:
+            return JsonResponse(
+                "You cannot update quota/worker beyond the deadline.",
+                safe=False,
+                status=403
+            )
+
+        if 'completed_quota' in data:
+            step.completed_quota = data['completed_quota']
+            step.save()
+            step.mark_completed_if_ready()
+
+        serializer = ProductProcessSerializer(step, data=data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return JsonResponse("Step updated successfully!", safe=False)
+        return JsonResponse(serializer.errors, status=400)
 
     # Duplication check - For future request constraint
         # existing_quota = ProductProcess.objects.annotate(
@@ -313,15 +366,15 @@ def productProcessAPI(request, id=0):
         #     return JsonResponse("Quota already exists for today.", safe=False, status=403)
 
     # Proceed with patch update
-        serializer = ProductProcessSerializer(step, data=data, partial=True)
+        # serializer = ProductProcessSerializer(step, data=data, partial=True)
 
-        if serializer.is_valid():
-            updated_step = serializer.save()
-            updated_step.mark_completed_if_ready()
-            return JsonResponse("Quota/Worker updated successfully!", safe=False)
+        # if serializer.is_valid():
+        #     updated_step = serializer.save()
+        #     updated_step.mark_completed_if_ready()
+        #     return JsonResponse("Quota/Worker updated successfully!", safe=False)
 
-        print("Serializer errors:", serializer.errors)
-        return JsonResponse("Failed to add/update quota/worker.", safe=False)
+        # print("Serializer errors:", serializer.errors)
+        # return JsonResponse("Failed to add/update quota/worker.", safe=False)
 
 
     elif request.method == 'POST':
@@ -331,16 +384,21 @@ def productProcessAPI(request, id=0):
         if serializer.is_valid():
             base_process = serializer.save()
 
-            templates = ProcessTemplate.objects.filter(product_name=base_process.request.product_name)
+            # if base_process.worker and not base_process.worker.is_active:
+            #     return JsonResponse("Cannot assign inactive worker to process.", status=400)
+
+            product_name = base_process.request_product.product.prodName
+
+            templates = ProcessTemplate.objects.filter(product_name__prodName=product_name)
 
             for template in templates:
                 if ProductProcess.objects.filter(
-                    request=base_process.request, process=template.process
+                    request_product=base_process.request_product, process=template.process
                 ).exists():
                     continue
 
                 ProductProcess.objects.create(
-                    request=base_process.request,
+                    request_product=base_process.request_product,
                     # worker=base_process.worker,
                     process=template.process,
                     step_order=template.step_order,
@@ -349,8 +407,8 @@ def productProcessAPI(request, id=0):
 
             return JsonResponse("Fixed process steps assigned and initial step added!", safe=False)
 
-        print("Serializer errors:", serializer.errors)
-        return JsonResponse("Failed to add step.", safe=False)
+        # print("Serializer errors:", serializer.errors)
+        return JsonResponse(serializer.errors, status=400)
 
     elif request.method == 'DELETE':
         step = get_object_or_404(ProductProcess, id=id)
@@ -388,7 +446,6 @@ def producttemplateAPI(request, id=0):
         return JsonResponse("Deleted successfully!", safe=False)
 
 @csrf_exempt
-# @login_required
 @role_required('admin')
 @require_http_methods(["DELETE"])
 def delete_user(request, id):
@@ -398,3 +455,191 @@ def delete_user(request, id):
         return JsonResponse({"detail": f"User {id} deleted successfully."}, status=200)
     except User.DoesNotExist:
         return JsonResponse({"detail": "User not found."}, status=400)
+
+@require_http_methods(["GET"])
+def request_progress_view(request, pk):
+    try:
+        req = Requests.objects.get(pk=pk)
+    except Requests.DoesNotExist:
+        return JsonResponse({"details": "Request not found"}, status=404)
+
+    serializer = RequestProgressSerializer(req)
+    return JsonResponse(serializer.data, safe=False)
+
+@require_http_methods(['GET'])
+@role_required('customer')
+def customer_request_view(request):
+    user = request.user
+    requests_qs = Requests.objects.filter(requester=user)
+    serializer = CustomerRequestStatusSerializer(requests_qs, many=True)
+    return JsonResponse(serializer.data, safe=False)
+
+@require_http_methods(['POST'])
+@role_required('admin', 'manager')
+def request_extension(request, id):
+    request_product = RequestProduct.objects.get(id=id)
+
+    #Parse JSON body safely
+    try:
+        body = json.loads(request.body.decode('utf-8'))
+    except json.JSONDecodeError:
+        return JsonResponse({"detail": "Invalid JSON"}, status=400)
+
+    new_deadline = body.get("new_deadline")
+    if not new_deadline:
+        return JsonResponse({"detail": "new_deadline is required"}, status=400)
+
+    old_deadline = request_product.deadline_extension
+
+    #Save extension request at RequestProduct level
+    request_product.deadline_extension = new_deadline
+    request_product.extension_status = "pending"
+    request_product.requested_at = timezone.now()
+    request_product.save()
+
+    #Audit log entry
+    AuditLog.objects.create(
+        request=request_product.request,
+        request_product=request_product,
+        action_type="extension_request",
+        old_value=str(old_deadline),
+        new_value=str(new_deadline),
+        performed_by=request.user
+    )
+
+    recipient_email = request_product.request.requester.email
+    if not recipient_email or '@' not in recipient_email:
+        return JsonResponse({"detail": "Customer email is invalid or missing"}, status=400)
+
+    #Token based on RequestProduct ID
+    token = signer.sign(str(request_product.id))
+    approve_url = f"http://127.0.0.1:8000/app/request-product/{request_product.id}/approve-extension/?token={token}"
+    reject_url = f"http://127.0.0.1:8000/app/request-product/{request_product.id}/reject-extension/?token={token}"
+
+    sent = send_mail(
+        subject="Deadline Extension Request",
+        message=f"""
+Hi {request_product.request.requester.get_full_name()},
+
+A manager has requested to extend the deadline to {new_deadline}.
+Please choose an action:
+
+Approve: {approve_url}
+Reject: {reject_url}
+""",
+        from_email=settings.EMAIL_HOST_USER,
+        recipient_list=[recipient_email],
+        fail_silently=False
+    )
+
+    return JsonResponse({
+        "detail": f"Extension request for product {request_product.id} has been sent to customer.",
+        "requested_at": request_product.requested_at,
+        "email_sent": bool(sent)
+    }, status=200)
+
+
+@require_http_methods(['POST'])
+@role_required('customer')
+def approve_extension(request, id):
+    token = request.GET.get("token")
+    try:
+        unsigned = signer.unsign(token, max_age=86400)  # 1 day validity
+        if unsigned != str(id):
+            return JsonResponse({"error": "Invalid token."}, status=400)
+    except (BadSignature, SignatureExpired):
+        return JsonResponse({"error": "Token invalid or expired."}, status=400)
+
+    request_product = RequestProduct.objects.get(id=id)
+    if request_product.extension_status == "pending":
+        old_status = request_product.extension_status
+        request_product.extension_status = "approved"
+        request_product.save()
+
+        AuditLog.objects.create(
+            request=request_product.request,
+            request_product=request_product,
+            action_type="extension_approved",
+            old_value=str(old_status),
+            new_value="approved",
+            performed_by=request.user
+        )
+
+        return JsonResponse({"message": "Extension approved."}, status=200)
+    return JsonResponse({"error": "Invalid status."}, status=400)
+
+
+@require_http_methods(['POST'])
+@role_required('customer')
+def reject_extension(request, id):
+    token = request.GET.get("token")
+    try:
+        unsigned = signer.unsign(token, max_age=86400)
+        if unsigned != str(id):
+            return JsonResponse({"error": "Invalid token."}, status=400)
+    except (BadSignature, SignatureExpired):
+        return JsonResponse({"error": "Token invalid or expired."}, status=400)
+
+    request_product = RequestProduct.objects.get(id=id)
+    if request_product.extension_status == "pending":
+        old_status = request_product.extension_status
+        request_product.extension_status = "rejected"
+        request_product.save()
+
+        AuditLog.objects.create(
+            request=request_product.request,
+            request_product=request_product,
+            action_type="extension_rejected",
+            old_value=str(old_status),
+            new_value="rejected",
+            performed_by=request.user
+        )
+
+        return JsonResponse({"message": "Extension rejected."}, status=200)
+    return JsonResponse({"error": "Invalid status."}, status=400)
+
+@require_http_methods(['GET'])
+@role_required('admin', 'manager')
+def bar_report(request):
+    today = datetime.date.today()
+
+    # Get month/year from query params, fallback to current
+    month = int(request.GET.get("month", today.month))
+    year = int(request.GET.get("year", today.year))
+
+    # Filter by chosen month/year
+    processes = ProductProcess.objects.filter(
+        production_date__month=month,
+        production_date__year=year
+    )
+
+    # Bucket into weeks of the month
+    weekly_data = {
+        1: {"defects": 0, "completed": 0},
+        2: {"defects": 0, "completed": 0},
+        3: {"defects": 0, "completed": 0},
+        4: {"defects": 0, "completed": 0},
+    }
+
+    for p in processes:
+        if p.production_date:
+            day = p.production_date.day
+            if day <= 7:
+                week = 1
+            elif day <= 14:
+                week = 2
+            elif day <= 21:
+                week = 3
+            else:
+                week = 4
+
+            weekly_data[week]["defects"] += p.defect_count
+            weekly_data[week]["completed"] += p.completed_quota
+
+    labels = [f"Week {i}" for i in range(1, 5)]
+    datasets = [
+        {"label": "Defects", "data": [weekly_data[i]["defects"] for i in range(1, 5)]},
+        {"label": "Completed", "data": [weekly_data[i]["completed"] for i in range(1, 5)]},
+    ]
+
+    return JsonResponse({"labels": labels, "datasets": datasets})
