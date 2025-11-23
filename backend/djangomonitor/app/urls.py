@@ -43,4 +43,14 @@ urlpatterns = [
     path('verify/', verify_customer, name='verify-customer'),
 
     path('users/<int:id>/', delete_user, name='delete_user'),
+
+    path('requests/<int:pk>/', request_progress_view, name='request-progress'),
+
+    path('customer/requests/', customer_request_view, name='customer-requests'),
+
+    path('reports/bar/', bar_report, name='bar-report'),
+
+    path('request-product/<int:id>/request-extension/', request_extension, name='request_extension'),
+    path('request-product/<int:id>/approve-extension/', approve_extension, name='approve_extension'),
+    path('request-product/<int:id>/reject-extension/', reject_extension, name='reject_extension'),
 ]
