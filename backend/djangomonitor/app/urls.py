@@ -39,7 +39,8 @@ urlpatterns = [
     path('process_temp/', producttemplateAPI, name='process-temp-api'),
     path('process_temp/<int:id>/', producttemplateAPI, name='process-temp-api-PUT-DELETE'),
 
-    path('register/', register_customer, name='register-customer'),
+    path('register/customer/', register_customer, name='register-customer'),
+    path('register/manager/', register_manager, name='register-manager'),
     path('verify/', verify_customer, name='verify-customer'),
 
     path('users/<int:id>/', delete_user, name='delete_user'),
@@ -49,8 +50,25 @@ urlpatterns = [
     path('customer/requests/', customer_request_view, name='customer-requests'),
 
     path('reports/bar/', bar_report, name='bar-report'),
+    path('reports/pie/', pie_report, name='pie-report'),
+    path('reports/donut/', donut_top_products, name='donut-report'),
 
     path('request-product/<int:id>/request-extension/', request_extension, name='request_extension'),
     path('request-product/<int:id>/approve-extension/', approve_extension, name='approve_extension'),
     path('request-product/<int:id>/reject-extension/', reject_extension, name='reject_extension'),
+
+    path('users/', list_users, name='list_users'),
+
+    path('full_report_csv/', full_report_csv, name='full_report_csv'),
+
+    path('request/<int:id>/archive/', archive_request, name='archive-request'),
+    path('request/<int:id>/unarchive/', unarchive_request, name='unarchive-request'),
+
+    path('auditlogs/', auditlog_view, name='audit-logs-view'),
+    path('auditlogs/<int:pk>/', auditlog_delete, name='audit-logs-delete'),
+
+    path('profile/', profile_view, name='profile'),
+
+    path("request-products/", requestProductAPI, name="requestproduct-list"),
+    path("request-products/<int:id>/", requestProductAPI, name="requestproduct-detail"),
 ]
