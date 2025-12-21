@@ -3,6 +3,10 @@ from django.db.models import Sum
 from datetime import date
 from django.contrib.auth.models import User
 from django.utils import timezone
+from django.utils.timezone import localtime
+# from django.db.models.signals import m2m_changed
+# from django.core.exceptions import ValidationError
+# from django.dispatch 
 
 class Roles(models.TextChoices):
     CUSTOMER = "customer", "Customer"
@@ -43,10 +47,36 @@ class Requests(models.Model):
     product_names = models.ManyToManyField('ProductName', through='RequestProduct')
     deadline = models.DateField("Deadline")
     created_at = models.DateField("Created At", auto_now_add=True)
+    updated_at = models.DateTimeField("Updated At", auto_now=True) 
     archived_at = models.DateTimeField("Archived At", null=True, blank=True)
 
     def __str__(self):
         return f"Request #{self.RequestID} by {self.requester.username if self.requester else 'Unknown'}"
+
+    def archive(self):
+        """Soft-archive this request and cascade to related RequestProducts + ProductProcesses."""
+        now = timezone.now()
+        self.archived_at = now
+        self.save()
+
+        for rp in self.request_products.all():
+            rp.archived_at = now
+            rp.save()
+            for pp in rp.process_steps.all():
+                pp.archived_at = now
+                pp.save()
+
+    def unarchive(self):
+        """Restore this request and cascade to related RequestProducts + ProductProcesses."""
+        self.archived_at = None
+        self.save()
+
+        for rp in self.request_products.all():
+            rp.archived_at = None
+            rp.save()
+            for pp in rp.process_steps.all():
+                pp.archived_at = None
+                pp.save()
 
     def get_progress_summary(self):
         summaries = []
@@ -110,6 +140,7 @@ class RequestProduct(models.Model):
         default="pending"
     )
     requested_at = models.DateTimeField("Requested At", null=True, blank=True)
+    archived_at = models.DateTimeField("Archived At", null=True, blank=True)
 
     def __str__(self):
         return f"{self.product.name} x{self.quantity} for Request #{self.request.RequestID}"
@@ -121,7 +152,18 @@ class RequestProduct(models.Model):
     def get_progress_percentage(self):
         completed = self.get_completed_quota()
         requested = self.quantity
-        return round(min(100 * completed / requested, 200), 2) if requested else 0
+        return round(min(100 * completed / requested, 100), 2) if requested else 0
+
+    def task_status(self):
+        completed = self.get_completed_quota()
+        requested = self.quantity
+        if requested == 0:
+            return "⚪ Not Started"
+        elif completed >= requested:
+            return "✅ Done"
+        elif completed > 0:
+            return "⏳ In Progress"
+        return "🕒 Not Started"
 
 class Worker(models.Model):
     WorkerID = models.AutoField(primary_key=True)
@@ -185,7 +227,17 @@ class ProductProcess(models.Model):
         percentage = int(percentage) if percentage.is_integer() else round(percentage, 2)
         return f"{percentage}% / {request_qty} qty"
 
-    
+    # def clean(self):
+    #     for w in self.workers.all():
+    #         active_steps = ProductProcess.objects.filter(
+    #             workers=w,
+    #             is_completed=False,
+    #             archived_at__isnull=True
+    #         ).exclude(pk=self.pk)
+    #         if active_steps.count() >= 2:
+    #             raise ValidationError(
+    #                 f"Worker {w.FirstName} {w.LastName} already has 2 active tasks."
+    #             )
 
     # def get_task_status(self):
     #     expected = self.request_product.quantity if self.request_product else 0
@@ -212,6 +264,7 @@ class AuditLog(models.Model):
         ("create", "Create"),
         ("update", "Update"),
         ("delete", "Delete"),
+        ("archive", "Archive"),
         ("extension_request", "Extension Request"),
         ("extension_approved", "Extension Approved"),
         ("extension_rejected", "Extension Rejected"),

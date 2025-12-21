@@ -1,4 +1,4 @@
-:root {
+/* :root {
   font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
   line-height: 1.5;
   font-weight: 400;
@@ -65,4 +65,36 @@ button:focus-visible {
   button {
     background-color: #f9f9f9;
   }
+} */
+
+
+.table-container {
+  width: 100%;
+  background-color: #f0f2f5;
+  padding: 16px;
+  border-radius: 8px;
+}
+
+.table-header {
+  background-color: #d9e1e8;
+  font-weight: bold;
+}
+
+.table-row {
+  background-color: #ffffff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  border-radius: 6px;
+}
+
+.table-cell {
+  padding: 12px;
+  text-align: left;
+}
+
+body {
+  font-family: 'Inter', sans-serif;
+}
+
+.accounts-page {
+  font-family: 'Inter', sans-serif;
 }
