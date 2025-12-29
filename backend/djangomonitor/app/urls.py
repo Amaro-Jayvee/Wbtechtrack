@@ -36,8 +36,8 @@ urlpatterns = [
     path('product/', productProcessAPI, name='product-api'),
     path('product/<int:id>/', productProcessAPI, name='product-api-PUT-DELETE'),
 
-    path('process_temp/', producttemplateAPI, name='process-temp-api'),
-    path('process_temp/<int:id>/', producttemplateAPI, name='process-temp-api-PUT-DELETE'),
+    path('producttemp/', producttemplateAPI, name='product-temp-api'),
+    path('producttemp/<int:id>/', producttemplateAPI, name='product-temp-api-PUT-DELETE'),
 
     path('register/customer/', register_customer, name='register-customer'),
     path('register/manager/', register_manager, name='register-manager'),
@@ -71,4 +71,7 @@ urlpatterns = [
 
     path("request-products/", requestProductAPI, name="requestproduct-list"),
     path("request-products/<int:id>/", requestProductAPI, name="requestproduct-detail"),
+
+    path("progress/", processProgressAPI, name="progress_list_create"), 
+    path("progress/<int:id>/", processProgressAPI, name="progress_detail"),
 ]
