@@ -766,35 +766,35 @@ def productProcessAPI(request, id=0):
 
         return JsonResponse({"message": "Step deleted successfully!"}, status=200)
 
-@role_required('admin')
-@csrf_exempt
-def producttemplateAPI(request, id=0):
-    if request.method == 'GET':
-        prodtemp = ProcessTemplate.objects.all()
-        prodtemp_serializer = ProcessTemplateSerializer(prodtemp, many=True)
-        return JsonResponse(prodtemp_serializer.data, safe=False)
+# @role_required('admin')
+# @csrf_exempt
+# def producttemplateAPI(request, id=0):
+#     if request.method == 'GET':
+#         prodtemp = ProcessTemplate.objects.all()
+#         prodtemp_serializer = ProcessTemplateSerializer(prodtemp, many=True)
+#         return JsonResponse(prodtemp_serializer.data, safe=False)
 
-    elif request.method == 'POST':
-        prodtemp_data = JSONParser().parse(request)
-        prodtemp_serializer = ProcessTemplateSerializer(data=prodtemp_data)
-        if prodtemp_serializer.is_valid():
-            prodtemp_serializer.save()
-            return JsonResponse("Added successfully!", safe=False)
-        return JsonResponse("Failed to add", safe=False)
+#     elif request.method == 'POST':
+#         prodtemp_data = JSONParser().parse(request)
+#         prodtemp_serializer = ProcessTemplateSerializer(data=prodtemp_data)
+#         if prodtemp_serializer.is_valid():
+#             prodtemp_serializer.save()
+#             return JsonResponse("Added successfully!", safe=False)
+#         return JsonResponse("Failed to add", safe=False)
 
-    elif request.method == 'PUT':
-        prodtemp_data = JSONParser().parse(request)
-        prodtemp = ProcessTemplate.objects.get(id=prodtemp_data["id"])
-        prodtemp_serializer = ProcessTemplateSerializer(prodtemp, data=prodtemp_data)
-        if prodtemp_serializer.is_valid():
-            prodtemp_serializer.save()
-            return JsonResponse("Updated successfully!", safe=False)
-        return JsonResponse("Failed to update", safe=False)
+#     elif request.method == 'PUT':
+#         prodtemp_data = JSONParser().parse(request)
+#         prodtemp = ProcessTemplate.objects.get(id=prodtemp_data["id"])
+#         prodtemp_serializer = ProcessTemplateSerializer(prodtemp, data=prodtemp_data)
+#         if prodtemp_serializer.is_valid():
+#             prodtemp_serializer.save()
+#             return JsonResponse("Updated successfully!", safe=False)
+#         return JsonResponse("Failed to update", safe=False)
 
-    elif request.method == 'DELETE':
-        prodtemp = get_object_or_404(ProcessTemplate, id=id)
-        prodtemp.delete()
-        return JsonResponse("Deleted successfully!", safe=False)
+#     elif request.method == 'DELETE':
+#         prodtemp = get_object_or_404(ProcessTemplate, id=id)
+#         prodtemp.delete()
+#         return JsonResponse("Deleted successfully!", safe=False)
 
 @csrf_exempt
 @role_required('admin')
@@ -998,22 +998,80 @@ def bar_report(request):
     return JsonResponse({"labels": labels, "datasets": datasets})
 
 
+# def get_bar_report_data(month, year, include_archived=False):
+#     days_in_month = calendar.monthrange(year, month)[1]
+#     num_weeks = (days_in_month + 6) // 7
+#     weekly_data = {i: {"defects": 0, "completed": 0} for i in range(1, num_weeks+1)}
+
+#     final_processes = get_final_step_processes(month, year, include_archived)
+
+#     for p in final_processes:
+#         if p.production_date:
+#             week = (p.production_date.day - 1) // 7 + 1
+#             weekly_data[week]["defects"] += p.defect_count
+#             weekly_data[week]["completed"] += p.completed_quota
+
+#     return weekly_data
+
 def get_bar_report_data(month, year, include_archived=False):
     days_in_month = calendar.monthrange(year, month)[1]
     num_weeks = (days_in_month + 6) // 7
     weekly_data = {i: {"defects": 0, "completed": 0} for i in range(1, num_weeks+1)}
 
+    # First, get only final step ProductProcesses
     final_processes = get_final_step_processes(month, year, include_archived)
+    final_ids = [p.id for p in final_processes]
 
-    for p in final_processes:
-        if p.production_date:
-            week = (p.production_date.day - 1) // 7 + 1
-            weekly_data[week]["defects"] += p.defect_count
-            weekly_data[week]["completed"] += p.completed_quota
+    #  Then filter ProcessProgress by those final step IDs
+    progress_entries = ProcessProgress.objects.filter(
+        logged_at__year=year,
+        logged_at__month=month,
+        product_process_id__in=final_ids
+    )
+
+    for entry in progress_entries:
+        week = (entry.logged_at.day - 1) // 7 + 1
+        weekly_data[week]["defects"] += entry.defect_count
+        weekly_data[week]["completed"] += entry.completed_quota
 
     return weekly_data
 
 
+
+
+# @require_http_methods(['GET'])
+# @role_required('admin', 'manager')
+# def pie_report(request):
+#     today = datetime.date.today()
+#     month = int(request.GET.get("month", today.month))
+#     year  = int(request.GET.get("year", today.year))
+#     include_archived = request.GET.get("include_archived", "false").lower() == "true"
+
+#     active_qty = 0
+#     completed_qty = 0
+#     rejected_qty = 0
+
+#     final_processes = get_final_step_processes(month, year, include_archived)
+
+#     for p in final_processes:
+#         if p.is_completed:
+#             completed_qty += p.completed_quota
+#         else:
+#             active_qty += p.completed_quota
+#         rejected_qty += p.defect_count
+
+#     total = active_qty + completed_qty + rejected_qty
+#     pct = lambda n: round((n / total) * 100, 2) if total else 0
+
+#     labels = ["In Progress", "Completed", "Rejected"]
+#     data   = [pct(active_qty), pct(completed_qty), pct(rejected_qty)]
+
+#     return JsonResponse({
+#         "labels": labels,
+#         "data": data,
+#         "raw": [active_qty, completed_qty, rejected_qty],
+#         "total": total
+#     })
 @require_http_methods(['GET'])
 @role_required('admin', 'manager')
 def pie_report(request):
@@ -1029,11 +1087,19 @@ def pie_report(request):
     final_processes = get_final_step_processes(month, year, include_archived)
 
     for p in final_processes:
+        # 🔧 Recalculate totals from logs for this final step
+        totals = ProcessProgress.objects.filter(product_process=p).aggregate(
+            total_quota=Sum('completed_quota'),
+            total_defects=Sum('defect_count')
+        )
+        quota = totals['total_quota'] or 0
+        defects = totals['total_defects'] or 0
+
         if p.is_completed:
-            completed_qty += p.completed_quota
+            completed_qty += quota
         else:
-            active_qty += p.completed_quota
-        rejected_qty += p.defect_count
+            active_qty += quota
+        rejected_qty += defects
 
     total = active_qty + completed_qty + rejected_qty
     pct = lambda n: round((n / total) * 100, 2) if total else 0
@@ -1447,4 +1513,256 @@ def customer_request_view(request):
     return JsonResponse(response_data, safe=False)
 
 
+# @csrf_exempt
+# @role_required('admin', 'manager')
+# def processProgressAPI(request, id=0):
+#     if request.method == 'GET':
+#         product_process_id = request.GET.get("product_process")
+#         logged_from = request.GET.get("logged_from")
+#         logged_to = request.GET.get("logged_to")
+
+#         progress = ProcessProgress.objects.all()
+
+#         if product_process_id:
+#             progress = progress.filter(product_process=product_process_id)
+
+#         if logged_from:
+#             try:
+#                 logged_from_date = datetime.datetime.strptime(logged_from, "%Y-%m-%d").date()
+#                 progress = progress.filter(logged_at__gte=logged_from_date)
+#             except ValueError:
+#                 pass
+
+#         if logged_to:
+#             try:
+#                 logged_to_date = datetime.datetime.strptime(logged_to, "%Y-%m-%d").date()
+#                 progress = progress.filter(logged_at__lte=logged_to_date)
+#             except ValueError:
+#                 pass
+
+#         serializer = ProcessProgressSerializer(progress.order_by('-logged_at'), many=True)
+#         return JsonResponse(serializer.data, safe=False)
+
+#     elif request.method == 'POST':
+#         data = JSONParser().parse(request)
+#         serializer = ProcessProgressSerializer(data=data, context={'request': request})
+#         if serializer.is_valid():
+#             new_progress = serializer.save()
+
+#             # sync back to ProductProcess
+#             parent = new_progress.product_process
+#             parent.completed_quota = new_progress.completed_quota
+#             parent.defect_count = new_progress.defect_count
+#             parent.save()
+
+#             AuditLog.objects.create(
+#                 action_type="create",
+#                 new_value=json.dumps(serializer.data),
+#                 performed_by=request.user
+#             )
+#             return JsonResponse({"message": "Progress added successfully!"}, status=201)
+#         return JsonResponse(serializer.errors, status=400)
+
+#     elif request.method == 'PATCH':
+#         data = JSONParser().parse(request)
+#         try:
+#             progress_instance = ProcessProgress.objects.get(id=id)
+#         except ProcessProgress.DoesNotExist:
+#             return JsonResponse({"error": "Progress not found"}, status=404)
+
+#         old_snapshot = ProcessProgressSerializer(progress_instance).data
+
+#         serializer = ProcessProgressSerializer(progress_instance, data=data, partial=True, context={'request': request})
+#         if serializer.is_valid():
+#             updated_instance = serializer.save()
+
+#             # 👉 sync back to ProductProcess
+#             parent = updated_instance.product_process
+#             parent.completed_quota = updated_instance.completed_quota
+#             parent.defect_count = updated_instance.defect_count
+#             parent.save()
+
+#             AuditLog.objects.create(
+#                 action_type="update",
+#                 old_value=json.dumps(old_snapshot),
+#                 new_value=json.dumps(serializer.data),
+#                 performed_by=request.user
+#             )
+#             return JsonResponse({"message": "Progress updated successfully!"}, status=200)
+#         return JsonResponse(serializer.errors, status=400)
+
+#     elif request.method == 'DELETE':
+#         try:
+#             progress_instance = ProcessProgress.objects.get(id=id)
+#         except ProcessProgress.DoesNotExist:
+#             return JsonResponse({"error": "Progress not found"}, status=404)
+
+#         old_snapshot = ProcessProgressSerializer(progress_instance).data
+#         progress_instance.delete()
+
+#         AuditLog.objects.create(
+#             action_type="delete",
+#             old_value=json.dumps(old_snapshot),
+#             performed_by=request.user
+#         )
+#         return JsonResponse({"message": "Progress deleted successfully!"}, status=200)
+
+@role_required('admin')
+@csrf_exempt
+def producttemplateAPI(request, id=0):
+    if request.method == 'GET':
+        prodtemp = ProcessTemplate.objects.all()
+        prodtemp_serializer = ProcessTemplateSerializer(prodtemp, many=True)
+        return JsonResponse(prodtemp_serializer.data, safe=False)
+
+    elif request.method == 'POST':
+        data = JSONParser().parse(request)
+
+        # Expecting JSON like:
+        # {
+        #   "product_name": "BRACKET 0080",
+        #   "processes": [
+        #       {"name": "Blanking", "step_order": 1},
+        #       {"name": "Forming", "step_order": 2}
+        #   ]
+        # }
+
+        product, _ = ProductName.objects.get_or_create(prodName=data["product_name"])
+        results = []
+
+        for proc in data.get("processes", []):
+            process, _ = ProcessName.objects.get_or_create(name=proc["name"])
+            template, created = ProcessTemplate.objects.get_or_create(
+                product_name=product,
+                process=process,
+                defaults={"step_order": proc["step_order"]}
+            )
+            results.append({
+                "process": process.name,
+                "step_order": template.step_order,
+                "created": created
+            })
+
+        return JsonResponse({"message": "Bulk seeding complete", "results": results}, safe=False)
+
+    elif request.method == 'PUT':
+        prodtemp_data = JSONParser().parse(request)
+        prodtemp = ProcessTemplate.objects.get(id=prodtemp_data["id"])
+        prodtemp_serializer = ProcessTemplateSerializer(prodtemp, data=prodtemp_data)
+        if prodtemp_serializer.is_valid():
+            prodtemp_serializer.save()
+            return JsonResponse("Updated successfully!", safe=False)
+        return JsonResponse("Failed to update", safe=False)
+
+    elif request.method == 'DELETE':
+        prodtemp = get_object_or_404(ProcessTemplate, id=id)
+        prodtemp.delete()
+        return JsonResponse("Deleted successfully!", safe=False)
+
+@csrf_exempt
+@role_required('admin', 'manager')
+def processProgressAPI(request, id=0):
+    if request.method == 'GET':
+        product_process_id = request.GET.get("product_process")
+        logged_from = request.GET.get("logged_from")
+        logged_to = request.GET.get("logged_to")
+
+        progress = ProcessProgress.objects.all()
+
+        if product_process_id:
+            progress = progress.filter(product_process=product_process_id)
+
+        if logged_from:
+            try:
+                logged_from_date = datetime.datetime.strptime(logged_from, "%Y-%m-%d").date()
+                progress = progress.filter(logged_at__gte=logged_from_date)
+            except ValueError:
+                pass
+
+        if logged_to:
+            try:
+                logged_to_date = datetime.datetime.strptime(logged_to, "%Y-%m-%d").date()
+                progress = progress.filter(logged_at__lte=logged_to_date)
+            except ValueError:
+                pass
+
+        serializer = ProcessProgressSerializer(progress.order_by('-logged_at'), many=True)
+        return JsonResponse(serializer.data, safe=False)
+
+    elif request.method == 'POST':
+        data = JSONParser().parse(request)
+        serializer = ProcessProgressSerializer(data=data, context={'request': request})
+        if serializer.is_valid():
+            new_progress = serializer.save()
+
+            parent = new_progress.product_process
+            # ✅ Increment totals
+            parent.completed_quota += new_progress.completed_quota
+            parent.defect_count += new_progress.defect_count
+            parent.mark_completed_if_ready()
+            parent.save(update_fields=['completed_quota', 'defect_count', 'is_completed', 'updated_at'])
+
+            AuditLog.objects.create(
+                action_type="create",
+                new_value=json.dumps(serializer.data),
+                performed_by=request.user
+            )
+            return JsonResponse({"message": "Progress added successfully!"}, status=201)
+        return JsonResponse(serializer.errors, status=400)
+
+    elif request.method == 'PATCH':
+        data = JSONParser().parse(request)
+        try:
+            progress_instance = ProcessProgress.objects.get(id=id)
+        except ProcessProgress.DoesNotExist:
+            return JsonResponse({"error": "Progress not found"}, status=404)
+
+        old_snapshot = ProcessProgressSerializer(progress_instance).data
+
+        serializer = ProcessProgressSerializer(progress_instance, data=data, partial=True, context={'request': request})
+        if serializer.is_valid():
+            updated_instance = serializer.save()
+
+            parent = updated_instance.product_process
+            # ✅ Recalculate totals only for the final step of this RequestProduct
+            final_step = (
+                ProductProcess.objects
+                .filter(request_product=parent.request_product)
+                .order_by('-step_order')
+                .first()
+            )
+            if final_step:
+                totals = ProcessProgress.objects.filter(product_process=final_step).aggregate(
+                    total_quota=Sum('completed_quota'),
+                    total_defects=Sum('defect_count')
+                )
+                final_step.completed_quota = totals['total_quota'] or 0
+                final_step.defect_count = totals['total_defects'] or 0
+                final_step.mark_completed_if_ready()
+                final_step.save(update_fields=['completed_quota', 'defect_count', 'is_completed', 'updated_at'])
+
+            AuditLog.objects.create(
+                action_type="update",
+                old_value=json.dumps(old_snapshot),
+                new_value=json.dumps(serializer.data),
+                performed_by=request.user
+            )
+            return JsonResponse({"message": "Progress updated successfully!"}, status=200)
+        return JsonResponse(serializer.errors, status=400)
+
+    elif request.method == 'DELETE':
+        try:
+            progress_instance = ProcessProgress.objects.get(id=id)
+        except ProcessProgress.DoesNotExist:
+            return JsonResponse({"error": "Progress not found"}, status=404)
+
+        old_snapshot = ProcessProgressSerializer(progress_instance).data
+        progress_instance.delete()
+
+        AuditLog.objects.create(
+            action_type="delete",
+            old_value=json.dumps(old_snapshot),
+            performed_by=request.user
+        )
+        return JsonResponse({"message": "Progress deleted successfully!"}, status=200)
 

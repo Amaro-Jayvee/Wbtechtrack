@@ -382,3 +382,8 @@ class AuditLogSerializer(serializers.ModelSerializer):
 
     def get_performed_by_username(self, obj):
         return obj.performed_by.username if obj.performed_by else None
+
+class ProcessProgressSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ProcessProgress
+        fields = '__all__'

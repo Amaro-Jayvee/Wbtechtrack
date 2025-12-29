@@ -289,3 +289,10 @@ class AuditLog(models.Model):
     def __str__(self):
         target = f"Request #{self.request.RequestID}" if self.request else f"RequestProduct #{self.request_product.id}"
         return f"{self.action_type} on {target} at {self.timestamp}"
+
+
+class ProcessProgress(models.Model):
+    product_process = models.ForeignKey(ProductProcess, on_delete=models.CASCADE)
+    completed_quota = models.PositiveIntegerField(default=0)
+    defect_count = models.PositiveIntegerField(default=0)
+    logged_at = models.DateField(auto_now_add=True)
