@@ -1659,6 +1659,113 @@ def producttemplateAPI(request, id=0):
         prodtemp.delete()
         return JsonResponse("Deleted successfully!", safe=False)
 
+# @csrf_exempt
+# @role_required('admin', 'manager')
+# def processProgressAPI(request, id=0):
+#     if request.method == 'GET':
+#         product_process_id = request.GET.get("product_process")
+#         logged_from = request.GET.get("logged_from")
+#         logged_to = request.GET.get("logged_to")
+
+#         progress = ProcessProgress.objects.all()
+
+#         if product_process_id:
+#             progress = progress.filter(product_process=product_process_id)
+
+#         if logged_from:
+#             try:
+#                 logged_from_date = datetime.datetime.strptime(logged_from, "%Y-%m-%d").date()
+#                 progress = progress.filter(logged_at__gte=logged_from_date)
+#             except ValueError:
+#                 pass
+
+#         if logged_to:
+#             try:
+#                 logged_to_date = datetime.datetime.strptime(logged_to, "%Y-%m-%d").date()
+#                 progress = progress.filter(logged_at__lte=logged_to_date)
+#             except ValueError:
+#                 pass
+
+#         serializer = ProcessProgressSerializer(progress.order_by('-logged_at'), many=True)
+#         return JsonResponse(serializer.data, safe=False)
+
+#     elif request.method == 'POST':
+#         data = JSONParser().parse(request)
+#         serializer = ProcessProgressSerializer(data=data, context={'request': request})
+#         if serializer.is_valid():
+#             new_progress = serializer.save()
+
+#             parent = new_progress.product_process
+#             # ✅ Increment totals
+#             parent.completed_quota += new_progress.completed_quota
+#             parent.defect_count += new_progress.defect_count
+#             parent.mark_completed_if_ready()
+#             parent.save(update_fields=['completed_quota', 'defect_count', 'is_completed', 'updated_at'])
+
+#             AuditLog.objects.create(
+#                 action_type="create",
+#                 new_value=json.dumps(serializer.data),
+#                 performed_by=request.user
+#             )
+#             return JsonResponse({"message": "Progress added successfully!"}, status=201)
+#         return JsonResponse(serializer.errors, status=400)
+
+#     elif request.method == 'PATCH':
+#         data = JSONParser().parse(request)
+#         try:
+#             progress_instance = ProcessProgress.objects.get(id=id)
+#         except ProcessProgress.DoesNotExist:
+#             return JsonResponse({"error": "Progress not found"}, status=404)
+
+#         old_snapshot = ProcessProgressSerializer(progress_instance).data
+
+#         serializer = ProcessProgressSerializer(progress_instance, data=data, partial=True, context={'request': request})
+#         if serializer.is_valid():
+#             updated_instance = serializer.save()
+
+#             parent = updated_instance.product_process
+#             # ✅ Recalculate totals only for the final step of this RequestProduct
+#             final_step = (
+#                 ProductProcess.objects
+#                 .filter(request_product=parent.request_product)
+#                 .order_by('-step_order')
+#                 .first()
+#             )
+#             if final_step:
+#                 totals = ProcessProgress.objects.filter(product_process=final_step).aggregate(
+#                     total_quota=Sum('completed_quota'),
+#                     total_defects=Sum('defect_count')
+#                 )
+#                 final_step.completed_quota = totals['total_quota'] or 0
+#                 final_step.defect_count = totals['total_defects'] or 0
+#                 final_step.mark_completed_if_ready()
+#                 final_step.save(update_fields=['completed_quota', 'defect_count', 'is_completed', 'updated_at'])
+
+#             AuditLog.objects.create(
+#                 action_type="update",
+#                 old_value=json.dumps(old_snapshot),
+#                 new_value=json.dumps(serializer.data),
+#                 performed_by=request.user
+#             )
+#             return JsonResponse({"message": "Progress updated successfully!"}, status=200)
+#         return JsonResponse(serializer.errors, status=400)
+
+#     elif request.method == 'DELETE':
+#         try:
+#             progress_instance = ProcessProgress.objects.get(id=id)
+#         except ProcessProgress.DoesNotExist:
+#             return JsonResponse({"error": "Progress not found"}, status=404)
+
+#         old_snapshot = ProcessProgressSerializer(progress_instance).data
+#         progress_instance.delete()
+
+#         AuditLog.objects.create(
+#             action_type="delete",
+#             old_value=json.dumps(old_snapshot),
+#             performed_by=request.user
+#         )
+#         return JsonResponse({"message": "Progress deleted successfully!"}, status=200)
+
 @csrf_exempt
 @role_required('admin', 'manager')
 def processProgressAPI(request, id=0):
@@ -1691,12 +1798,29 @@ def processProgressAPI(request, id=0):
 
     elif request.method == 'POST':
         data = JSONParser().parse(request)
+
+        # Deadline enforcement
+        parent = ProductProcess.objects.get(id=data["product_process"])
+        request_product = parent.request_product
+        request_instance = request_product.request
+        today = date.today()
+
+        effective_deadline = (
+            request_product.deadline_extension
+            if request_product.deadline_extension and request_product.extension_status == "approved"
+            else request_instance.deadline
+        )
+
+        if today > effective_deadline:
+            return JsonResponse(
+                {"error": "You cannot log progress beyond the deadline unless an extension is approved."},
+                status=403
+            )
+
         serializer = ProcessProgressSerializer(data=data, context={'request': request})
         if serializer.is_valid():
             new_progress = serializer.save()
 
-            parent = new_progress.product_process
-            # ✅ Increment totals
             parent.completed_quota += new_progress.completed_quota
             parent.defect_count += new_progress.defect_count
             parent.mark_completed_if_ready()
@@ -1717,14 +1841,30 @@ def processProgressAPI(request, id=0):
         except ProcessProgress.DoesNotExist:
             return JsonResponse({"error": "Progress not found"}, status=404)
 
+        # Deadline enforcement
+        parent = progress_instance.product_process
+        request_product = parent.request_product
+        request_instance = request_product.request
+        today = date.today()
+
+        effective_deadline = (
+            request_product.deadline_extension
+            if request_product.deadline_extension and request_product.extension_status == "approved"
+            else request_instance.deadline
+        )
+
+        if today > effective_deadline:
+            return JsonResponse(
+                {"error": "You cannot update progress beyond the deadline unless an extension is approved."},
+                status=403
+            )
+
         old_snapshot = ProcessProgressSerializer(progress_instance).data
 
         serializer = ProcessProgressSerializer(progress_instance, data=data, partial=True, context={'request': request})
         if serializer.is_valid():
             updated_instance = serializer.save()
 
-            parent = updated_instance.product_process
-            # ✅ Recalculate totals only for the final step of this RequestProduct
             final_step = (
                 ProductProcess.objects
                 .filter(request_product=parent.request_product)
@@ -1765,4 +1905,3 @@ def processProgressAPI(request, id=0):
             performed_by=request.user
         )
         return JsonResponse({"message": "Progress deleted successfully!"}, status=200)
-
