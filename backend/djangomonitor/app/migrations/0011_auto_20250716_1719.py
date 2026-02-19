@@ -12,26 +12,5 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.AddField(
-            model_name='productprocess',
-            name='request',
-            field=models.ForeignKey(
-                blank=True,
-                null=True,
-                on_delete=django.db.models.deletion.CASCADE,
-                related_name='process_steps',
-                to='app.requests',
-            ),
-        ),
-        migrations.AddField(
-            model_name='productprocess',
-            name='worker',
-            field=models.ForeignKey(
-                blank=True,
-                null=True,
-                on_delete=django.db.models.deletion.CASCADE,
-                related_name='products',
-                to='app.worker',
-            ),
-        ),
+        # Fields already created in 0010, this migration is empty
     ]

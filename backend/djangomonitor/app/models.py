@@ -146,8 +146,31 @@ class RequestProduct(models.Model):
         return f"{self.product.name} x{self.quantity} for Request #{self.request.RequestID}"
 
     def get_completed_quota(self):
-        final_step = self.process_steps.order_by('-step_order').first()
-        return final_step.completed_quota if final_step else 0
+        # Calculate total completed work across all steps
+        # This includes completed previous steps + progress on current step
+        all_steps = self.process_steps.order_by('step_order')
+        if not all_steps.exists():
+            return 0
+        
+        total_steps = all_steps.count()
+        completed_steps_before = 0
+        current_step_completed = 0
+        
+        # Find current step (first step that's not completed)
+        for step in all_steps:
+            if step.is_completed:
+                completed_steps_before += 1
+            else:
+                # This is the current step being worked on
+                current_step_completed = step.completed_quota
+                break
+        
+        # Calculate equivalent completed units:
+        # (completed_steps_before / total_steps * quantity) + current_step_completed
+        completed_from_steps = (completed_steps_before / total_steps) * self.quantity if total_steps > 0 else 0
+        total_completed = completed_from_steps + current_step_completed
+        
+        return int(total_completed) if total_completed > 0 else 0
 
     def get_progress_percentage(self):
         completed = self.get_completed_quota()
@@ -185,6 +208,7 @@ class ProcessName(models.Model):
 
 class ProductProcess(models.Model):
     request_product = models.ForeignKey(RequestProduct, on_delete=models.CASCADE, null=True, blank=True, related_name='process_steps')
+    product = models.ForeignKey(ProductName, on_delete=models.CASCADE, null=True, blank=True, related_name='configured_processes')
     workers = models.ManyToManyField(Worker, related_name="products", blank=True)
     process = models.ForeignKey(ProcessName, on_delete=models.PROTECT)
     step_order = models.PositiveIntegerField("Step Order")
@@ -296,3 +320,69 @@ class ProcessProgress(models.Model):
     completed_quota = models.PositiveIntegerField(default=0)
     defect_count = models.PositiveIntegerField(default=0)
     logged_at = models.DateField(auto_now_add=True)
+
+
+class SystemSettings(models.Model):
+    """
+    Global system settings for the application
+    Only one instance should exist (use singleton pattern)
+    """
+    # Session Management
+    session_timeout_minutes = models.PositiveIntegerField("Session Timeout (minutes)", default=15)
+    enable_session_timeout = models.BooleanField("Enable Session Timeout", default=True)
+    
+    # Auto-Archive Settings
+    enable_auto_archive = models.BooleanField("Enable Auto-Archive", default=True)
+    archive_threshold_days = models.PositiveIntegerField("Archive Threshold (days)", default=30)
+    
+    # Notifications
+    enable_email_alerts = models.BooleanField("Enable Email Alerts", default=True)
+    
+    # Data Retention
+    data_retention_days = models.PositiveIntegerField("Data Retention (days)", default=365)
+    
+    # Audit & Logging
+    enable_audit_logs = models.BooleanField("Enable Audit Logs", default=True)
+    
+    # Timestamps
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    
+    class Meta:
+        verbose_name_plural = "System Settings"
+    
+    def __str__(self):
+        return "System Settings"
+    
+    @classmethod
+    def get_settings(cls):
+        """Get or create the singleton settings instance"""
+        obj, created = cls.objects.get_or_create(pk=1)
+        return obj
+
+
+class Notification(models.Model):
+    """Store notifications for users"""
+    NOTIFICATION_TYPES = (
+        ('request_created', 'Request Created'),
+        ('project_started', 'Project Started'),
+        ('task_status_updated', 'Task Status Updated'),
+        ('product_completed', 'Product Completed'),
+        ('request_completed', 'Request Completed'),
+        ('deadline_approaching', 'Deadline Approaching'),
+    )
+    
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='notifications')
+    notification_type = models.CharField(max_length=50, choices=NOTIFICATION_TYPES)
+    title = models.CharField(max_length=200)
+    message = models.TextField()
+    related_request = models.ForeignKey(Requests, on_delete=models.CASCADE, null=True, blank=True)
+    is_read = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        ordering = ['-created_at']
+    
+    def __str__(self):
+        return f"{self.title} - {self.user.username}"

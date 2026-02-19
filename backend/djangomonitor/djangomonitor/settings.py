@@ -81,12 +81,14 @@ SITE_ID = 1
 
 CORS_ORIGIN_ALLOW_ALL = True
 
-CSRF_TRUSTED_ORIGINS = ['http://localhost:5173', 'http://127.0.0.1:5173']
+CSRF_TRUSTED_ORIGINS = ['http://localhost:5173', 'http://127.0.0.1:5173', 'http://localhost:5174', 'http://127.0.0.1:5174']
 # DEFAULT_DOMAIN = "127.0.0.1:8000"  # Change this to your actual domain if needed
 
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
-    "http://127.0.0.1:5173"
+    "http://127.0.0.1:5173",
+    "http://localhost:5174",
+    "http://127.0.0.1:5174"
 ]
 
 ALLOWED_HOSTS = ["localhost", "127.0.0.1"]
@@ -124,17 +126,15 @@ WSGI_APPLICATION = 'djangomonitor.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases
 
+# Using SQLite3 for development/testing
 # DATABASES = {
-#     'default': { 
-#         'ENGINE': 'django.db.backends.mysql',
-#         'NAME': os.getenv('DB_NAME'),
-#         'USER': os.getenv('DB_USER'),
-#         'PASSWORD': os.getenv('DB_PASSWORD'),
-#         'HOST': os.getenv('DB_HOST'),
-#         'PORT': os.getenv('DB_PORT'),
+#     'default': {
+#         'ENGINE': 'django.db.backends.sqlite3',
+#         'NAME': BASE_DIR / 'db.sqlite3',
 #     }
 # }
 
+# MySQL configuration (for when database setup is ready)
 DATABASES = { 
     'default': {
          'ENGINE': 'django.db.backends.mysql', 

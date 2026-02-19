@@ -56,14 +56,34 @@ class RequestProductReadSerializer(serializers.ModelSerializer):
 
 
 class RequestReadSerializer(serializers.ModelSerializer):
-    requester_name = serializers.CharField(source='requester.userprofile.full_name', read_only=True)
-    requester_company = serializers.CharField(source='requester.userprofile.company_name', read_only=True)
-    created_by_name = serializers.CharField(source='created_by.username', read_only=True)
+    requester_name = serializers.SerializerMethodField()
+    requester_company = serializers.SerializerMethodField()
+    created_by_name = serializers.SerializerMethodField()
     badge = serializers.SerializerMethodField()
     created_at = serializers.SerializerMethodField()
     updated_at = serializers.SerializerMethodField()
     archived_at = serializers.SerializerMethodField()
     deadline = serializers.SerializerMethodField()
+    request_products = serializers.SerializerMethodField()
+    
+    def get_requester_name(self, obj):
+        try:
+            if obj.requester and hasattr(obj.requester, 'userprofile'):
+                return obj.requester.userprofile.full_name
+        except:
+            pass
+        return obj.requester.username if obj.requester else "Unknown"
+    
+    def get_requester_company(self, obj):
+        try:
+            if obj.requester and hasattr(obj.requester, 'userprofile'):
+                return obj.requester.userprofile.company_name
+        except:
+            pass
+        return ""
+    
+    def get_created_by_name(self, obj):
+        return obj.created_by.username if obj.created_by else "Unknown"
 
     def get_badge(self, obj):
         count = obj.request_products.count()
@@ -87,10 +107,15 @@ class RequestReadSerializer(serializers.ModelSerializer):
     def get_deadline(self, obj):
         return obj.deadline.strftime("%Y-%m-%d") if obj.deadline else None
 
+    def get_request_products(self, obj):
+        products = obj.request_products.all()
+        return RequestProductReadSerializer(products, many=True).data
+
     class Meta:
         model = Requests
         fields = [
             "RequestID",
+            "requester",
             "requester_name",
             "requester_company",
             "created_by_name",
@@ -99,11 +124,12 @@ class RequestReadSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
             "archived_at",
+            "request_products",
         ]
         read_only_fields = ["created_by"]
 
 class RequestProductSerializer(serializers.ModelSerializer):
-    product_name = serializers.CharField(source='product.name', read_only=True)
+    product_name = serializers.CharField(source='product.prodName', read_only=True)
     requested_at = serializers.SerializerMethodField()
 
     def get_requested_at(self, obj):
@@ -156,6 +182,8 @@ class RequestSerializer(serializers.ModelSerializer):
             **validated_data
         )
         for item in products_data:
+            # Simply create RequestProduct without process handling
+            # ProcessTemplates will be used when starting the project via start_project endpoint
             RequestProduct.objects.create(request=request, **item)
         return request
 
@@ -218,10 +246,89 @@ class ProductProcessSerializer(serializers.ModelSerializer):
         many=True,
         queryset=Worker.objects.all()
     )
+    worker_names = serializers.SerializerMethodField()
     progress = serializers.SerializerMethodField()
+    completed_summary = serializers.SerializerMethodField()
+    request_id = serializers.SerializerMethodField()
+    request_product_id = serializers.SerializerMethodField()
+    request_product_archived_at = serializers.SerializerMethodField()
+    total_quota = serializers.SerializerMethodField()
+    total_steps = serializers.SerializerMethodField()
+    process_name = serializers.SerializerMethodField()
+    product_name = serializers.SerializerMethodField()
+    due_date = serializers.SerializerMethodField()
+    deadline_extension = serializers.SerializerMethodField()
+    updated_at = serializers.SerializerMethodField()
+    production_date_formatted = serializers.SerializerMethodField()
 
     def get_progress(self, obj):
         return obj.progress_summary()
+    
+    def get_completed_summary(self, obj):
+        """Return 'completed_quota/total_quantity' format"""
+        total = obj.request_product.quantity if obj.request_product else 0
+        return f"{obj.completed_quota}/{total}"
+    
+    def get_request_id(self, obj):
+        return obj.request_product.request.RequestID if obj.request_product else None
+    
+    def get_request_product_id(self, obj):
+        return obj.request_product.id if obj.request_product else None
+    
+    def get_request_product_archived_at(self, obj):
+        """Return the archived_at timestamp from the request_product"""
+        return obj.request_product.archived_at if obj.request_product else None
+    
+    def get_total_quota(self, obj):
+        return obj.request_product.quantity if obj.request_product else 0
+    
+    def get_total_steps(self, obj):
+        """Return total number of steps for this product (from ProcessTemplate, not ProductProcess)"""
+        if obj.request_product and obj.request_product.product:
+            # Count the ProcessTemplate steps for this product
+            # This stays constant even if ProductProcess steps are deleted
+            total = ProcessTemplate.objects.filter(
+                product_name=obj.request_product.product
+            ).count()
+            return total if total > 0 else 0
+        return 0
+    
+    def get_process_name(self, obj):
+        return obj.process.name if obj.process else None
+    
+    def get_product_name(self, obj):
+        return obj.request_product.product.prodName if obj.request_product else None
+    
+    def get_worker_names(self, obj):
+        return [f"{worker.FirstName} {worker.LastName}" for worker in obj.workers.all()]
+    
+    def get_due_date(self, obj):
+        if obj.request_product:
+            if obj.request_product.deadline_extension and obj.request_product.extension_status == "approved":
+                return obj.request_product.deadline_extension.strftime("%Y-%m-%d")
+            return obj.request_product.request.deadline.strftime("%Y-%m-%d") if obj.request_product.request.deadline else None
+        return None
+    
+    def get_deadline_extension(self, obj):
+        if obj.request_product and obj.request_product.deadline_extension:
+            return obj.request_product.deadline_extension.strftime("%Y-%m-%d")
+        return None
+    
+    def get_production_date_formatted(self, obj):
+        """Format production_date for display. Use request creation date if production_date is null"""
+        if obj.production_date:
+            return obj.production_date.strftime("%Y-%m-%d")
+        # Fallback to request creation date
+        if obj.request_product and obj.request_product.request:
+            request_created = obj.request_product.request.created_at
+            if request_created:
+                # Return just the date part
+                return request_created.strftime("%Y-%m-%d")
+        return None
+    
+    def get_updated_at(self, obj):
+        from django.utils.timezone import localtime
+        return localtime(obj.updated_at).strftime("%Y-%m-%d") if obj.updated_at else None
 
     def validate_workers(self, value):
         for w in value:
@@ -252,12 +359,15 @@ class ProductProcessSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = ProductProcess
-        fields = '__all__'
+        fields = ['id', 'request_product', 'workers', 'process', 'step_order', 'completed_quota', 'defect_count', 'is_completed', 'production_date', 'created_at', 'updated_at', 'archived_at', 'progress', 'completed_summary', 'request_id', 'request_product_id', 'request_product_archived_at', 'total_quota', 'total_steps', 'process_name', 'product_name', 'worker_names', 'due_date', 'deadline_extension', 'production_date_formatted']
 
 class ProcessTemplateSerializer(serializers.ModelSerializer):
+    process_name = serializers.CharField(source='process.name', read_only=True)
+    product_name_text = serializers.CharField(source='product_name.prodName', read_only=True)
+    
     class Meta:
         model = ProcessTemplate
-        fields = '__all__'
+        fields = ['id', 'product_name', 'process', 'step_order', 'process_name', 'product_name_text']
 
 class UserProfileSerializer(serializers.ModelSerializer):
     class Meta:
@@ -387,3 +497,36 @@ class ProcessProgressSerializer(serializers.ModelSerializer):
     class Meta:
         model = ProcessProgress
         fields = '__all__'
+
+
+class SystemSettingsSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SystemSettings
+        fields = [
+            'id',
+            'session_timeout_minutes',
+            'enable_session_timeout',
+            'enable_auto_archive',
+            'archive_threshold_days',
+            'enable_email_alerts',
+            'data_retention_days',
+            'enable_audit_logs',
+            'updated_at',
+            'updated_by'
+        ]
+        read_only_fields = ['id', 'updated_at', 'updated_by']
+
+
+class NotificationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Notification
+        fields = [
+            'id',
+            'notification_type',
+            'title',
+            'message',
+            'related_request',
+            'is_read',
+            'created_at'
+        ]
+        read_only_fields = ['id', 'created_at']

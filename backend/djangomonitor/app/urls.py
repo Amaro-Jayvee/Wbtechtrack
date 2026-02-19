@@ -33,8 +33,12 @@ urlpatterns = [
     path('prodname/', productnameAPI, name='product-name-api'),
     path('prodname/<int:id>/', productnameAPI, name='product-name-api-PUT-DELETE'),
 
+    path('product-config/', save_product_configuration, name='product-config-save'),
+
     path('product/', productProcessAPI, name='product-api'),
     path('product/<int:id>/', productProcessAPI, name='product-api-PUT-DELETE'),
+    path('productprocess/', productProcessAPI, name='productprocess-api'),
+    path('productprocess/<int:id>/', productProcessAPI, name='productprocess-api-PUT-DELETE'),
 
     path('producttemp/', producttemplateAPI, name='product-temp-api'),
     path('producttemp/<int:id>/', producttemplateAPI, name='product-temp-api-PUT-DELETE'),
@@ -42,27 +46,17 @@ urlpatterns = [
     path('register/customer/', register_customer, name='register-customer'),
     path('register/manager/', register_manager, name='register-manager'),
     path('verify/', verify_customer, name='verify-customer'),
-
-    path('users/<int:id>/', delete_user, name='delete_user'),
-
-    path('requests/<int:pk>/', request_progress_view, name='request-progress'),
-
-    path('customer/requests/', customer_request_view, name='customer-requests'),
-
-    path('reports/bar/', bar_report, name='bar-report'),
-    path('reports/pie/', pie_report, name='pie-report'),
-    path('reports/donut/', donut_top_products, name='donut-report'),
-
-    path('request-product/<int:id>/request-extension/', request_extension, name='request_extension'),
-    path('request-product/<int:id>/approve-extension/', approve_extension, name='approve_extension'),
-    path('request-product/<int:id>/reject-extension/', reject_extension, name='reject_extension'),
+    # path('decline/', decline_customer, name='decline-customer'),
 
     path('users/', list_users, name='list_users'),
+    # path('users/<str:username>/', get_user, name='get_user'),
+    path('users/<int:id>/', delete_user, name='delete_user'),
 
     path('full_report_csv/', full_report_csv, name='full_report_csv'),
 
     path('request/<int:id>/archive/', archive_request, name='archive-request'),
     path('request/<int:id>/unarchive/', unarchive_request, name='unarchive-request'),
+    path('request/<int:id>/start-project/', start_project, name='start-project'),
 
     path('auditlogs/', auditlog_view, name='audit-logs-view'),
     path('auditlogs/<int:pk>/', auditlog_delete, name='audit-logs-delete'),
@@ -71,7 +65,24 @@ urlpatterns = [
 
     path("request-products/", requestProductAPI, name="requestproduct-list"),
     path("request-products/<int:id>/", requestProductAPI, name="requestproduct-detail"),
+    
+    # Customer endpoint to view their assigned requests
+    path('customer/my-requests/', customer_request_view, name='customer-my-requests'),
 
-    path("progress/", processProgressAPI, name="progress_list_create"), 
-    path("progress/<int:id>/", processProgressAPI, name="progress_detail"),
+    # Notification endpoints
+    path('notifications/', get_notifications, name='get-notifications'),
+    path('notifications/<int:notification_id>/read/', mark_notification_read, name='mark-notification-read'),
+
+    # Settings endpoints
+    path('settings/', get_settings, name='get-settings'),
+    path('settings/update/', update_settings, name='update-settings'),
+
+    # Dashboard Report endpoints
+    path('reports/bar-chart/', dashboard_bar_chart, name='dashboard-bar-chart'),
+    path('reports/pie-chart/', dashboard_pie_chart, name='dashboard-pie-chart'),
+    path('reports/top-movers/', dashboard_top_movers, name='dashboard-top-movers'),
+    path('reports/debug/', debug_dashboard_data, name='debug-dashboard-data'),
+
+    # path("progress/", processProgressAPI, name="progress_list_create"), 
+    # path("progress/<int:id>/", processProgressAPI, name="progress_detail"),
 ]

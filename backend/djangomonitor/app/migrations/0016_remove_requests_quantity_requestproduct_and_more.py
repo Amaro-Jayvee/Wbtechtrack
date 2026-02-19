@@ -24,9 +24,6 @@ class Migration(migrations.Migration):
                 ('request', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='request_products', to='app.requests')),
             ],
         ),
-        migrations.AlterField(
-            model_name='requests',
-            name='product_names',
-            field=models.ManyToManyField(through='app.RequestProduct', to='app.productname'),
-        ),
+        # Note: AlterField for M2M field removed due to compatibility issues
+        # This can be handled during final database migration by classmate
     ]
