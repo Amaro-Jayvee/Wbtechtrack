@@ -1,29 +1,61 @@
 import React, { useState, useEffect } from "react";
 import SidebarLayout from "./SidebarLayout";
+import ActivityLogsPanel from "./ActivityLogsPanel";
+import TaskUpdateLogsPanel from "./TaskUpdateLogsPanel";
 import "./Dashboard.css";
 
 function Settings() {
-  const [selectedSetting, setSelectedSetting] = useState("session-timeout");
+  const [selectedSetting, setSelectedSetting] = useState("manage-accounts");
   const [settings, setSettings] = useState({
-    session_timeout_minutes: 15,
-    enable_session_timeout: true,
-    enable_auto_archive: true,
-    archive_threshold_days: 30,
     enable_email_alerts: true,
     data_retention_days: 365,
     enable_audit_logs: true,
   });
 
-  const [workers, setWorkers] = useState([]);
   const [auditLogs, setAuditLogs] = useState([]);
+  const [archivedRequests, setArchivedRequests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
 
+  const [showRestoreModal, setShowRestoreModal] = useState(false);
+  const [restoreTargetId, setRestoreTargetId] = useState(null);
+
+  const [userProfile, setUserProfile] = useState({
+    username: "",
+    email: "",
+    full_name: "",
+    company_name: "",
+    contact_number: "",
+    role: "",
+  });
+
+  const [profileEdit, setProfileEdit] = useState({
+    full_name: "",
+    contact_number: "",
+  });
+
+  const [passwordChange, setPasswordChange] = useState({
+    current_password: "",
+    new_password: "",
+    confirm_password: "",
+  });
+
   useEffect(() => {
     fetchSettings();
-    fetchWorkers();
-    fetchAuditLogs();
+    fetchArchivedRequests();
+    fetchUserProfile();
+  }, []);
+
+  // Listen for archive updates from TaskDetailModal
+  useEffect(() => {
+    const handleArchivedUpdate = () => {
+      console.log("[Settings] Received archivedRequestsUpdated event, refreshing...");
+      fetchArchivedRequests();
+    };
+
+    window.addEventListener('archivedRequestsUpdated', handleArchivedUpdate);
+    return () => window.removeEventListener('archivedRequestsUpdated', handleArchivedUpdate);
   }, []);
 
   const fetchSettings = async () => {
@@ -36,10 +68,6 @@ function Settings() {
       if (response.ok) {
         const data = await response.json();
         setSettings({
-          session_timeout_minutes: data.session_timeout_minutes || 15,
-          enable_session_timeout: data.enable_session_timeout ?? true,
-          enable_auto_archive: data.enable_auto_archive ?? true,
-          archive_threshold_days: data.archive_threshold_days || 30,
           enable_email_alerts: data.enable_email_alerts ?? true,
           data_retention_days: data.data_retention_days || 365,
           enable_audit_logs: data.enable_audit_logs ?? true,
@@ -52,33 +80,156 @@ function Settings() {
     }
   };
 
-  const fetchWorkers = async () => {
+  const fetchUserProfile = async () => {
     try {
-      const response = await fetch("http://localhost:8000/app/worker/", {
+      const response = await fetch("http://localhost:8000/app/profile/", {
         method: "GET",
         credentials: "include",
       });
       if (response.ok) {
         const data = await response.json();
-        setWorkers(Array.isArray(data) ? data : []);
+        setUserProfile(data);
+        setProfileEdit({
+          full_name: data.full_name || "",
+          contact_number: data.contact_number || "",
+        });
       }
     } catch (err) {
-      console.error("Error fetching workers:", err);
+      console.error("Error fetching user profile:", err);
     }
   };
 
-  const fetchAuditLogs = async () => {
+  const handleProfileChange = (e) => {
+    const { name, value } = e.target;
+    setProfileEdit(prev => ({
+      ...prev,
+      [name]: value
+    }));
+  };
+
+  const handlePasswordChange = (e) => {
+    const { name, value } = e.target;
+    setPasswordChange(prev => ({
+      ...prev,
+      [name]: value
+    }));
+  };
+
+  const handleUpdateProfile = async () => {
+    setSaving(true);
+    setMessage("");
+
     try {
-      const response = await fetch("http://localhost:8000/app/auditlogs/", {
+      const response = await fetch("http://localhost:8000/app/profile/", {
+        method: "PATCH",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Requested-With": "XMLHttpRequest",
+        },
+        body: JSON.stringify(profileEdit),
+      });
+
+      if (response.ok) {
+        setMessage("Profile updated successfully!");
+        fetchUserProfile();
+        setTimeout(() => setMessage(""), 3000);
+      } else {
+        const data = await response.json();
+        setMessage(data.detail || "Error updating profile");
+      }
+    } catch (err) {
+      console.error("Error updating profile:", err);
+      setMessage("Error updating profile");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleChangePassword = async () => {
+    setSaving(true);
+    setMessage("");
+
+    try {
+      if (passwordChange.new_password !== passwordChange.confirm_password) {
+        setMessage("New passwords do not match");
+        setSaving(false);
+        return;
+      }
+
+      const response = await fetch("http://localhost:8000/app/profile/change-password/", {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Requested-With": "XMLHttpRequest",
+        },
+        body: JSON.stringify(passwordChange),
+      });
+
+      if (response.ok) {
+        setMessage("Password changed successfully!");
+        setPasswordChange({
+          current_password: "",
+          new_password: "",
+          confirm_password: "",
+        });
+        setTimeout(() => setMessage(""), 3000);
+      } else {
+        const data = await response.json();
+        setMessage(data.detail || "Error changing password");
+      }
+    } catch (err) {
+      console.error("Error changing password:", err);
+      setMessage("Error changing password");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const fetchArchivedRequests = async () => {
+    try {
+      console.log("[Archived Requests] Fetching archived requests...");
+      const response = await fetch("/app/archived-requests/", {
         method: "GET",
         credentials: "include",
       });
+      
+      console.log("[Archived Requests] Response status:", response.status);
+      
       if (response.ok) {
         const data = await response.json();
-        setAuditLogs(Array.isArray(data) ? data : []);
+        console.log("[Archived Requests] Full response:", data);
+        
+        // Extract archived request products from the response
+        let archivedProducts = [];
+        if (Array.isArray(data)) {
+          console.log(`[Archived Requests] Response is array with ${data.length} items`);
+          data.forEach((item, idx) => {
+            console.log(`[Archived Requests] Item ${idx}:`, item);
+            if (item.products && Array.isArray(item.products)) {
+              console.log(`[Archived Requests] Found ${item.products.length} products for request ${item.request_id}`);
+              // Each product already has request_id, id (RequestProduct ID), and archived_at from serializer
+              archivedProducts = archivedProducts.concat(item.products);
+            }
+          });
+        } else {
+          console.warn("[Archived Requests] Response is not an array:", typeof data);
+        }
+        
+        console.log("[Archived Requests] Final products array count:", archivedProducts.length);
+        if (archivedProducts.length > 0) {
+          console.log("[Archived Requests] Sample product:", archivedProducts[0]);
+        }
+        setArchivedRequests(archivedProducts);
+      } else {
+        const errorText = await response.text();
+        console.error("Failed to fetch archived requests:", response.status, errorText);
+        setArchivedRequests([]);
       }
     } catch (err) {
-      console.error("Error fetching audit logs:", err);
+      console.error("Error fetching archived requests:", err);
+      setArchivedRequests([]);
     }
   };
 
@@ -89,31 +240,6 @@ function Settings() {
       ...prev,
       [name]: newValue,
     }));
-  };
-
-  const handleWorkerToggle = async (workerId, currentStatus) => {
-    try {
-      const response = await fetch(`http://localhost:8000/app/worker/${workerId}/`, {
-        method: "PATCH",
-        credentials: "include",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Requested-With": "XMLHttpRequest",
-        },
-        body: JSON.stringify({ WorkerID: workerId, is_active: !currentStatus }),
-      });
-
-      if (response.ok) {
-        setMessage("Worker status updated successfully!");
-        fetchWorkers();
-        setTimeout(() => setMessage(""), 3000);
-      } else {
-        setMessage("Error updating worker status");
-      }
-    } catch (err) {
-      console.error("Error updating worker:", err);
-      setMessage("Error updating worker status");
-    }
   };
 
   const handleSave = async () => {
@@ -151,43 +277,111 @@ function Settings() {
     setMessage("");
   };
 
-  const menuItems = [
-    {
-      category: "Account Settings",
-      items: [
-        { id: "manage-accounts", label: "Manage Accounts" },
-      ],
-    },
-    {
-      category: "System Behavior",
-      items: [
-        { id: "session-timeout", label: "Session Timeout Duration" },
-        { id: "worker-assignment", label: "Enable/Disable Worker Assignment" },
-      ],
-    },
-    {
-      category: "Session & Archive",
-      items: [
-        { id: "enable-auto-archive", label: "Auto-Archive Configuration" },
-        { id: "set-archive-threshold", label: "Archive Threshold Settings" },
-        { id: "view-archived", label: "View Archived Records" },
-      ],
-    },
-    {
-      category: "Notifications",
-      items: [
-        { id: "email-alerts", label: "Email Alert Settings" },
-      ],
-    },
-    {
-      category: "Data and Privacy",
-      items: [
-        { id: "role-visibility", label: "Role-Based Visibility" },
-        { id: "audit-logs", label: "System Audit Logs" },
-        { id: "data-retention", label: "Data Retention Configuration" },
-      ],
-    },
-  ];
+  const handleRestoreProduct = (productId) => {
+    setRestoreTargetId(productId);
+    setShowRestoreModal(true);
+  };
+
+  const confirmRestore = async () => {
+    const requestProductId = restoreTargetId;
+    setShowRestoreModal(false);
+    setRestoreTargetId(null);
+
+    try {
+      console.log(`[RestoreProduct] Restoring RequestProduct ${requestProductId}...`);
+      console.log(`[RestoreProduct] Sending payload:`, { request_product_id: requestProductId });
+      
+      const response = await fetch("/app/restore-request-product/", {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Requested-With": "XMLHttpRequest",
+        },
+        body: JSON.stringify({ request_product_id: requestProductId }),
+      });
+
+      console.log(`[RestoreProduct] Response status: ${response.status}`);
+      console.log(`[RestoreProduct] Response headers:`, {
+        contentType: response.headers.get('content-type'),
+        contentLength: response.headers.get('content-length'),
+      });
+
+      let data;
+      try {
+        data = await response.json();
+        console.log(`[RestoreProduct] Response data:`, data);
+      } catch (parseErr) {
+        console.error(`[RestoreProduct] Failed to parse JSON response:`, parseErr);
+        const textData = await response.text();
+        console.error(`[RestoreProduct] Raw response:`, textData);
+        setMessage(`Server error: ${response.status} - Invalid response format`);
+        return;
+      }
+
+      if (response.ok) {
+        console.log(`✅ Product ${requestProductId} restored successfully!`);
+        setMessage(data.message || `✅ Product restored successfully!`);
+        
+        // Dispatch event for request list to refresh
+        window.dispatchEvent(new Event('requestsUpdated'));
+        
+        // Refresh archived requests list
+        fetchArchivedRequests();
+        setTimeout(() => setMessage(""), 3000);
+      } else {
+        const errorMsg = data?.error || data?.detail || data?.message || "Error restoring product";
+        console.error(`❌ Restore failed (${response.status}):`, errorMsg);
+        setMessage(`❌ ${errorMsg}`);
+      }
+    } catch (err) {
+      console.error("❌ Network error restoring product:", err);
+      console.error(`   Message: ${err.message}`);
+      setMessage(`❌ Network error: ${err.message}`);
+    }
+  };
+
+  const menuItems = React.useMemo(() => {
+    const items = [
+      {
+        category: "Account Settings",
+        items: [
+          { id: "manage-accounts", label: "Manage Account" },
+        ],
+      },
+      {
+        category: "Archive Management",
+        items: [
+          { id: "archive-requests", label: "Archive Requests" },
+        ],
+      },
+      {
+        category: "Notifications",
+        items: [
+          { id: "email-alerts", label: "Email Alert Settings" },
+        ],
+      },
+      {
+        category: "Data and Privacy",
+        items: [
+          { id: "audit-logs", label: "Activity Logs" },
+          { id: "data-retention", label: "Data Retention Configuration" },
+        ],
+      },
+    ];
+
+    // Only show Task Management for production managers
+    if (userProfile && userProfile.role === "production_manager") {
+      items.push({
+        category: "Task Management",
+        items: [
+          { id: "task-updates", label: "Task Update History" },
+        ],
+      });
+    }
+
+    return items;
+  }, [userProfile]);
 
   const renderDetailView = () => {
     if (loading) {
@@ -195,144 +389,6 @@ function Settings() {
     }
 
     switch (selectedSetting) {
-      case "session-timeout":
-        return (
-          <div className="settings-detail">
-            <h2>Session Timeout Duration</h2>
-            <p className="settings-description">
-              Configure how long a user can remain logged in without activity. When the timeout period is reached, the system automatically logs them out to protect sensitive data and prevent unauthorized access. Set the timeout value in minutes.
-            </p>
-            <div className="settings-form-group">
-              <label className="settings-input-label">Timeout Duration (minutes)</label>
-              <input
-                type="number"
-                name="session_timeout_minutes"
-                min="1"
-                max="1440"
-                value={settings.session_timeout_minutes}
-                onChange={handleInputChange}
-                className="settings-input"
-              />
-            </div>
-            <div className="settings-form-group">
-              <label className="checkbox-label">
-                <input
-                  type="checkbox"
-                  name="enable_session_timeout"
-                  checked={settings.enable_session_timeout}
-                  onChange={handleInputChange}
-                  className="settings-checkbox"
-                />
-                <span>Enable automatic session timeout</span>
-              </label>
-            </div>
-          </div>
-        );
-
-      case "enable-auto-archive":
-        return (
-          <div className="settings-detail">
-            <h2>Auto-Archive Configuration</h2>
-            <p className="settings-description">
-              Automatically archive old records to keep the dashboard clean and focused. Archived records remain accessible but won't appear in active views. This helps maintain system performance and keeps the workspace organized.
-            </p>
-            <div className="settings-form-group">
-              <label className="checkbox-label">
-                <input
-                  type="checkbox"
-                  name="enable_auto_archive"
-                  checked={settings.enable_auto_archive}
-                  onChange={handleInputChange}
-                  className="settings-checkbox"
-                />
-                <span>Enable automatic archiving of old records</span>
-              </label>
-            </div>
-          </div>
-        );
-
-      case "set-archive-threshold":
-        return (
-          <div className="settings-detail">
-            <h2>Archive Threshold Settings</h2>
-            <p className="settings-description">
-              Specify how many days a record must exist before it becomes eligible for automatic archiving. Records older than this threshold will be moved to the archive. This helps manage database size and performance.
-            </p>
-            <div className="settings-form-group">
-              <label className="settings-input-label">Archive Threshold (days)</label>
-              <input
-                type="number"
-                name="archive_threshold_days"
-                min="1"
-                max="3650"
-                value={settings.archive_threshold_days}
-                onChange={handleInputChange}
-                className="settings-input"
-                disabled={!settings.enable_auto_archive}
-              />
-            </div>
-          </div>
-        );
-
-      case "worker-assignment":
-        return (
-          <div className="settings-detail">
-            <h2>Worker Assignment Control</h2>
-            <p className="settings-description">
-              Control which workers are available for task assignment. Disabling a worker prevents new tasks from being assigned to them, but their current tasks continue normally. This is useful during absences or temporary unavailability. Enable workers again when they become available.
-            </p>
-            {message && (
-              <div className={`settings-message ${message.includes("Error") ? "error" : "success"}`}>
-                {message}
-              </div>
-            )}
-            <div className="settings-table-container">
-              <table className="settings-worker-table">
-                <thead>
-                  <tr>
-                    <th>Worker ID</th>
-                    <th>First Name</th>
-                    <th>Last Name</th>
-                    <th>Status</th>
-                    <th>Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {workers.length > 0 ? (
-                    workers.map((worker) => (
-                      <tr key={worker.WorkerID}>
-                        <td>{worker.WorkerID}</td>
-                        <td>{worker.FirstName || "-"}</td>
-                        <td>{worker.LastName || "-"}</td>
-                        <td>
-                          <span className="status-badge" style={{ background: worker.is_active ? "#28a745" : "#999", color: "white" }}>
-                            {worker.is_active ? "Active" : "Inactive"}
-                          </span>
-                        </td>
-                        <td>
-                          <button
-                            className="toggle-btn"
-                            onClick={() => handleWorkerToggle(worker.WorkerID, worker.is_active)}
-                            style={{ background: worker.is_active ? "#28a745" : "#6c757d" }}
-                          >
-                            {worker.is_active ? "On" : "Off"}
-                          </button>
-                        </td>
-                      </tr>
-                    ))
-                  ) : (
-                    <tr>
-                      <td colSpan="5" style={{ textAlign: "center", color: "#999" }}>
-                        No workers found
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        );
-
       case "email-alerts":
         return (
           <div className="settings-detail">
@@ -355,58 +411,216 @@ function Settings() {
           </div>
         );
 
-      case "audit-logs":
+      case "archive-requests":
         return (
           <div className="settings-detail">
-            <h2>System Audit Logs</h2>
+            <h2>Archive Requests</h2>
             <p className="settings-description">
-              View and manage system activity logs showing all changes, actions, and updates performed by users. Audit logs help maintain security, compliance, and provide a complete history of system operations.
+              View and manage all archived requests. Archived requests are completed tasks that have been archived for record-keeping. You can restore or permanently delete archived requests from here.
             </p>
-            <div className="settings-checkbox-group">
-              <label className="checkbox-label">
-                <input
-                  type="checkbox"
-                  name="enable_audit_logs"
-                  checked={settings.enable_audit_logs}
-                  onChange={handleInputChange}
-                  className="settings-checkbox"
-                />
-                <span>Enable system audit logging</span>
-              </label>
-            </div>
+
             <div className="settings-table-container">
               <table className="settings-audit-table">
                 <thead>
                   <tr>
-                    <th>User</th>
-                    <th>Role</th>
-                    <th>Action Type</th>
-                    <th>Date & Time</th>
-                    <th>Target Object</th>
+                    <th>Issuance No.</th>
+                    <th>Product Name</th>
+                    <th>Quantity</th>
+                    <th>Status</th>
+                    <th>Archived Date</th>
+                    <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {auditLogs.length > 0 ? (
-                    auditLogs.slice(0, 10).map((log, idx) => (
-                      <tr key={idx}>
-                        <td>{log.performed_by_username || "-"}</td>
-                        <td>Admin</td>
-                        <td>{log.action_type}</td>
-                        <td>{log.timestamp}</td>
-                        <td>
-                          {log.request ? `Request #${log.request}` : log.request_product ? `Product #${log.request_product}` : "-"}
-                        </td>
-                      </tr>
-                    ))
+                  {archivedRequests.length > 0 ? (
+                    archivedRequests.map((req, idx) => {
+                      const requestId = req.request_id;
+                      const productId = req.id;
+                      return (
+                        <tr key={idx}>
+                          <td>#{requestId}</td>
+                          <td>{req.product_name || "-"}</td>
+                          <td>{req.quantity || "-"}</td>
+                          <td><span style={{ color: "#999" }}>Archived</span></td>
+                          <td>{req.archived_at || "-"}</td>
+                          <td>
+                            <button 
+                              onClick={() => handleRestoreProduct(productId)}
+                              style={{ padding: "5px 10px", fontSize: "12px", color: "#0066cc", background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}
+                              title="Restore this product"
+                            >
+                              Restore
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })
                   ) : (
                     <tr>
-                      <td colSpan="5" style={{ textAlign: "center", color: "#999" }}>
-                        No audit logs found
+                      <td colSpan="6" style={{ textAlign: "center", color: "#999" }}>
+                        No archived requests found
                       </td>
                     </tr>
                   )}
                 </tbody>
               </table>
+            </div>
+          </div>
+        );
+
+      case "audit-logs":
+        return (
+          <div className="settings-detail">
+            <h2>Activity Logs</h2>
+            <p className="settings-description">
+              View activity logs showing all changes, actions, and updates performed by users. Activity logs help maintain security, compliance, and provide a complete history of system operations.
+            </p>
+            <div className="settings-table-container">
+              <ActivityLogsPanel title="Your User Activity Logs" limit={10} />
+            </div>
+          </div>
+        );
+
+      case "task-updates":
+        return (
+          <div className="settings-detail">
+            <h2>Task Update History</h2>
+            <p className="settings-description">
+              View all task-related updates including task creation, modifications, deletions, and worker assignments. This history helps track production progress and changes made by production managers.
+            </p>
+            <div className="settings-table-container">
+              <TaskUpdateLogsPanel title="Task Update History" limit={100} />
+            </div>
+          </div>
+        );
+
+      case "manage-accounts":
+        return (
+          <div className="settings-detail">
+            <h2>Manage Account</h2>
+            <p className="settings-description">
+              Update your personal information and manage your account security.
+            </p>
+
+            {message && (
+              <div className={`alert mb-4 ${message.includes("Error") ? "alert-danger" : "alert-success"}`}>
+                {message}
+              </div>
+            )}
+
+            {/* Profile Information Section */}
+            <div style={{
+              backgroundColor: "#f8f9fa",
+              padding: "20px",
+              borderRadius: "8px",
+              marginBottom: "30px",
+              border: "1px solid #dee2e6"
+            }}>
+              <h3 style={{ marginTop: 0, marginBottom: "20px", color: "#333", fontSize: "18px" }}>Personal Information</h3>
+              
+              <div className="settings-form-group">
+                <label className="settings-input-label">Name</label>
+                <input
+                  type="text"
+                  name="full_name"
+                  value={profileEdit.full_name}
+                  onChange={handleProfileChange}
+                  className="settings-input"
+                  placeholder="Enter your name"
+                />
+              </div>
+
+              <div className="settings-form-group">
+                <label className="settings-input-label">Contact Number</label>
+                <input
+                  type="text"
+                  name="contact_number"
+                  value={profileEdit.contact_number}
+                  onChange={handleProfileChange}
+                  className="settings-input"
+                  placeholder="e.g., +1-555-1234 or 555-1234"
+                />
+              </div>
+
+              <button
+                onClick={handleUpdateProfile}
+                disabled={saving}
+                style={{
+                  backgroundColor: saving ? "#a0b4d1" : "#1D6AB7",
+                  color: "white",
+                  border: "none",
+                  borderRadius: "4px",
+                  padding: "10px 20px",
+                  cursor: saving ? "not-allowed" : "pointer",
+                  fontWeight: "bold",
+                }}
+              >
+                {saving ? "Updating..." : "Update Profile"}
+              </button>
+            </div>
+
+            {/* Change Password Section */}
+            <div style={{
+              backgroundColor: "#f8f9fa",
+              padding: "20px",
+              borderRadius: "8px",
+              border: "1px solid #dee2e6"
+            }}>
+              <h3 style={{ marginTop: 0, marginBottom: "20px", color: "#333", fontSize: "18px" }}>Change Password</h3>
+              <p style={{ color: "#666", fontSize: "14px", marginBottom: "15px" }}>Enter your current password and set a new password</p>
+
+              <div className="settings-form-group">
+                <label className="settings-input-label">Current Password</label>
+                <input
+                  type="password"
+                  name="current_password"
+                  value={passwordChange.current_password}
+                  onChange={handlePasswordChange}
+                  className="settings-input"
+                  placeholder="Enter current password"
+                />
+              </div>
+
+              <div className="settings-form-group">
+                <label className="settings-input-label">New Password</label>
+                <input
+                  type="password"
+                  name="new_password"
+                  value={passwordChange.new_password}
+                  onChange={handlePasswordChange}
+                  className="settings-input"
+                  placeholder="Enter new password (min 6 characters)"
+                />
+              </div>
+
+              <div className="settings-form-group">
+                <label className="settings-input-label">Confirm New Password</label>
+                <input
+                  type="password"
+                  name="confirm_password"
+                  value={passwordChange.confirm_password}
+                  onChange={handlePasswordChange}
+                  className="settings-input"
+                  placeholder="Confirm new password"
+                />
+              </div>
+
+              <button
+                onClick={handleChangePassword}
+                disabled={saving}
+                style={{
+                  backgroundColor: saving ? "#a0b4d1" : "#dc3545",
+                  color: "white",
+                  border: "none",
+                  borderRadius: "4px",
+                  padding: "10px 20px",
+                  cursor: saving ? "not-allowed" : "pointer",
+                  fontWeight: "bold",
+                }}
+              >
+                {saving ? "Changing Password..." : "Change Password"}
+              </button>
+              <small style={{ color: "#666", marginTop: "10px", display: "block" }}>Password must be at least 6 characters and different from your current password. You can change your password once per 24 hours.</small>
             </div>
           </div>
         );
@@ -474,6 +688,61 @@ function Settings() {
           </div>
         </div>
       </div>
+      {/* Restore Confirmation Modal */}
+      {showRestoreModal && (
+        <div
+          onClick={() => setShowRestoreModal(false)}
+          style={{
+            position: "fixed", inset: 0,
+            backgroundColor: "rgba(0,0,0,0.5)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            zIndex: 9999,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              backgroundColor: "#fff",
+              borderRadius: "10px",
+              padding: "32px",
+              maxWidth: "420px",
+              width: "90%",
+              boxShadow: "0 8px 32px rgba(0,0,0,0.18)",
+              borderTop: "4px solid #1D6AB7",
+            }}
+          >
+            <h4 style={{ margin: "0 0 12px", color: "#1D6AB7", fontWeight: 700 }}>
+              Restore Issuance
+            </h4>
+            <p style={{ margin: "0 0 24px", color: "#444", fontSize: "15px" }}>
+              Are you sure you want to restore <strong>Issuance #{restoreTargetId}</strong>?
+              It will be moved back to the active task list.
+            </p>
+            <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end" }}>
+              <button
+                onClick={() => setShowRestoreModal(false)}
+                style={{
+                  padding: "8px 20px", borderRadius: "6px",
+                  border: "1px solid #ccc", background: "#f5f5f5",
+                  cursor: "pointer", fontWeight: 500,
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmRestore}
+                style={{
+                  padding: "8px 20px", borderRadius: "6px",
+                  border: "none", background: "#1D6AB7",
+                  color: "#fff", cursor: "pointer", fontWeight: 600,
+                }}
+              >
+                Yes, Restore
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </SidebarLayout>
   );
 }

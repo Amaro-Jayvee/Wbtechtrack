@@ -252,68 +252,88 @@ body {
 }
 
 .brand-logo {
-  width: clamp(80px, 20vw, 200px);
+  width: clamp(120px, 25vw, 280px);
   height: auto;
-  margin-bottom: clamp(10px, 5vw, 30px);
-  filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.2));
+  margin-bottom: clamp(20px, 8vw, 45px);
+  filter: drop-shadow(0 8px 24px rgba(0, 0, 0, 0.3));
+  transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  transform: translateZ(0);
+}
+
+.brand-logo:hover {
+  transform: scale(1.08);
+  filter: drop-shadow(0 12px 32px rgba(0, 0, 0, 0.35));
 }
 
 .brand-title {
-  font-size: clamp(14px, 4vw, 28px);
-  font-weight: bold;
-  margin-bottom: clamp(8px, 3vw, 15px);
-  letter-spacing: 1px;
+  font-size: clamp(18px, 3.5vw, 28px);
+  font-weight: 800;
+  letter-spacing: 1.5px;
+  margin-bottom: clamp(12px, 4vw, 20px);
+  color: white;
+  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.15);
+  font-family: 'Segoe UI', 'Trebuchet MS', sans-serif;
+  white-space: nowrap;
 }
 
 .brand-tagline {
-  font-size: clamp(10px, 2.5vw, 16px);
-  font-weight: 300;
-  letter-spacing: 0.5px;
-  opacity: 0.9;
-  line-height: 1.4;
+  font-size: clamp(12px, 2.5vw, 16px);
+  font-weight: 400;
+  letter-spacing: 0.8px;
+  opacity: 0.95;
+  line-height: 1.6;
+  color: white;
+  font-family: 'Segoe UI', 'Trebuchet MS', sans-serif;
+  white-space: nowrap;
 }
 
 /* Right Side - Login Form Section */
 .login-right {
   flex: 1;
-  background-color :#ffffff;
+  background-color: #ffffff;
   display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 40px;
+  align-items: flex-start;
+  justify-content: flex-start;
+  padding: 0;
   min-height: auto;
   box-sizing: border-box;
+  width: 100%;
+  overflow-y: auto;
 }
 
-.login-form-container {
+.login-right > form {
   width: 100%;
-  max-width: none;
-  background: white;
-  padding: 35px;
-  border-radius: 8px;
-  flex: 1;
+  max-width: 450px;
   display: flex;
   flex-direction: column;
-  justify-content: center;
+  gap: 20px;
+  align-items: stretch;
+  margin: 0;
+  padding: clamp(40px, 6vw, 80px);
+  padding-top: clamp(40px, 6vw, 80px);
 }
 
 /* Form Styling */
 .form-label {
-  font-weight: 600;
-  color: #333;
-  margin-bottom: 6px;
-  font-size: clamp(12px, 2vw, 14px);
+  font-weight: 700;
+  color: #222;
+  margin-bottom: 8px;
+  font-size: clamp(14px, 2.5vw, 16px);
   display: block;
+  font-family: 'Segoe UI', 'Trebuchet MS', sans-serif;
 }
 
 .form-control {
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  padding: clamp(6px, 2vw, 10px) clamp(8px, 2vw, 12px);
-  font-size: clamp(12px, 2vw, 14px);
+  border: 2px solid #e0e0e0;
+  border-radius: 8px;
+  padding: clamp(14px, 3vw, 18px) clamp(14px, 3vw, 18px);
+  font-size: clamp(14px, 2.5vw, 16px);
   transition: all 0.3s ease;
   width: 100%;
   box-sizing: border-box;
+  font-family: 'Segoe UI', 'Trebuchet MS', sans-serif;
+  height: auto;
+  min-height: 50px;
 }
 
 .form-control:focus {
@@ -326,19 +346,24 @@ body {
 .btn-primary {
   background-color: #3388DD;
   border-color: #3388DD;
-  border-radius: 4px;
-  font-weight: 600;
-  font-size: clamp(12px, 2vw, 14px);
-  padding: clamp(6px, 1.5vw, 10px) clamp(12px, 2vw, 16px);
-  transition: all 0.3s ease;
+  border-radius: 8px;
+  font-weight: 700;
+  font-size: clamp(15px, 2.5vw, 17px);
+  padding: clamp(14px, 3vw, 18px) clamp(24px, 3vw, 32px);
+  transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
   cursor: pointer;
-  min-width: 80px;
+  min-width: 140px;
+  width: 100%;
   white-space: nowrap;
+  font-family: 'Segoe UI', 'Trebuchet MS', sans-serif;
+  box-shadow: 0 4px 12px rgba(51, 136, 221, 0.3);
 }
 
 .btn-primary:hover {
   background-color: #2563eb;
   border-color: #2563eb;
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(51, 136, 221, 0.4);
 }
 
 .btn-outline-primary {
@@ -365,10 +390,12 @@ body {
 .forgot-password {
   text-decoration: none;
   color: #666;
-  font-size: clamp(10px, 1.5vw, 12px);
-  transition: color 0.3s ease;
+  font-size: clamp(12px, 2vw, 14px);
+  transition: all 0.3s ease;
   display: block;
   text-align: center;
+  font-weight: 500;
+  font-family: 'Segoe UI', 'Trebuchet MS', sans-serif;
 }
 
 .forgot-password:hover {
@@ -424,11 +451,21 @@ body {
   }
 
   .login-right {
-    padding: 1.5rem;
+    padding: 0;
   }
 
-  .login-form-container {
-    max-width: none;
+  .login-right > form {
+    max-width: 380px;
+    padding: clamp(30px, 5vw, 50px);
+  }
+
+  .form-control {
+    padding: clamp(11px, 2.5vw, 13px) clamp(12px, 2.5vw, 14px);
+    min-height: 48px;
+  }
+
+  .btn-primary {
+    padding: clamp(11px, 2.5vw, 13px) clamp(14px, 2vw, 16px);
   }
 }
 
@@ -485,30 +522,47 @@ body {
 
   .login-left {
     flex: 0;
-    min-height: 220px;
-    padding: 1.5rem;
+    min-height: 240px;
+    padding: 2rem 1.5rem;
   }
 
   .login-right {
     flex: 0;
-    padding: 1.5rem;
+    padding: 0;
     min-height: auto;
   }
 
-  .login-form-container {
-    max-width: 100%;
+  .login-right > form {
+    max-width: 400px;
+    padding: clamp(30px, 5vw, 60px);
   }
 
   .brand-logo {
-    width: clamp(70px, 15vw, 130px);
+    width: clamp(90px, 18vw, 150px);
   }
 
   .brand-title {
-    font-size: clamp(16px, 5vw, 22px);
+    font-size: clamp(20px, 5.5vw, 28px);
   }
 
   .brand-tagline {
-    font-size: clamp(10px, 3vw, 13px);
+    font-size: clamp(12px, 3.5vw, 16px);
+  }
+
+  .form-label {
+    font-size: clamp(13px, 2.8vw, 15px);
+    margin-bottom: 6px;
+  }
+
+  .form-control {
+    font-size: clamp(13px, 2.8vw, 15px);
+    padding: clamp(11px, 2.5vw, 13px) clamp(12px, 2.5vw, 14px);
+    min-height: 48px;
+  }
+
+  .btn-primary {
+    font-size: clamp(13px, 2.8vw, 15px);
+    padding: clamp(11px, 2.5vw, 13px) clamp(14px, 2vw, 16px);
   }
 }
 
@@ -529,11 +583,12 @@ body {
   }
 
   .login-right {
-    padding: 1rem;
+    padding: 0;
   }
 
-  .login-form-container {
-    max-width: 100%;
+  .login-right > form {
+    max-width: 350px;
+    padding: clamp(20px, 3vw, 40px);
   }
 
   .brand-logo {
@@ -556,15 +611,16 @@ body {
   }
 
   .form-control {
-    padding: clamp(6px, 1.5vw, 8px) clamp(8px, 1.5vw, 10px);
+    padding: clamp(11px, 2.5vw, 13px) clamp(12px, 2.5vw, 14px);
     font-size: clamp(12px, 2.5vw, 13px);
+    min-height: 48px;
   }
 
   .btn-primary,
   .btn-outline-primary {
     min-width: 70px;
     font-size: clamp(11px, 2vw, 12px);
-    padding: clamp(6px, 1vw, 8px) clamp(10px, 1.5vw, 12px);
+    padding: clamp(11px, 2.5vw, 13px) clamp(12px, 2vw, 14px);
   }
 
   .login-container.role-select {
@@ -636,11 +692,11 @@ body {
   }
 
   .login-right {
-    padding: 0.75rem;
+    padding: 0;
   }
 
-  .login-form-container {
-    max-width: 100%;
+  .login-right > form {
+    padding: 0.75rem;
   }
 
   .brand-logo {
@@ -662,9 +718,9 @@ body {
   }
 
   .form-control {
-    padding: clamp(5px, 1vw, 6px) clamp(6px, 1.5vw, 8px);
+    padding: clamp(10px, 2vw, 12px) clamp(10px, 2vw, 12px);
     font-size: clamp(11px, 2vw, 12px);
-    margin-bottom: clamp(8px, 2vw, 10px);
+    min-height: 45px;
   }
 
   .btn-primary,
@@ -823,4 +879,98 @@ body {
   font-weight: 500;
 }
 
+/* ===== LOADING SCREEN ===== */
+.loading-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  animation: fadeIn 0.3s ease-in-out forwards;
+}
 
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.loading-content {
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 30px;
+}
+
+.loading-logo {
+  width: 120px;
+  height: auto;
+  filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.2));
+  animation: slideDown 0.5s ease-out forwards;
+}
+
+@keyframes slideDown {
+  from {
+    transform: translateY(-30px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.loading-spinner {
+  width: 60px !important;
+  height: 60px !important;
+  border-width: 5px !important;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.loading-text {
+  font-size: 28px;
+  font-weight: 700;
+  color: white;
+  margin: 0;
+  animation: fadeInUp 0.6s ease-out forwards;
+  opacity: 0;
+  animation-delay: 0.2s;
+}
+
+.loading-subtext {
+  font-size: 16px;
+  color: rgba(255, 255, 255, 0.9);
+  margin: 0;
+  animation: fadeInUp 0.6s ease-out forwards;
+  opacity: 0;
+  animation-delay: 0.3s;
+}
+
+@keyframes fadeInUp {
+  from {
+    transform: translateY(20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}

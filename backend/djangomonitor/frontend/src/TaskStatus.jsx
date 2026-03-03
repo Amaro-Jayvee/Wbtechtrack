@@ -1,46 +1,188 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import SidebarLayout from "./SidebarLayout";
 import TaskDetailModal from "./TaskDetailModal";
+import AdminRequestApproval from "./AdminRequestApproval";
 import "./Dashboard.css";
+import { useUser } from "./UserContext.jsx";
 
 function TaskStatus() {
+  const { userData } = useUser();
   const [requestProducts, setRequestProducts] = useState([]);
+  const [searchTerm, setSearchTerm] = useState("");
   const [loading, setLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState("in-progress");
-  const [showDateRangePicker, setShowDateRangePicker] = useState(false);
-  const [dateFilter, setDateFilter] = useState({
-    updated_from: "",
-    updated_to: "",
-  });
   const [showTaskDetailModal, setShowTaskDetailModal] = useState(false);
   const [selectedTaskId, setSelectedTaskId] = useState(null);
+  const [showAddProductModal, setShowAddProductModal] = useState(false);
+  const [sortBy, setSortBy] = useState("date"); // "date", "number", "name"
+  const [sortOrder, setSortOrder] = useState("desc"); // "asc", "desc"
+  const [partForm, setPartForm] = useState({
+    part_name: "",
+    processes: [{ process_number: "", process_name: "" }]
+  });
+  const [addProductLoading, setAddProductLoading] = useState(false);
+  const [addProductMessage, setAddProductMessage] = useState("");
+  const [toastType, setToastType] = useState("info"); // 'success' or 'error'
 
   useEffect(() => {
-    fetchTaskStatus(filterStatus, dateFilter);
+    fetchTaskStatus(filterStatus);
   }, []);
 
-  const fetchTaskStatus = async (status = "all", dateFilters = {}) => {
+  // Auto-dismiss toast after 3 seconds
+  useEffect(() => {
+    if (addProductMessage) {
+      const timer = setTimeout(() => {
+        setAddProductMessage("");
+      }, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [addProductMessage]);
+
+  const handleAddProductClick = () => {
+    setShowAddProductModal(true);
+    setPartForm({ part_name: "", processes: [{ process_number: "", process_names: [""] }] });
+    setAddProductMessage("");
+  };
+
+  const handleAddProductFormChange = (e) => {
+    const { name, value } = e.target;
+    if (name === "part_name") {
+      setPartForm(prev => ({ ...prev, part_name: value }));
+    }
+  };
+
+  const handleProcessNumberChange = (index, value) => {
+    setPartForm(prev => {
+      const newProcesses = [...prev.processes];
+      newProcesses[index] = { ...newProcesses[index], process_number: value };
+      return { ...prev, processes: newProcesses };
+    });
+  };
+
+  const handleProcessNameChange = (processIndex, nameIndex, value) => {
+    setPartForm(prev => {
+      const newProcesses = [...prev.processes];
+      const newProcessNames = [...newProcesses[processIndex].process_names];
+      newProcessNames[nameIndex] = value;
+      newProcesses[processIndex] = { ...newProcesses[processIndex], process_names: newProcessNames };
+      return { ...prev, processes: newProcesses };
+    });
+  };
+
+  const handleAddProcessName = (processIndex) => {
+    setPartForm(prev => {
+      const newProcesses = [...prev.processes];
+      newProcesses[processIndex] = {
+        ...newProcesses[processIndex],
+        process_names: [...newProcesses[processIndex].process_names, ""]
+      };
+      return { ...prev, processes: newProcesses };
+    });
+  };
+
+  const handleRemoveProcessName = (processIndex, nameIndex) => {
+    setPartForm(prev => {
+      const newProcesses = [...prev.processes];
+      newProcesses[processIndex] = {
+        ...newProcesses[processIndex],
+        process_names: newProcesses[processIndex].process_names.filter((_, i) => i !== nameIndex)
+      };
+      return { ...prev, processes: newProcesses };
+    });
+  };
+
+  const handleAddProcess = () => {
+    setPartForm(prev => ({
+      ...prev,
+      processes: [...prev.processes, { process_number: "", process_names: [""] }]
+    }));
+  };
+
+  const handleRemoveProcess = (index) => {
+    setPartForm(prev => ({
+      ...prev,
+      processes: prev.processes.filter((_, i) => i !== index)
+    }));
+  };
+
+  const handleAddProductSubmit = async (e) => {
+    e.preventDefault();
+    setAddProductLoading(true);
+    setAddProductMessage("");
+
+    try {
+      // Create the product with all its processes in one call
+      // For each process number, we can have multiple process names
+      const payload = {
+        product_name: partForm.part_name,
+        processes: partForm.processes.flatMap((proc) =>
+          proc.process_names
+            .filter(name => name.trim() !== "") // Filter out empty names
+            .map(process_name => ({
+              process_number: proc.process_number,
+              process_name: process_name
+            }))
+        )
+      };
+
+      // Validate that we have at least one process
+      if (payload.processes.length === 0) {
+        setAddProductMessage("Please add at least one process number and process name");
+        setAddProductLoading(false);
+        return;
+      }
+
+      const response = await fetch("http://localhost:8000/app/create-product-with-processes/", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.error || "Failed to create product with processes");
+      }
+
+      const data = await response.json();
+      setToastType("success");
+      setAddProductMessage(`Product/Part "${partForm.part_name}" created successfully!`);
+      setPartForm({ part_name: "", processes: [{ process_number: "", process_names: [""] }] });
+      
+      setTimeout(() => {
+        setShowAddProductModal(false);
+        setAddProductMessage("");
+      }, 2000);
+    } catch (err) {
+      console.error("Error adding product:", err);
+      setToastType("error");
+      setAddProductMessage(`Failed to create product: ${err.message}`);
+    } finally {
+      setAddProductLoading(false);
+    }
+  }
+
+  const fetchTaskStatus = async (status = "all") => {
     setLoading(true);
     try {
       const params = new URLSearchParams();
       
-      // For "Done" filter, show archived items; otherwise show non-archived
+      // For "done" filter, show completed items; for "in-progress" show non-completed
       if (status === "done") {
-        params.append("include_archived", "true");
+        params.append("include_completed", "true");
       } else {
-        params.append("include_archived", "false");
+        params.append("include_completed", "false");
       }
       
-      if (dateFilters.updated_from) {
-        params.append("updated_from", dateFilters.updated_from);
-      }
-      if (dateFilters.updated_to) {
-        params.append("updated_to", dateFilters.updated_to);
-      }
+      // Exclude archived products (those with archived_at set on RequestProduct)
+      params.append("include_archived", "false");
+      
+      // Add cache-busting parameter to force fresh data
+      params.append("t", Date.now());
 
       // Fetch ProductProcess (steps) data
       const response = await fetch(
-        `http://localhost:8000/app/product/?${params.toString()}`,
+        `/app/product/?${params.toString()}`,
         {
           method: "GET",
           credentials: "include",
@@ -58,6 +200,7 @@ function TaskStatus() {
           productMap[key] = {
             id: key,
             request_id: step.request_id,
+            requester_name: step.requester_name,
             product_name: step.product_name,
             request_product_id: key,
             total_quota: step.total_quota,
@@ -79,27 +222,102 @@ function TaskStatus() {
         // Get first step ID (for opening modal)
         product.firstStepId = product.steps[0]?.id;
         
-        // Calculate aggregated progress
+        // Calculate step counts
         const totalSteps = product.steps.length;
         const completedSteps = product.steps.filter(s => s.is_completed).length;
-        const progressPercent = totalSteps > 0 ? Math.round((completedSteps / totalSteps) * 100) : 0;
         
         // Find first incomplete step (current step being worked on)
         const currentStep = product.steps.find(s => !s.is_completed) || product.steps[totalSteps - 1];
         
-        // Show current step's completed quota progress (not summed across steps)
-        const currentStepCompletedQuota = currentStep?.completed_quota || 0;
+        console.log(`📋 Product: ${product.product_name}`);
+        console.log(`   Total steps: ${totalSteps}, Completed: ${completedSteps}`);
+        console.log(`   Steps:`, product.steps.map(s => `[${s.process_name}:${s.is_completed ? '✓' : '✗'}]`));
+        console.log(`   Current step: ${currentStep?.process_name} (is_completed: ${currentStep?.is_completed})`);
+        
+        // Use overall_progress from backend if available, otherwise calculate
+        let progressPercent = 0;
+        
+        if (product.steps.length > 0 && product.steps[0].overall_progress !== undefined) {
+          // Use backend's calculated overall_progress
+          progressPercent = product.steps[0].overall_progress;
+          console.log(`📊 Using backend overall_progress for ${product.product_name}:`);
+          console.log(`   overall_progress: ${progressPercent}%`);
+          console.log(`   Steps completed: ${completedSteps}/${totalSteps}`);
+          console.log(`   PST-01 completed: ${product.steps[0]?.is_pst_01 && product.steps[0]?.is_completed}`);
+        } else {
+          // Fallback to old calculation method
+          console.log(`⚠️ No overall_progress from backend for ${product.product_name}, calculating fallback`);
+          // Calculate progress of current step (how much of the quota is done)
+          const currentStepProgress = currentStep 
+            ? (currentStep.completed_quota || 0) / (currentStep.total_quota || 1)
+            : 0;
+          
+          // Progress = (fully completed steps + progress in current step) / total steps
+          progressPercent = Math.round(((completedSteps + currentStepProgress) / totalSteps) * 100);
+        }
+        
+        // Check if task is completed
+        const isCompleted = product.steps[0]?.request_product_completed_at !== null && product.steps[0]?.request_product_completed_at !== undefined;
+        
+        // For completed tasks, aggregate ALL steps data; for in-progress, show current step only
+        let displayData = {};
+        if (isCompleted) {
+          // Sum defects from all steps
+          const totalDefects = product.steps.reduce((sum, step) => sum + (step.defect_count || 0), 0);
+          
+          // Collect all unique workers from all steps
+          const allWorkers = new Set();
+          product.steps.forEach(step => {
+            if (step.worker_names && Array.isArray(step.worker_names)) {
+              step.worker_names.forEach(name => allWorkers.add(name));
+            }
+          });
+          
+          // Create steps breakdown for modal display
+          const stepsBreakdown = product.steps.map(step => ({
+            step_order: step.step_order,
+            process_name: step.process_name,
+            total_quota: step.total_quota,
+            completed_quota: step.completed_quota,
+            defect_count: step.defect_count,
+            workers: step.worker_names || [],
+            is_pst_01: step.is_pst_01
+          }));
+          
+          displayData = {
+            completed_summary: `${product.total_quota}/${product.total_quota}`,
+            defect_count: totalDefects,
+            worker_names: Array.from(allWorkers),
+            process_name: `All Steps (${totalSteps})`,
+            updated_at: product.steps[totalSteps - 1]?.updated_at || "—",
+            completed_at: product.steps[0]?.request_product_completed_at,
+            steps: stepsBreakdown
+          };
+        } else {
+          // Show current step's information
+          const isPST01 = currentStep?.is_pst_01;
+          
+          displayData = {
+            completed_summary: isPST01 
+              ? `✓ Withdrawal` 
+              : `${currentStep?.completed_quota || 0}/${product.total_quota}`,
+            defect_count: currentStep?.defect_count || 0,
+            worker_names: currentStep?.worker_names || [],
+            process_name: currentStep?.process_name || "—",
+            updated_at: currentStep?.updated_at || "—",
+            is_pst_01: isPST01
+          };
+        }
         
         return {
           ...product,
+          ...displayData,
           total_steps: totalSteps,
           completed_steps: completedSteps,
           progress: `${progressPercent}%`,
-          completed_summary: `${currentStepCompletedQuota}/${product.total_quota}`,
           step_order: currentStep?.step_order || totalSteps,
-          defect_count: currentStep?.defect_count || 0,
-          process_name: currentStep?.process_name || "—",
-          task_status: completedSteps === totalSteps ? "done" : "in-progress"
+          task_status: completedSteps === totalSteps ? "done" : "in-progress",
+          is_completed: isCompleted
         };
       });
       
@@ -109,12 +327,12 @@ function TaskStatus() {
           item.task_status === "in-progress"
         );
       } else if (status === "done") {
-        // When showing "Done", only show archived items
+        // When showing "Done", only show completed items
         aggregatedData = aggregatedData.filter(item => 
-          item.archived_at !== null
+          item.is_completed === true
         );
       }
-      // For "all", show everything that came from the API (respecting include_archived param)
+      // For "all", show everything that came from the API (respecting include_completed param)
       
       console.log("📊 Loaded aggregated product data:", aggregatedData);
       setRequestProducts(aggregatedData);
@@ -127,24 +345,50 @@ function TaskStatus() {
 
   const handleFilterChange = (e) => {
     setFilterStatus(e.target.value);
-    fetchTaskStatus(e.target.value, dateFilter);
+    fetchTaskStatus(e.target.value);
   };
 
-  const handleDateRangeApply = () => {
-    fetchTaskStatus(filterStatus, dateFilter);
-    setShowDateRangePicker(false);
-  };
+  const sortedRequestProducts = useMemo(() => {
+    const filtered = requestProducts.filter((product) =>
+      searchTerm === "" ||
+      product.request_id.toString().includes(searchTerm) ||
+      (product.product_name && product.product_name.toLowerCase().includes(searchTerm.toLowerCase()))
+    );
 
-  const handleDateInputChange = (e) => {
-    const { name, value } = e.target;
-    setDateFilter({ ...dateFilter, [name]: value });
-  };
+    const sorted = [...filtered];
+    sorted.sort((a, b) => {
+      let comparison = 0;
+
+      if (sortBy === "date") {
+        const dateA = new Date(a.due_date || a.updated_at || 0);
+        const dateB = new Date(b.due_date || b.updated_at || 0);
+        comparison = dateB - dateA;
+      } else if (sortBy === "number") {
+        comparison = (b.request_id || 0) - (a.request_id || 0);
+      } else if (sortBy === "name") {
+        const nameA = (a.product_name || "").toLowerCase();
+        const nameB = (b.product_name || "").toLowerCase();
+        comparison = nameA.localeCompare(nameB);
+      }
+
+      return sortOrder === "asc" ? comparison : -comparison;
+    });
+
+    return sorted;
+  }, [requestProducts, searchTerm, sortBy, sortOrder]);
 
   const handleOpenTaskDetail = (product) => {
-    // Find the first incomplete step, or last step if all complete
-    const stepToOpen = product.steps.find(s => !s.is_completed) || product.steps[product.steps.length - 1];
-    console.log(`📂 Opening task detail for product: ${product.product_name}, step: ${stepToOpen?.step_order}`);
-    setSelectedTaskId(stepToOpen?.id);
+    console.log(`📂 Opening task detail for product: ${product.product_name}, is_completed: ${product.is_completed}`);
+    
+    if (product.is_completed) {
+      // For completed tasks, pass the product data directly (aggregated view)
+      setSelectedTaskId(product);
+    } else {
+      // For in-progress tasks, find the first incomplete step
+      const stepToOpen = product.steps.find(s => !s.is_completed) || product.steps[product.steps.length - 1];
+      console.log(`   Current step: ${stepToOpen?.step_order}`);
+      setSelectedTaskId(stepToOpen?.id);
+    }
     setShowTaskDetailModal(true);
   };
 
@@ -158,7 +402,9 @@ function TaskStatus() {
     console.log(`💾 Task saved. Next step ID: ${nextStepId}`);
     
     // Refresh the task list
-    await fetchTaskStatus(filterStatus, dateFilter);
+    console.log(`🔄 Calling fetchTaskStatus to refresh...`);
+    await fetchTaskStatus(filterStatus);
+    console.log(`✅ fetchTaskStatus completed`);
     
     // If there's a next step, auto-open it
     if (nextStepId) {
@@ -176,78 +422,105 @@ function TaskStatus() {
   return (
     <SidebarLayout>
       <div className="content">
-        {/* Filter and Controls Bar */}
-        <div className="mb-4 d-flex align-items-center gap-3">
-          <div style={{ minWidth: "280px" }}>
+        {/* Admin Request Approval View */}
+        {userData.role === "admin" && (
+          <AdminRequestApproval />
+        )}
+
+        {/* Production Manager Task Status View */}
+        {userData.role !== "admin" && (
+          <>
+            {/* Filter and Controls Bar */}
+            <div className="mb-4 d-flex align-items-end gap-3">
+          <div style={{ minWidth: "280px", display: "flex", flexDirection: "column" }}>
             <label className="fw-600 text-muted small mb-2 d-block">
               <i className="bi bi-funnel me-2"></i>Task Status Filter
+              {loading && (
+                <span className="ms-2" style={{ fontSize: "12px", fontWeight: "400", color: "#6c757d" }}>Loading...</span>
+              )}
             </label>
             <select
               value={filterStatus}
               onChange={handleFilterChange}
               className="form-select border-2 fw-500"
+              disabled={loading}
+              style={{ opacity: loading ? 0.6 : 1, cursor: loading ? "not-allowed" : "pointer" }}
             >
               <option value="in-progress">In Progress</option>
               <option value="done">Completed</option>
-              <option value="all">All Tasks</option>
+            </select>
+          </div>
+          
+          <div style={{ minWidth: "200px", display: "flex", flexDirection: "column" }}>
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value)}
+              className="form-select border-2 fw-500"
+              disabled={loading}
+              style={{ opacity: loading ? 0.6 : 1, cursor: loading ? "not-allowed" : "pointer" }}
+            >
+              <option value="date">Sort By: Date</option>
+              <option value="number">Sort By: Number</option>
+              <option value="name">Sort By: Name</option>
             </select>
           </div>
 
-          <button
-            className="btn btn-outline-secondary btn-sm mt-4"
-            onClick={() => setShowDateRangePicker(!showDateRangePicker)}
-            title="Filter by date range"
-          >
-            <i className="bi bi-calendar3 me-2"></i>Date Range
-          </button>
+          <div style={{ minWidth: "180px", display: "flex", flexDirection: "column" }}>
+            <select
+              value={sortOrder}
+              onChange={(e) => setSortOrder(e.target.value)}
+              className="form-select border-2 fw-500"
+              disabled={loading}
+              style={{ opacity: loading ? 0.6 : 1, cursor: loading ? "not-allowed" : "pointer" }}
+            >
+              <option value="desc">Order: Descending</option>
+              <option value="asc">Order: Ascending</option>
+            </select>
+          </div>
 
-          {showDateRangePicker && (
-            <div className="p-3 bg-light rounded border" style={{ minWidth: "300px" }}>
-              <div className="d-flex gap-2 align-items-end">
-                <div style={{ flex: 1 }}>
-                  <label className="small fw-600 mb-1 d-block">From</label>
-                  <input
-                    type="date"
-                    name="updated_from"
-                    value={dateFilter.updated_from}
-                    onChange={handleDateInputChange}
-                    className="form-control"
-                  />
-                </div>
-                <div style={{ flex: 1 }}>
-                  <label className="small fw-600 mb-1 d-block">To</label>
-                  <input
-                    type="date"
-                    name="updated_to"
-                    value={dateFilter.updated_to}
-                    onChange={handleDateInputChange}
-                    className="form-control"
-                  />
-                </div>
-                <button
-                  className="btn btn-primary btn-sm"
-                  onClick={handleDateRangeApply}
-                >
-                  Apply
-                </button>
-              </div>
-            </div>
-          )}
+          <div style={{ marginLeft: "auto", display: "flex", gap: "10px", alignItems: "flex-end" }}>
+            {/* Search Input */}
+            <input
+              type="text"
+              placeholder="Search"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="form-control border-2"
+              style={{
+                fontSize: "14px",
+                minWidth: "280px",
+                outline: "none"
+              }}
+            />
+            
+            {userData.role === "admin" && (
+              <button
+                onClick={handleAddProductClick}
+                className="btn fw-600"
+                style={{ minWidth: "200px", padding: "0.5rem 1.5rem", backgroundColor: "#9BC284", color: "white", border: "none" }}
+              >
+                <i className="bi bi-plus-circle me-2"></i>Add Product/Part
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Table */}
         {loading ? (
           <div className="loading">Loading task status...</div>
-        ) : requestProducts.length > 0 ? (
+        ) : sortedRequestProducts.length > 0 ? (
           <table className="data-table">
             <thead>
               <tr>
-                <th>Request ID</th>
+                <th>Issuance No.</th>
+                <th>Requester</th>
                 <th>Product Name</th>
                 {filterStatus === "done" ? (
                   <>
                     <th>Total Completed Quota</th>
                     <th>Total Defects</th>
+                    <th>Workers Assigned</th>
+                    <th>Completed Date</th>
                   </>
                 ) : (
                   <>
@@ -262,14 +535,39 @@ function TaskStatus() {
               </tr>
             </thead>
             <tbody>
-              {requestProducts.map((item) => (
+              {sortedRequestProducts.map((item) => (
                 <tr key={item.id}>
-                  <td>{item.request_id}</td>
+                  <td>
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                      {item.request_id}
+                      {item.restored_at && (
+                        <span style={{
+                          backgroundColor: "#28a745",
+                          color: "white",
+                          fontSize: "11px",
+                          padding: "2px 6px",
+                          borderRadius: "3px",
+                          fontWeight: "600",
+                          whiteSpace: "nowrap"
+                        }}>
+                          🔄 RESTORED
+                        </span>
+                      )}
+                    </div>
+                  </td>
+                  <td>{item.requester_name || "—"}</td>
                   <td>{item.product_name || "N/A"}</td>
                   {filterStatus === "done" ? (
                     <>
-                      <td>{item.completed_steps > 0 ? Math.round((item.completed_steps / item.total_steps) * item.total_quota) : 0}/{item.total_quota}</td>
-                      <td>{item.steps.reduce((sum, s) => sum + (s.defect_count || 0), 0)}</td>
+                      <td>{item.completed_summary || `0/${item.total_quota}`}</td>
+                      <td>{item.defect_count || 0}</td>
+                      <td>
+                        {item.worker_names && item.worker_names.length > 0 
+                          ? item.worker_names.join(", ") 
+                          : "No workers assigned"
+                        }
+                      </td>
+                      <td>{item.completed_at || "N/A"}</td>
                     </>
                   ) : (
                     <>
@@ -285,22 +583,28 @@ function TaskStatus() {
                             <div style={{ 
                               backgroundColor: "#1D6AB7", 
                               height: "100%", 
-                              width: item.progress ? item.progress.replace("%", "") + "%" : "0%" 
+                              width: `${Math.min(parseFloat(item.progress) || 0, 100)}%`
                             }}></div>
                           </div>
                           {item.progress || "0%"}
                         </div>
                       </td>
                       <td>
-                        <div style={{ textAlign: "center" }}>
-                          {item.completed_summary ? item.completed_summary.split("/")[0] : "0"}/{item.total_quota}
-                        </div>
+                        {item.is_pst_01 ? (
+                          <div style={{ textAlign: "center", color: "#1D6AB7", fontWeight: "600" }}>
+                            ✓ Withdrawal
+                          </div>
+                        ) : (
+                          <div style={{ textAlign: "center" }}>
+                            {item.completed_summary ? item.completed_summary.split("/")[0] : "0"}/{item.total_quota}
+                          </div>
+                        )}
                       </td>
                       <td>{item.defect_count || 0}</td>
                     </>
                   )}
-                  <td>{item.due_date || "N/A"}</td>
-                  <td>{item.deadline_extension || "N/A"}</td>
+                  <td style={{ whiteSpace: "nowrap" }}>{item.due_date || "N/A"}</td>
+                  <td style={{ whiteSpace: "nowrap" }}>{item.deadline_extension || "N/A"}</td>
                   <td style={{ textAlign: "center" }}>
                     <button 
                       className="actions-menu-btn" 
@@ -315,17 +619,247 @@ function TaskStatus() {
             </tbody>
           </table>
         ) : (
-          <div className="no-data">No {filterStatus === "done" ? "completed" : "in-progress"} tasks found. {filterStatus !== "done" && "Create a request to start tracking production."}</div>
+          <div className="no-data">
+            {searchTerm ? (
+              <span>No {filterStatus === "done" ? "completed" : "in-progress"} tasks match your search.</span>
+            ) : (
+              <>No {filterStatus === "done" ? "completed" : "in-progress"} tasks found. {filterStatus !== "done" && "Create a request to start tracking production."}</>
+            )}
+          </div>
+        )}
+            </>
         )}
       </div>
-
-      {/* Task Detail Modal */}
       {showTaskDetailModal && selectedTaskId && (
         <TaskDetailModal 
           productProcessId={selectedTaskId}
           onClose={handleCloseTaskDetail}
           onSave={handleTaskSave}
         />
+      )}
+
+      {/* Toast Notification */}
+      {addProductMessage && (
+        <div style={{
+          position: "fixed",
+          top: "20px",
+          right: "20px",
+          backgroundColor: toastType === "success" ? "#d4edda" : "#f8d7da",
+          color: toastType === "success" ? "#155724" : "#721c24",
+          padding: "16px 24px",
+          borderRadius: "6px",
+          border: `1px solid ${toastType === "success" ? "#c3e6cb" : "#f5c6cb"}`,
+          boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
+          zIndex: 10000,
+          maxWidth: "400px",
+          animation: "slideIn 0.3s ease-out",
+          display: "flex",
+          alignItems: "center",
+          gap: "12px",
+          fontSize: "14px",
+          fontWeight: "500"
+        }}>
+          <span style={{ fontSize: "18px" }}>
+            {toastType === "success" ? "✓" : "✕"}
+          </span>
+          <span>{addProductMessage}</span>
+        </div>
+      )}
+
+      {/* Add CSS for toast animation */}
+      <style>{`
+        @keyframes slideIn {
+          from {
+            transform: translateX(400px);
+            opacity: 0;
+          }
+          to {
+            transform: translateX(0);
+            opacity: 1;
+          }
+        }
+      `}</style>
+
+      {/* Add Product/Part Modal */}
+      {showAddProductModal && (
+        <div className="modal-overlay" style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0, 0, 0, 0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999 }}>
+          <div className="modal-dialog" style={{ backgroundColor: "white", borderRadius: "8px", maxWidth: "600px", width: "90%", maxHeight: "90vh", display: "flex", flexDirection: "column", overflow: "hidden" }} onClick={e => e.stopPropagation()}>
+            <div className="modal-header" style={{ backgroundColor: "#9BC284", padding: "1.5rem", borderBottom: "2px solid #fff", color: "white", display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0, gap: "1rem" }}>
+              <h5 className="modal-title" style={{ color: "white", marginBottom: 0, flex: 1 }}>Add Product/Part</h5>
+              <button 
+                type="button" 
+                onClick={() => setShowAddProductModal(false)}
+                style={{ 
+                  background: "transparent", 
+                  border: "none", 
+                  color: "white", 
+                  fontSize: "2rem", 
+                  cursor: "pointer", 
+                  padding: "0", 
+                  width: "2rem", 
+                  height: "2rem", 
+                  display: "flex", 
+                  alignItems: "center", 
+                  justifyContent: "center",
+                  flexShrink: 0
+                }}
+                aria-label="Close modal"
+              >
+                ×
+              </button>
+            </div>
+            <form onSubmit={handleAddProductSubmit} style={{ display: "flex", flexDirection: "column", flex: 1 }}>
+              <div className="modal-body" style={{ padding: "1.5rem", overflowY: "auto", flex: 1, minHeight: "0", maxHeight: "calc(90vh - 200px)" }}>
+                <div className="mb-3">
+                  <label className="form-label fw-600">Part/Description Name</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    name="part_name"
+                    placeholder="e.g., Bracket-Stand"
+                    value={partForm.part_name}
+                    onChange={handleAddProductFormChange}
+                    required
+                  />
+                  <small className="text-muted">The part name customers will choose from in requests</small>
+                </div>
+
+                <div style={{ borderTop: "2px solid #e9ecef", paddingTop: "1rem", marginTop: "1.5rem" }}>
+                  <label className="form-label fw-600">Part/Process Numbers & Operations</label>
+                  
+                  {/* Two Column Layout */}
+                  <div style={{ display: "flex", gap: "1rem", marginTop: "1rem", height: "400px", border: "1px solid #e9ecef", borderRadius: "4px", overflow: "hidden" }}>
+                    
+                    {/* Left Column - Part/Process Numbers List */}
+                    <div style={{ flex: "0 0 180px", backgroundColor: "#f8f9fa", borderRight: "2px solid #9BC284", overflowY: "auto", padding: "0.5rem" }}>
+                      <div style={{ fontSize: "0.85rem", fontWeight: "600", color: "#666", marginBottom: "0.5rem", paddingLeft: "0.5rem" }}>Part/Process</div>
+                      {partForm.processes.map((process, processIndex) => (
+                        <div key={processIndex} style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem" }}>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedProcessIndex(processIndex)}
+                            style={{
+                              flex: 1,
+                              padding: "0.5rem",
+                              backgroundColor: selectedProcessIndex === processIndex ? "#9BC284" : "white",
+                              color: selectedProcessIndex === processIndex ? "white" : "#333",
+                              border: `2px solid #9BC284`,
+                              borderRadius: "4px",
+                              cursor: "pointer",
+                              fontWeight: selectedProcessIndex === processIndex ? "600" : "400",
+                              fontSize: "0.875rem",
+                              transition: "all 0.2s"
+                            }}
+                          >
+                            {process.process_number || "New"}
+                          </button>
+                          {partForm.processes.length > 1 && (
+                            <button
+                              type="button"
+                              className="btn btn-sm btn-danger"
+                              onClick={() => {
+                                handleRemoveProcess(processIndex);
+                                setSelectedProcessIndex(Math.max(0, selectedProcessIndex - 1));
+                              }}
+                              style={{ padding: "0.375rem 0.5rem", fontSize: "0.75rem" }}
+                            >
+                              <i className="bi bi-trash"></i>
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-outline-primary"
+                        onClick={handleAddProcess}
+                        style={{ width: "calc(100% - 1rem)", marginTop: "0.5rem", marginLeft: "0.5rem" }}
+                      >
+                        <i className="bi bi-plus me-1"></i>Add
+                      </button>
+                    </div>
+
+                    {/* Right Column - Process Details for Selected Process */}
+                    <div style={{ flex: 1, padding: "1rem", overflowY: "auto" }}>
+                      {partForm.processes[selectedProcessIndex] && (
+                        <div>
+                          {/* Part/Process Number Input */}
+                          <div className="mb-3">
+                            <label className="form-label fw-600" style={{ fontSize: "0.9rem" }}>Part/Process Number</label>
+                            <input
+                              type="text"
+                              className="form-control"
+                              placeholder="e.g., PST-01"
+                              value={partForm.processes[selectedProcessIndex].process_number}
+                              onChange={(e) => handleProcessNumberChange(selectedProcessIndex, e.target.value)}
+                              required
+                            />
+                            <small className="text-muted">e.g., PST-01, PST-02</small>
+                          </div>
+
+                          {/* Process Names/Operations */}
+                          <div style={{ borderTop: "2px solid #e9ecef", paddingTop: "1rem" }}>
+                            <label className="form-label fw-600" style={{ fontSize: "0.9rem" }}>
+                              <i className="bi bi-arrow-return-right me-1"></i>Operation Descriptions
+                            </label>
+                            {partForm.processes[selectedProcessIndex].process_names.map((processName, nameIndex) => (
+                              <div key={nameIndex} style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem" }}>
+                                <input
+                                  type="text"
+                                  className="form-control"
+                                  placeholder="e.g., Withdrawal of rama for bracket"
+                                  value={processName}
+                                  onChange={(e) => handleProcessNameChange(selectedProcessIndex, nameIndex, e.target.value)}
+                                  required
+                                  style={{ fontSize: "0.875rem" }}
+                                />
+                                {partForm.processes[selectedProcessIndex].process_names.length > 1 && (
+                                  <button
+                                    type="button"
+                                    className="btn btn-sm btn-outline-danger"
+                                    onClick={() => handleRemoveProcessName(selectedProcessIndex, nameIndex)}
+                                    style={{ padding: "0.375rem 0.75rem", fontSize: "0.75rem", whiteSpace: "nowrap" }}
+                                  >
+                                    <i className="bi bi-trash"></i>
+                                  </button>
+                                )}
+                              </div>
+                            ))}
+                            <button
+                              type="button"
+                              className="btn btn-sm btn-outline-secondary"
+                              onClick={() => handleAddProcessName(selectedProcessIndex)}
+                              style={{ width: "100%", marginTop: "0.5rem" }}
+                            >
+                              <i className="bi bi-plus me-1"></i>Add Operation
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div className="modal-footer" style={{ backgroundColor: "#f8f9fa", padding: "1rem", borderTop: "2px solid #dee2e6", display: "flex", gap: "10px", justifyContent: "flex-end", position: "sticky", bottom: 0, zIndex: 999, flexShrink: 0 }}>
+                <button 
+                  type="button" 
+                  className="btn" 
+                  onClick={() => setShowAddProductModal(false)}
+                  style={{ flex: "1", padding: "0.5rem 1rem", backgroundColor: "#e9ecef", color: "#333", border: "1px solid #dee2e6" }}
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="submit" 
+                  className="btn" 
+                  disabled={addProductLoading}
+                  style={{ flex: "1", padding: "0.5rem 1rem", backgroundColor: "#007bff", color: "white", border: "none" }}
+                >
+                  {addProductLoading ? "Creating..." : "Create"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
     </SidebarLayout>
   );

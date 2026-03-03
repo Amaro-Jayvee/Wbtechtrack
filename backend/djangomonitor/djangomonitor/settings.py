@@ -126,24 +126,19 @@ WSGI_APPLICATION = 'djangomonitor.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases
 
-# Using SQLite3 for development/testing
-# DATABASES = {
-#     'default': {
-#         'ENGINE': 'django.db.backends.sqlite3',
-#         'NAME': BASE_DIR / 'db.sqlite3',
-#     }
-# }
-
-# MySQL configuration (for when database setup is ready)
-DATABASES = { 
+# Database configuration - MySQL
+DATABASES = {
     'default': {
-         'ENGINE': 'django.db.backends.mysql', 
-         'NAME': 'myDB', 
-         'USER': 'root', 
-         'PASSWORD': 'H3LLsP4RADISe', 
-         'HOST': 'localhost', 
-         'PORT': '3306' 
-    } 
+        'ENGINE': 'django.db.backends.mysql',
+        'NAME': 'techtrack_db',
+        'USER': 'root',
+        'PASSWORD': 'Ara071804',
+        'HOST': 'localhost',
+        'PORT': 3306,
+        'OPTIONS': {
+            'charset': 'utf8mb4',
+        },
+    }
 }
 
 # Password validation
@@ -218,3 +213,4 @@ PASSWORD_RESET_TIMEOUT = 3600 # 1 hour
 
 USE_TZ = True
 TIME_ZONE = 'Asia/Manila'
+

@@ -177,7 +177,7 @@ function Dashboard() {
       y: {
         beginAtZero: true,
         ticks: {
-          stepSize: 1,
+          stepSize: 100,
           precision: 0,
           callback: function(value) {
             return Number.isInteger(value) ? value : '';

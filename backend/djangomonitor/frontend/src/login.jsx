@@ -1,23 +1,20 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useUser } from "./UserContext.jsx";
 import "bootstrap/dist/css/bootstrap.min.css";
 import "./login.css";
+import SignupForm from "./SignupForm";
 
 function Login() {
-  const [step, setStep] = useState("login"); // login, register
   const [isRegister, setIsRegister] = useState(false);
   const [formData, setFormData] = useState({
     username: "",
     password: "",
-    email: "",
-    full_name: "",
-    company_name: "",
-    contact_number: "",
   });
   const [message, setMessage] = useState("");
-  const [userRole, setUserRole] = useState(null); // Store role from backend
-  const [showApprovalModal, setShowApprovalModal] = useState(false); // Show approval modal after signup
+  const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
+  const { refreshUserData } = useUser();
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -25,73 +22,94 @@ function Login() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setMessage(""); // Clear previous message
+    
     try {
       let url = "http://localhost:8000/app/login/";
       let body = { username: formData.username, password: formData.password };
 
-      if (isRegister) {
-        // Use a single registration endpoint - role is determined by backend based on profile
-        url = "http://localhost:8000/app/register/customer/";
-        body = formData;
-      }
-
-      console.log(" Sending request to:", url);
-      console.log(" Body:", { username: formData.username, password: "***" });
+      console.log("🔐 Sending login request to:", url);
+      console.log("📝 Username:", formData.username);
+      console.log("📝 Password length:", formData.password.length);
 
       const response = await fetch(url, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "Accept": "application/json"
+        },
         credentials: "include",
         body: JSON.stringify(body),
       });
 
-      console.log("📨 Response status:", response.status);
-      console.log("📨 Response headers:", {
-        contentType: response.headers.get('content-type'),
-        corsHeader: response.headers.get('access-control-allow-credentials')
-      });
+      console.log("📊 Response status:", response.status);
+      console.log("📊 Content-Type:", response.headers.get('content-type'));
       
       const responseText = await response.text();
-      console.log("📨 Raw response text:", responseText);
+      console.log("📄 Raw response:", responseText);
       
       let data = {};
       try {
         data = JSON.parse(responseText);
-      } catch (e) {
-        console.error("❌ Failed to parse JSON:", e);
-        data = { detail: "Invalid server response" };
+      } catch (parseErr) {
+        console.error("❌ JSON parse error:", parseErr);
+        data = { detail: "Invalid server response", raw: responseText };
       }
       
-      console.log("📨 Parsed response data:", data);
+      console.log("📦 Parsed data:", data);
       
       if (!response.ok) {
-        const errorMsg = data.detail || JSON.stringify(data) || "Something went wrong";
-        setMessage(errorMsg);
-        console.error("❌ Login failed:", data);
-      } else {
-        setMessage(data.detail);
-        console.log("✅ Login successful!");
-        
-        // Store role from backend response
-        if (data.role) {
-          setUserRole(data.role);
-          console.log("✅ User role from backend:", data.role);
-        }
-        
-        if (!isRegister) {
-          // Redirect based on role returned from backend
-          console.log("🔀 Redirecting based on role:", data.role);
-          navigate("/request");
-        } else {
-          // Show approval modal after successful registration
-          setShowApprovalModal(true);
-        }
+        const errorMsg = data.detail || data.error || JSON.stringify(data) || "Unknown error";
+        setMessage(`❌ ${errorMsg}`);
+        console.error("❌ Login failed with status", response.status, ":", data);
+        return;
       }
+
+      // Success - show loading screen and redirect
+      console.log("✅ Login successful!");
+      setIsLoading(true);
+      
+      // Refresh user data in context
+      console.log("🔄 Refreshing user data in context...");
+      await refreshUserData();
+      
+      // Determine redirect based on user role
+      let redirectPath = "/request"; // Default for customers and managers
+      if (data.role === "admin" || data.role === "production_manager") {
+        redirectPath = "/dashboard";
+      }
+      
+      console.log("🔀 Redirecting to " + redirectPath + " (role: " + data.role + ")");
+      setTimeout(() => navigate(redirectPath), 1500);
     } catch (err) {
       console.error("❌ Network error:", err);
-      setMessage("Something went wrong: " + err.message);
+      setMessage(`❌ Network error: ${err.message}`);
     }
   };
+
+  const toggleAuthMode = () => {
+    setIsRegister(!isRegister);
+    setMessage("");
+    setFormData({ username: "", password: "" });
+  };
+
+  // Loading Screen
+  if (isLoading) {
+    return (
+      <div className="login-page-wrapper">
+        <div className="loading-overlay">
+          <div className="loading-content">
+            <img src="/Group 1.png" alt="WB Technologies" className="loading-logo" />
+            <div className="spinner-border text-primary loading-spinner" role="status">
+              <span className="visually-hidden">Loading...</span>
+            </div>
+            <h2 className="loading-text">Welcome back!</h2>
+            <p className="loading-subtext">Preparing your dashboard...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // Login/Register Step
   return (
@@ -108,13 +126,18 @@ function Login() {
 
         {/* Right Side - Form */}
         <div className="login-right">
-          <div className="login-form-container">
-          {!isRegister ? (
+          {isRegister ? (
+            <SignupForm 
+              onToggleMode={toggleAuthMode}
+              onSuccess={() => {
+                setMessage("✅ Signup successful! Please wait for admin approval to log in.");
+              }}
+            />
+          ) : (
             <>
-              {/* Login Form */}
               <form onSubmit={handleSubmit}>
-                <div style={{ marginBottom: "15px" }}>
-                  <label className="form-label">Username</label>
+                <div>
+                  <label className="form-label">USERNAME</label>
                   <input
                     type="text"
                     name="username"
@@ -123,11 +146,12 @@ function Login() {
                     value={formData.username}
                     onChange={handleChange}
                     required
+                    disabled={false}
                   />
                 </div>
 
-                <div style={{ marginBottom: "15px" }}>
-                  <label className="form-label">Password</label>
+                <div>
+                  <label className="form-label">PASSWORD</label>
                   <input
                     type="password"
                     name="password"
@@ -136,6 +160,7 @@ function Login() {
                     value={formData.password}
                     onChange={handleChange}
                     required
+                    disabled={false}
                   />
                 </div>
 
@@ -145,184 +170,42 @@ function Login() {
                   </div>
                 )}
 
-                <div className="text-center" style={{ marginBottom: "15px" }}>
-                  <button type="submit" className="btn btn-primary" style={{ marginRight: "10px" }}>
-                    Sign In
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-outline-primary"
-                    onClick={() => {
-                      setIsRegister(true);
-                      setMessage("");
-                    }}
-                  >
-                    Sign Up
-                  </button>
-                </div>
+                <button type="submit" className="btn btn-primary">
+                  Sign In
+                </button>
 
                 <div className="text-center">
                   <a href="http://localhost:8000/app/reset_password/" className="forgot-password">
                     Forgot password?
                   </a>
                 </div>
-              </form>
-            </>
-          ) : (
-            <>
-              {/* Register Form */}
-              <form onSubmit={handleSubmit} style={{ maxHeight: "350px", overflowY: "auto" }}>
-                <div style={{ marginBottom: "10px" }}>
-                  <label className="form-label">Username</label>
-                  <input
-                    type="text"
-                    name="username"
-                    className="form-control"
-                    placeholder="Username"
-                    value={formData.username}
-                    onChange={handleChange}
-                    required
-                  />
-                </div>
 
-                <div style={{ marginBottom: "10px" }}>
-                  <label className="form-label">Email</label>
-                  <input
-                    type="email"
-                    name="email"
-                    className="form-control"
-                    placeholder="Email"
-                    value={formData.email}
-                    onChange={handleChange}
-                    required
-                  />
-                </div>
-
-                <div style={{ marginBottom: "10px" }}>
-                  <label className="form-label">Full Name</label>
-                  <input
-                    type="text"
-                    name="full_name"
-                    className="form-control"
-                    placeholder="Full Name"
-                    value={formData.full_name}
-                    onChange={handleChange}
-                    required
-                  />
-                </div>
-
-                <div style={{ marginBottom: "10px" }}>
-                  <label className="form-label">Company</label>
-                  <input
-                    type="text"
-                    name="company_name"
-                    className="form-control"
-                    placeholder="Company"
-                    value={formData.company_name}
-                    onChange={handleChange}
-                    required
-                  />
-                </div>
-
-                <div style={{ marginBottom: "10px" }}>
-                  <label className="form-label">Contact</label>
-                  <input
-                    type="text"
-                    name="contact_number"
-                    className="form-control"
-                    placeholder="Contact"
-                    value={formData.contact_number}
-                    onChange={handleChange}
-                    required
-                  />
-                </div>
-
-                <div style={{ marginBottom: "10px" }}>
-                  <label className="form-label">Password</label>
-                  <input
-                    type="password"
-                    name="password"
-                    className="form-control"
-                    placeholder="Password"
-                    value={formData.password}
-                    onChange={handleChange}
-                    required
-                  />
-                </div>
-
-                {message && (
-                  <div className={`alert ${message.includes("error") ? "alert-danger" : "alert-success"}`} role="alert">
-                    {message}
-                  </div>
-                )}
-
-                <div className="d-grid gap-2 mb-3">
-                  <button type="submit" className="btn btn-primary">
-                    Sign Up
-                  </button>
-                </div>
-
-                <div className="text-center">
-                  <button
-                    type="button"
-                    className="btn-link-text"
-                    onClick={() => {
-                      setIsRegister(false);
-                      setMessage("");
-                    }}
-                  >
-                    Already have an account? Sign In
-                  </button>
+                <div className="text-center mt-3">
+                  <p className="mb-0">
+                    Don't have an account?{" "}
+                    <button
+                      type="button"
+                      className="btn-link-simple"
+                      onClick={toggleAuthMode}
+                      style={{
+                        background: "none",
+                        border: "none",
+                        color: "#007bff",
+                        textDecoration: "underline",
+                        cursor: "pointer",
+                        padding: 0,
+                        font: "inherit"
+                      }}
+                    >
+                      Sign up here
+                    </button>
+                  </p>
                 </div>
               </form>
             </>
           )}
         </div>
       </div>
-
-      {/* Approval Modal */}
-      {showApprovalModal && (
-        <div className="modal-backdrop-custom" onClick={() => setShowApprovalModal(false)}>
-          <div className="modal-content-custom" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header-custom">
-              <h5 className="modal-title-custom">Account Registration Successful</h5>
-            </div>
-            <div className="modal-body-custom">
-              <p>
-                Your account has been created successfully!
-              </p>
-              <p>
-                <strong>Your account is now pending admin approval.</strong>
-              </p>
-              <p>
-                An administrator will review your application and you'll be notified once your account is approved. You can then log in with your credentials.
-              </p>
-            </div>
-            <div className="modal-footer-custom">
-              <button
-                type="button"
-                className="btn btn-primary"
-                onClick={() => {
-                  setShowApprovalModal(false);
-                  setIsRegister(false);
-                  setFormData({
-                    username: "",
-                    password: "",
-                    email: "",
-                    full_name: "",
-                    company_name: "",
-                    contact_number: "",
-                  });
-                  setMessage("");
-                }}
-              >
-                Back to Login
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
     </div>
   );
 }

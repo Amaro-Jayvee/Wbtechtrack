@@ -1,9 +1,12 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { useUser } from "./UserContext.jsx";
+import ActivityLogsPanel from "./ActivityLogsPanel";
 import "./Dashboard.css";
 
 function CustomerSettings() {
   const navigate = useNavigate();
+  const { userData } = useUser();
   const [activeTab, setActiveTab] = useState("account");
   const [profile, setProfile] = useState({
     username: "",
@@ -21,11 +24,16 @@ function CustomerSettings() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [messageType, setMessageType] = useState("");
-  const [userData, setUserData] = useState(null);
   const [showProfileDropdown, setShowProfileDropdown] = useState(false);
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
-  const [changePassword, setChangePassword] = useState({ new_password: "", confirm_password: "" });
+  const [changePassword, setChangePassword] = useState({ 
+    current_password: "", 
+    new_password: "", 
+    confirm_password: "",
+    showing: false,
+    loading: false
+  });
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [supportForm, setSupportForm] = useState({ subject: "", description: "" });
   const [notificationPreferences, setNotificationPreferences] = useState({
@@ -40,25 +48,9 @@ function CustomerSettings() {
   const getInitial = (username) => username.charAt(0).toUpperCase();
 
   useEffect(() => {
-    fetchUserData();
     fetchProfile();
     fetchNotifications();
   }, []);
-
-  const fetchUserData = async () => {
-    try {
-      const response = await fetch("http://localhost:8000/app/whoami/", {
-        method: "GET",
-        credentials: "include",
-      });
-      if (response.ok) {
-        const data = await response.json();
-        setUserData(data);
-      }
-    } catch (err) {
-      console.error("Error fetching user data:", err);
-    }
-  };
 
   const fetchProfile = async () => {
     try {
@@ -164,6 +156,73 @@ function CustomerSettings() {
   const handleCancel = () => {
     setIsEditing(false);
     fetchProfile();
+  };
+
+  const handleChangePassword = async () => {
+    // Validation
+    if (!changePassword.current_password || !changePassword.new_password || !changePassword.confirm_password) {
+      setMessageType("error");
+      setMessage("All password fields are required");
+      return;
+    }
+
+    if (changePassword.new_password.length < 8) {
+      setMessageType("error");
+      setMessage("New password must be at least 8 characters long");
+      return;
+    }
+
+    if (changePassword.new_password !== changePassword.confirm_password) {
+      setMessageType("error");
+      setMessage("New passwords do not match");
+      return;
+    }
+
+    if (changePassword.current_password === changePassword.new_password) {
+      setMessageType("error");
+      setMessage("New password must be different from current password");
+      return;
+    }
+
+    setChangePassword({ ...changePassword, loading: true });
+
+    try {
+      const response = await fetch("http://localhost:8000/app/change-password/", {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Requested-With": "XMLHttpRequest",
+        },
+        body: JSON.stringify({
+          current_password: changePassword.current_password,
+          new_password: changePassword.new_password,
+        }),
+      });
+
+      if (response.ok) {
+        setMessageType("success");
+        setMessage("Password changed successfully!");
+        setChangePassword({
+          current_password: "",
+          new_password: "",
+          confirm_password: "",
+          showing: false,
+          loading: false,
+        });
+        setTimeout(() => setMessage(""), 3000);
+      } else {
+        const errorData = await response.json();
+        setMessageType("error");
+        setMessage(errorData.detail || "Failed to change password");
+      }
+    } catch (err) {
+      console.error("Error changing password:", err);
+      setMessageType("error");
+      setMessage("Error changing password");
+    } finally {
+      setChangePassword({ ...changePassword, loading: false });
+    }
   };
 
   const handleLogout = () => {
@@ -372,11 +431,15 @@ function CustomerSettings() {
                           backgroundColor: notification.is_read ? "transparent" : "#f0f7ff",
                           cursor: "pointer",
                         }}
-                        onMouseEnter={(e) =>
-                          (e.currentTarget.style.backgroundColor = notification.is_read
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.backgroundColor = notification.is_read
                             ? "#f8f9fa"
-                            : "#e8f4ff")
-                        }
+                            : "#e8f4ff";
+                          // Auto-mark as read on hover
+                          if (!notification.is_read) {
+                            markNotificationRead(notification.id);
+                          }
+                        }}
                         onMouseLeave={(e) =>
                           (e.currentTarget.style.backgroundColor = notification.is_read
                             ? "transparent"
@@ -425,27 +488,6 @@ function CustomerSettings() {
                               })}
                             </div>
                           </div>
-                          {!notification.is_read && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                markNotificationRead(notification.id);
-                              }}
-                              style={{
-                                backgroundColor: "transparent",
-                                border: "none",
-                                color: "#007bff",
-                                cursor: "pointer",
-                                fontSize: "12px",
-                                padding: "2px 6px",
-                                fontWeight: "500",
-                                marginTop: "2px",
-                              }}
-                              title="Mark as read"
-                            >
-                              ✓
-                            </button>
-                          )}
                         </div>
                       </div>
                     ))}
@@ -553,7 +595,7 @@ function CustomerSettings() {
                   (e.target.backgroundColor = "transparent")
                 }
               >
-                🚪 Logout
+                <i className="bi bi-box-arrow-right me-2"></i>Logout
               </button>
             </div>
           )}
@@ -675,6 +717,26 @@ function CustomerSettings() {
               }}
             >
               Support Contact
+            </button>
+            <button
+              onClick={() => setActiveTab("activity")}
+              style={{
+                padding: "12px 16px",
+                border: "none",
+                backgroundColor: activeTab === "activity" ? "#e3f2fd" : "transparent",
+                color: activeTab === "activity" ? "#1976d2" : "#666",
+                cursor: "pointer",
+                textAlign: "left",
+                borderRadius: "4px",
+                fontSize: "14px",
+                fontWeight: activeTab === "activity" ? "600" : "500",
+                transition: "all 0.2s",
+                display: "flex",
+                alignItems: "center",
+                gap: "10px",
+              }}
+            >
+              Activity Logs
             </button>
           </nav>
         </div>
@@ -859,7 +921,7 @@ function CustomerSettings() {
                   </div>
                 </div>
 
-                {/* Change Password Link */}
+                {/* Change Password Section */}
                 <div style={{ marginBottom: "30px", paddingBottom: "20px", borderBottom: "1px solid #eee" }}>
                   <button
                     onClick={() => setChangePassword({ ...changePassword, showing: !changePassword.showing })}
@@ -873,8 +935,140 @@ function CustomerSettings() {
                       padding: 0,
                     }}
                   >
-                    Change Password
+                    {changePassword.showing ? "Cancel Password Change" : "Change Password"}
                   </button>
+
+                  {/* Password Change Form */}
+                  {changePassword.showing && (
+                    <div style={{
+                      marginTop: "20px",
+                      padding: "20px",
+                      backgroundColor: "#f8f9fa",
+                      borderRadius: "6px",
+                      border: "1px solid #dee2e6",
+                    }}>
+                      <div style={{ marginBottom: "15px" }}>
+                        <label style={{
+                          display: "block",
+                          marginBottom: "8px",
+                          fontSize: "14px",
+                          fontWeight: "600",
+                          color: "#333",
+                        }}>
+                          Current Password
+                        </label>
+                        <input
+                          type="password"
+                          value={changePassword.current_password}
+                          onChange={(e) => setChangePassword({ ...changePassword, current_password: e.target.value })}
+                          placeholder="Enter current password"
+                          style={{
+                            width: "100%",
+                            padding: "10px 12px",
+                            border: "1px solid #ddd",
+                            borderRadius: "4px",
+                            fontSize: "14px",
+                            boxSizing: "border-box",
+                          }}
+                        />
+                      </div>
+
+                      <div style={{ marginBottom: "15px" }}>
+                        <label style={{
+                          display: "block",
+                          marginBottom: "8px",
+                          fontSize: "14px",
+                          fontWeight: "600",
+                          color: "#333",
+                        }}>
+                          New Password (min. 8 characters)
+                        </label>
+                        <input
+                          type="password"
+                          value={changePassword.new_password}
+                          onChange={(e) => setChangePassword({ ...changePassword, new_password: e.target.value })}
+                          placeholder="Enter new password"
+                          style={{
+                            width: "100%",
+                            padding: "10px 12px",
+                            border: "1px solid #ddd",
+                            borderRadius: "4px",
+                            fontSize: "14px",
+                            boxSizing: "border-box",
+                          }}
+                        />
+                      </div>
+
+                      <div style={{ marginBottom: "20px" }}>
+                        <label style={{
+                          display: "block",
+                          marginBottom: "8px",
+                          fontSize: "14px",
+                          fontWeight: "600",
+                          color: "#333",
+                        }}>
+                          Confirm New Password
+                        </label>
+                        <input
+                          type="password"
+                          value={changePassword.confirm_password}
+                          onChange={(e) => setChangePassword({ ...changePassword, confirm_password: e.target.value })}
+                          placeholder="Confirm new password"
+                          style={{
+                            width: "100%",
+                            padding: "10px 12px",
+                            border: "1px solid #ddd",
+                            borderRadius: "4px",
+                            fontSize: "14px",
+                            boxSizing: "border-box",
+                          }}
+                        />
+                      </div>
+
+                      <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end" }}>
+                        <button
+                          onClick={() => setChangePassword({
+                            current_password: "",
+                            new_password: "",
+                            confirm_password: "",
+                            showing: false,
+                            loading: false,
+                          })}
+                          disabled={changePassword.loading}
+                          style={{
+                            padding: "10px 24px",
+                            backgroundColor: "white",
+                            color: "#666",
+                            border: "1px solid #ddd",
+                            borderRadius: "4px",
+                            cursor: changePassword.loading ? "not-allowed" : "pointer",
+                            fontSize: "14px",
+                            fontWeight: "500",
+                            opacity: changePassword.loading ? 0.6 : 1,
+                          }}
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onClick={handleChangePassword}
+                          disabled={changePassword.loading}
+                          style={{
+                            padding: "10px 24px",
+                            backgroundColor: "#007bff",
+                            color: "white",
+                            border: "none",
+                            borderRadius: "4px",
+                            cursor: changePassword.loading ? "not-allowed" : "pointer",
+                            fontSize: "14px",
+                            fontWeight: "500",
+                            opacity: changePassword.loading ? 0.6 : 1,
+                          }}
+                        >
+                          {changePassword.loading ? "Changing..." : "Change Password"}
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Action Buttons */}
@@ -1155,6 +1349,19 @@ function CustomerSettings() {
                   </div>
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* ACTIVITY LOGS TAB */}
+          {activeTab === "activity" && (
+            <div style={{ maxWidth: "1200px" }}>
+              <h2 style={{ margin: "0 0 10px 0", fontSize: "24px", fontWeight: "600" }}>
+                Activity Logs
+              </h2>
+              <p style={{ marginBottom: "30px", color: "#666", fontSize: "14px" }}>
+                View your recent activity and actions performed on your requests and products.
+              </p>
+              <ActivityLogsPanel title="Your Recent Activities" limit={10} />
             </div>
           )}
         </div>

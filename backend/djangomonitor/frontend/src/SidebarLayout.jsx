@@ -2,17 +2,24 @@ import React, { useEffect, useState } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import "bootstrap/dist/css/bootstrap.min.css";
 import "./Dashboard.css";
+import ExtensionApprovalModal from "./ExtensionApprovalModal";
+import { useUser } from "./UserContext.jsx";
 
 function SidebarLayout({ children }) {
   const navigate = useNavigate();
   const location = useLocation();
-  const [userData, setUserData] = useState({ username: "", role: "" });
+  const { userData, setUserData } = useUser();
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [showLogoutLoading, setShowLogoutLoading] = useState(false);
   const [showProfileDropdown, setShowProfileDropdown] = useState(false);
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [showNotificationDropdown, setShowNotificationDropdown] = useState(false);
+  const [showTermsModal, setShowTermsModal] = useState(false);
+  const [termsLoading, setTermsLoading] = useState(false);
+  const [showExtensionApprovalModal, setShowExtensionApprovalModal] = useState(false);
+  const [selectedExtensionNotification, setSelectedExtensionNotification] = useState(null);
 
   const fetchNotifications = async () => {
     try {
@@ -45,24 +52,10 @@ function SidebarLayout({ children }) {
   };
 
   useEffect(() => {
-    const fetchUser = async () => {
-      try {
-        const response = await fetch("http://localhost:8000/app/whoami/", {
-          method: "GET",
-          credentials: "include",
-        });
-        const data = await response.json();
-        if (data.username) {
-          setUserData({
-            username: data.username,
-            role: data.role || "User",
-          });
-        }
-      } catch (err) {
-        console.error("Error fetching user", err);
-      }
-    };
-    fetchUser();
+    // Check if user needs to accept terms
+    if (userData.terms_accepted === false && userData.role === "customer") {
+      setShowTermsModal(true);
+    }
     
     console.log("[SidebarLayout] Initial notification fetch on mount");
     fetchNotifications();
@@ -84,7 +77,7 @@ function SidebarLayout({ children }) {
       clearInterval(notificationInterval);
       window.removeEventListener('refreshNotifications', handleRefreshNotifications);
     };
-  }, []);
+  }, [userData]);
 
   const markAllNotificationsRead = async () => {
     try {
@@ -135,12 +128,38 @@ function SidebarLayout({ children }) {
     }
   };
 
+  const handleNotificationClick = (notification) => {
+    console.log("[SidebarLayout] Notification clicked:", notification.notification_type);
+    
+    // Handle extension request notifications
+    if (notification.notification_type === "extension_requested") {
+      console.log("[SidebarLayout] Loading extension approval modal");
+      setSelectedExtensionNotification(notification);
+      setShowExtensionApprovalModal(true);
+      setShowNotificationDropdown(false);
+    }
+  };
+
+  const handleExtensionApprovalClose = () => {
+    setShowExtensionApprovalModal(false);
+    setSelectedExtensionNotification(null);
+  };
+
+  const handleExtensionApprovalSuccess = async () => {
+    console.log("[SidebarLayout] Extension approval/rejection successful");
+    await fetchNotifications();
+  };
+
   const handleLogout = () => {
     setShowLogoutModal(true);
   };
 
   const performLogout = async () => {
     setIsLoggingOut(true);
+    // Show loading screen immediately
+    setShowLogoutModal(false);
+    setShowLogoutLoading(true);
+    
     try {
       const response = await fetch("http://localhost:8000/app/logout/", {
         method: "POST",
@@ -156,20 +175,46 @@ function SidebarLayout({ children }) {
         throw new Error(errorData.detail || "Logout failed. Please try again.");
       }
 
-      // Successful logout
-      setShowLogoutModal(false);
-      setIsLoggingOut(false);
-      
       // Clear local session data
       sessionStorage.clear();
       localStorage.removeItem("authToken");
       
-      // Redirect to login
-      navigate("/login", { replace: true });
+      // Redirect after delay
+      setTimeout(() => {
+        navigate("/login", { replace: true });
+      }, 1500);
     } catch (err) {
       console.error("Logout error:", err);
       setIsLoggingOut(false);
+      setShowLogoutLoading(false);
       alert(err.message || "Error logging out. Please try again.");
+    }
+  };
+
+  const handleAcceptTerms = async () => {
+    setTermsLoading(true);
+    try {
+      const response = await fetch("http://localhost:8000/app/accept-terms/", {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Requested-With": "XMLHttpRequest",
+        },
+      });
+
+      if (response.ok) {
+        setShowTermsModal(false);
+        // User data will be updated in the context when they re-login or page refreshes
+      } else {
+        console.error("Failed to accept terms:", response.status);
+        alert("Failed to accept terms. Please try again.");
+      }
+    } catch (err) {
+      console.error("Error accepting terms:", err);
+      alert("Error accepting terms. Please try again.");
+    } finally {
+      setTermsLoading(false);
     }
   };
 
@@ -185,7 +230,10 @@ function SidebarLayout({ children }) {
     if (path === "/request-list") return "Request List";
     if (path === "/customer-requests") return "My Requests";
     if (path === "/customer/settings") return "Settings";
-    if (path === "/task-status") return "Task Status";
+    if (path === "/task-status") {
+      // Show "Customer Requests" for admin, "Task Status" for others
+      return userData.role === "admin" ? "Customer Requests" : "Task Status";
+    }
     if (path === "/settings") return "Settings";
     return "Dashboard";
   };
@@ -209,32 +257,50 @@ function SidebarLayout({ children }) {
               >
                 <img src="/Graph.png" alt="Dashboard" className="sidebar-icon" />
               </Link>
-              <Link
-                to="/accounts"
-                className={`sidebar-item ${isActive("/accounts") ? "active" : ""}`}
-                title="Accounts"
-              >
-                <img src="/Users.png" alt="Accounts" className="sidebar-icon" />
-              </Link>
-              
-              {/* Create Request - Admin sees create form, Production Manager sees list */}
-              {(userData.role === "admin" || userData.role === "manager" || userData.role === "production_manager") && (
+              {/* Accounts - Only for Admin */}
+              {userData.role === "admin" && (
                 <Link
-                  to={userData.role === "admin" ? "/request" : "/request-list"}
-                  className={`sidebar-item ${isActive("/request") || isActive("/request-list") ? "active" : ""}`}
-                  title={userData.role === "admin" ? "Create Request" : "View Requests"}
+                  to="/accounts"
+                  className={`sidebar-item ${isActive("/accounts") ? "active" : ""}`}
+                  title="Accounts"
                 >
-                  <img src="/3rd.png" alt={userData.role === "admin" ? "Create Request" : "View Requests"} className="sidebar-icon" />
+                  <img src="/Users.png" alt="Accounts" className="sidebar-icon" />
                 </Link>
               )}
               
-              <Link
-                to="/task-status"
-                className={`sidebar-item ${isActive("/task-status") ? "active" : ""}`}
-                title="Task Status"
-              >
-                <img src="/4th.png" alt="Task Status" className="sidebar-icon" />
-              </Link>
+              {/* Admin - Request Approval (3rd icon) */}
+              {userData.role === "admin" && (
+                <Link
+                  to="/task-status"
+                  className={`sidebar-item ${isActive("/task-status") ? "active" : ""}`}
+                  title="Request Approval"
+                >
+                  <img src="/3rd.png" alt="Request Approval" className="sidebar-icon" />
+                </Link>
+              )}
+              
+              {/* Production Manager - View Requests (3rd icon) */}
+              {userData.role === "production_manager" && (
+                <Link
+                  to="/request-list"
+                  className={`sidebar-item ${isActive("/request") || isActive("/request-list") ? "active" : ""}`}
+                  title="View Requests"
+                >
+                  <img src="/3rd.png" alt="View Requests" className="sidebar-icon" />
+                </Link>
+              )}
+              
+              {/* Production Manager - Task Status (4th icon) */}
+              {userData.role === "production_manager" && (
+                <Link
+                  to="/task-status"
+                  className={`sidebar-item ${isActive("/task-status") ? "active" : ""}`}
+                  title="Task Status"
+                >
+                  <img src="/4th.png" alt="Task Status" className="sidebar-icon" />
+                </Link>
+              )}
+
               <Link
                 to="/settings"
                 className={`sidebar-item ${isActive("/settings") ? "active" : ""}`}
@@ -273,14 +339,6 @@ function SidebarLayout({ children }) {
         <div className="header">
           <div className="header-title">
             {getPageTitle()}
-          </div>
-
-          <div className="header-center">
-            <input
-              type="text"
-              placeholder="Search"
-              className="search-box"
-            />
           </div>
 
           <div className="header-right">
@@ -358,18 +416,27 @@ function SidebarLayout({ children }) {
                             padding: "12px 16px",
                             borderBottom: "1px solid #eee",
                             backgroundColor: notification.is_read ? "transparent" : "#f0f7ff",
-                            cursor: "pointer",
+                            cursor: notification.notification_type === "extension_requested" ? "pointer" : "default",
                           }}
-                          onMouseEnter={(e) =>
-                            (e.currentTarget.style.backgroundColor = notification.is_read
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.backgroundColor = notification.is_read
                               ? "#f8f9fa"
-                              : "#e8f4ff")
-                          }
+                              : "#e8f4ff";
+                            // Auto-mark as read on hover
+                            if (!notification.is_read) {
+                              markNotificationRead(notification.id);
+                            }
+                          }}
                           onMouseLeave={(e) =>
                             (e.currentTarget.style.backgroundColor = notification.is_read
                               ? "transparent"
                               : "#f0f7ff")
                           }
+                          onClick={() => {
+                            if (notification.notification_type === "extension_requested") {
+                              handleNotificationClick(notification);
+                            }
+                          }}
                         >
                           <div
                             style={{
@@ -388,6 +455,9 @@ function SidebarLayout({ children }) {
                                   marginBottom: "4px",
                                 }}
                               >
+                                {notification.notification_type === "extension_requested" && (
+                                  <i className="bi bi-calendar-check me-1" style={{ color: "#FFA500" }}></i>
+                                )}
                                 {notification.title}
                               </div>
                               <div
@@ -411,29 +481,13 @@ function SidebarLayout({ children }) {
                                   hour: "2-digit",
                                   minute: "2-digit",
                                 })}
+                                {notification.notification_type === "extension_requested" && (
+                                  <span style={{ marginLeft: "12px", color: "#1D6AB7", fontWeight: "500" }}>
+                                    Click to review
+                                  </span>
+                                )}
                               </div>
                             </div>
-                            {!notification.is_read && (
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  markNotificationRead(notification.id);
-                                }}
-                                style={{
-                                  backgroundColor: "transparent",
-                                  border: "none",
-                                  color: "#007bff",
-                                  cursor: "pointer",
-                                  fontSize: "12px",
-                                  padding: "2px 6px",
-                                  fontWeight: "500",
-                                  marginTop: "2px",
-                                }}
-                                title="Mark as read"
-                              >
-                                ✓
-                              </button>
-                            )}
                           </div>
                         </div>
                       ))}
@@ -548,6 +602,207 @@ function SidebarLayout({ children }) {
       {showLogoutModal && (
         <style>{`.modal-backdrop { position: fixed; top: 0; left: 0; z-index: 1040; width: 100vw; height: 100vh; background-color: rgba(0, 0, 0, 0.5); }`}</style>
       )}
+
+      {/* Terms & Agreement Modal */}
+      {showTermsModal && (
+        <div className="modal-backdrop fade show" style={{ zIndex: 1050 }}></div>
+      )}
+      <div 
+        className={`modal fade ${showTermsModal ? "show d-block" : ""}`} 
+        tabIndex="-1" 
+        role="dialog" 
+        aria-hidden={!showTermsModal}
+        style={{ zIndex: 1060 }}
+      >
+        <div className="modal-dialog modal-dialog-centered modal-lg" role="document">
+          <div className="modal-content border-0 shadow-lg">
+            <div className="modal-header bg-light border-bottom">
+              <h5 className="modal-title">
+                <i className="bi bi-file-earmark-text me-2"></i>
+                Terms & Agreement
+              </h5>
+            </div>
+            <div className="modal-body" style={{ maxHeight: "400px", overflowY: "auto" }}>
+              <div style={{ marginBottom: "20px" }}>
+                <h6 style={{ fontWeight: "600", marginBottom: "12px", color: "#1D6AB7" }}>
+                  Welcome to TechTrack
+                </h6>
+                <p style={{ color: "#555", lineHeight: "1.6", marginBottom: "12px" }}>
+                  Before you can access our system, please review and accept our Terms & Agreement. 
+                  These terms govern your use of the TechTrack manufacturing management system.
+                </p>
+              </div>
+              
+              <div style={{ backgroundColor: "#f8f9fa", padding: "16px", borderRadius: "8px", marginBottom: "16px" }}>
+                <h6 style={{ fontWeight: "600", marginBottom: "10px", color: "#333" }}>
+                  Key Terms
+                </h6>
+                <ul style={{ marginBottom: "0", paddingLeft: "20px", color: "#555", lineHeight: "1.8" }}>
+                  <li>You must provide accurate information when creating your account.</li>
+                  <li>You are responsible for maintaining the confidentiality of your login credentials.</li>
+                  <li>You agree to use this system only for authorized business purposes.</li>
+                  <li>All data within this system is proprietary and confidential.</li>
+                  <li>You will not attempt to access unauthorized resources or information.</li>
+                  <li>Violations of these terms may result in immediate account suspension.</li>
+                </ul>
+              </div>
+
+              <div style={{ backgroundColor: "#fff3cd", padding: "12px", borderRadius: "8px", borderLeft: "4px solid #ffc107" }}>
+                <p style={{ margin: "0", color: "#856404", fontSize: "14px" }}>
+                  <i className="bi bi-info-circle me-2"></i>
+                  <strong>By clicking "I Accept", you agree to comply with all terms and conditions outlined above.</strong>
+                </p>
+              </div>
+            </div>
+            <div className="modal-footer border-top bg-light">
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => {
+                  // Logout if declining
+                  performLogout();
+                }}
+                disabled={termsLoading}
+              >
+                Decline & Logout
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={handleAcceptTerms}
+                disabled={termsLoading}
+                style={{ 
+                  backgroundColor: "#1D6AB7", 
+                  borderColor: "#1D6AB7",
+                  cursor: termsLoading ? "not-allowed" : "pointer"
+                }}
+              >
+                {termsLoading ? (
+                  <>
+                    <span 
+                      className="spinner-border spinner-border-sm me-2" 
+                      role="status" 
+                      aria-hidden="true"
+                    ></span>
+                    Accepting...
+                  </>
+                ) : (
+                  <>
+                    <i className="bi bi-check-circle me-1"></i>
+                    I Accept
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+      {showTermsModal && (
+        <style>{`.modal-backdrop { position: fixed; top: 0; left: 0; z-index: 1050; width: 100vw; height: 100vh; background-color: rgba(0, 0, 0, 0.5); }`}</style>
+      )}
+
+      {/* Extension Approval Modal */}
+      {showExtensionApprovalModal && selectedExtensionNotification && (
+        <ExtensionApprovalModal
+          notification={selectedExtensionNotification}
+          onClose={handleExtensionApprovalClose}
+          onSuccess={handleExtensionApprovalSuccess}
+        />
+      )}
+
+      {/* Logout Loading Screen */}
+      {showLogoutLoading && (
+        <div style={{
+          position: "fixed",
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 9999,
+          animation: "fadeIn 0.3s ease-in-out forwards"
+        }}>
+          <div style={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            gap: "30px"
+          }}>
+            <img 
+              src="/Group 1.png" 
+              alt="WB Technologies" 
+              style={{
+                width: "120px",
+                animation: "slideDown 0.5s ease-out forwards"
+              }}
+            />
+            <div 
+              className="spinner-border text-primary" 
+              role="status"
+              style={{
+                width: "60px",
+                height: "60px",
+                borderWidth: "5px",
+                animation: "spin 1s linear infinite",
+                borderColor: "rgba(255,255,255,0.3) rgba(255,255,255,0.3) rgba(255,255,255,0.3) #ffffff"
+              }}
+            >
+              <span className="visually-hidden">Loading...</span>
+            </div>
+            <h2 style={{
+              color: "white",
+              fontSize: "28px",
+              fontWeight: "bold",
+              margin: 0,
+              animation: "fadeInUp 0.6s ease-out 0.2s both"
+            }}>
+              Goodbye!
+            </h2>
+            <p style={{
+              color: "rgba(255,255,255,0.9)",
+              fontSize: "16px",
+              margin: 0,
+              animation: "fadeInUp 0.6s ease-out 0.3s both"
+            }}>
+              Logging you out...
+            </p>
+          </div>
+        </div>
+      )}
+
+      <style>{`
+        @keyframes fadeIn {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+        @keyframes slideDown {
+          from {
+            opacity: 0;
+            transform: translateY(-30px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+        @keyframes fadeInUp {
+          from {
+            opacity: 0;
+            transform: translateY(20px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+      `}</style>
     </div>
   );
 }

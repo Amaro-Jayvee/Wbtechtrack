@@ -1,58 +1,62 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import SidebarLayout from "./SidebarLayout";
+import { useUser } from "./UserContext.jsx";
 import "./Dashboard.css";
 import "./Request.css";
 
 function RequestList() {
   const navigate = useNavigate();
+  const { userData } = useUser();
   const [requests, setRequests] = useState([]);
+  const [searchTerm, setSearchTerm] = useState("");
   const [loading, setLoading] = useState(true);
-  const [filterArchived, setFilterArchived] = useState("false");
-  const [showDateRangePicker, setShowDateRangePicker] = useState(false);
-  const [userRole, setUserRole] = useState(null);
-  const [dateFilter, setDateFilter] = useState({
-    created_from: "",
-    created_to: "",
-  });
+  const [sortBy, setSortBy] = useState("date"); // "date", "name", "number"
+  const [sortOrder, setSortOrder] = useState("desc"); // "asc", "desc"
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [loadingMessage, setLoadingMessage] = useState("");
+  const [isTableAnimating, setIsTableAnimating] = useState(false);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [selectedRequest, setSelectedRequest] = useState(null);
+  const [requestHasTasks, setRequestHasTasks] = useState(false);
+  const [showProjectStartModal, setShowProjectStartModal] = useState(false);
+  const [projectStartData, setProjectStartData] = useState({
+    requestID: "",
+    taskCount: 0,
+    message: ""
+  });
+  const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState(false);
+  const [deleteConfirmRequestId, setDeleteConfirmRequestId] = useState(null);
+  const [toast, setToast] = useState({ visible: false, message: "", type: "success" });
 
-  useEffect(() => {
-    fetchRequests(filterArchived, dateFilter);
-    fetchCurrentUser();
-  }, []);
-
-  const fetchCurrentUser = async () => {
-    try {
-      const response = await fetch("http://localhost:8000/app/whoami/", {
-        method: "GET",
-        credentials: "include",
-      });
-      const data = await response.json();
-      if (data.role) {
-        setUserRole(data.role);
-      }
-    } catch (err) {
-      console.error("Error fetching current user:", err);
-    }
+  const showToast = (message, type = "success") => {
+    setToast({ visible: true, message, type });
+    setTimeout(() => {
+      setToast({ visible: false, message: "", type: "success" });
+    }, 3000);
   };
 
-  const fetchRequests = async (archived = "false", dateFilters = {}) => {
+  useEffect(() => {
+    fetchRequests();
+
+    // Listen for restore events from Settings.jsx
+    const handleRestoreEvent = () => {
+      console.log('[RequestList] Received requestsUpdated event, refreshing...');
+      fetchRequests();
+    };
+    window.addEventListener('requestsUpdated', handleRestoreEvent);
+    return () => window.removeEventListener('requestsUpdated', handleRestoreEvent);
+  }, []);
+
+  const fetchRequests = async () => {
     setLoading(true);
     try {
       const params = new URLSearchParams();
-      params.append("include_archived", archived === "true");
-
-      if (dateFilters.created_from) {
-        params.append("created_from", dateFilters.created_from);
-      }
-      if (dateFilters.created_to) {
-        params.append("created_to", dateFilters.created_to);
-      }
+      // Always fetch non-archived requests only
+      params.append("include_archived", "false");
 
       const response = await fetch(
-        `http://localhost:8000/app/request/?${params.toString()}`,
+        `/app/request/?${params.toString()}`,
         {
           method: "GET",
           credentials: "include",
@@ -68,34 +72,138 @@ function RequestList() {
     }
   };
 
-  const handleFilterChange = (e) => {
-    setFilterArchived(e.target.value);
-    fetchRequests(e.target.value, dateFilter);
+  const handleSortChange = (e) => {
+    const newSort = e.target.value;
+    setLoadingMessage(`Sorting by ${newSort === "date" ? "Date" : newSort === "number" ? "Number" : "Name"}...`);
+    setIsRefreshing(true);
+    
+    // Delay the actual sort update so table updates while popup is visible
+    setTimeout(() => {
+      setSortBy(newSort);
+      setIsTableAnimating(true);
+      setTimeout(() => setIsTableAnimating(false), 600);
+    }, 150);
+    
+    setTimeout(() => {
+      setIsRefreshing(false);
+      setLoadingMessage("");
+    }, 800);
   };
 
-  const handleDateRangeApply = () => {
-    fetchRequests(filterArchived, dateFilter);
-    setShowDateRangePicker(false);
+  const handleSortOrderChange = (e) => {
+    const newOrder = e.target.value;
+    setLoadingMessage(`Sorting ${newOrder === "asc" ? "Ascending" : "Descending"}...`);
+    setIsRefreshing(true);
+    
+    // Delay the actual sort update so table updates while popup is visible
+    setTimeout(() => {
+      setSortOrder(newOrder);
+      setIsTableAnimating(true);
+      setTimeout(() => setIsTableAnimating(false), 600);
+    }, 150);
+    
+    setTimeout(() => {
+      setIsRefreshing(false);
+      setLoadingMessage("");
+    }, 800);
   };
 
-  const handleDateInputChange = (e) => {
-    const { name, value } = e.target;
-    setDateFilter({ ...dateFilter, [name]: value });
-  };
+  // Use useMemo to memoize sorted requests and recalculate only when dependencies change
+  const sortedRequests = useMemo(() => {
+    if (!requests || requests.length === 0) return [];
+    
+    const sorted = [...requests];
+    
+    sorted.sort((a, b) => {
+      let compareResult = 0;
+      
+      switch(sortBy) {
+        case "name":
+          // Sort by requester name
+          const nameA = (a.requester_name || "").toLowerCase().trim();
+          const nameB = (b.requester_name || "").toLowerCase().trim();
+          console.log(`[SORT] Comparing names: "${nameA}" vs "${nameB}"`);
+          compareResult = nameA.localeCompare(nameB);
+          break;
+        
+        case "number":
+          // Sort by RequestID (numeric)
+          console.log(`[SORT] Comparing numbers: ${a.RequestID} vs ${b.RequestID}`);
+          compareResult = parseInt(a.RequestID) - parseInt(b.RequestID);
+          break;
+        
+        case "date":
+        default:
+          // Sort by created_at date
+          const dateA = new Date(a.created_at || 0).getTime();
+          const dateB = new Date(b.created_at || 0).getTime();
+          console.log(`[SORT] Comparing dates: ${a.created_at} vs ${b.created_at}`);
+          compareResult = dateA - dateB;
+          break;
+      }
+      
+      // Apply sort order (asc = ascending, desc = descending)
+      const result = sortOrder === "asc" ? compareResult : -compareResult;
+      return result;
+    });
+    
+    console.log(`[SORT] Final sorted order (${sortBy}, ${sortOrder}):`, sorted.map(r => r.RequestID));
+    return sorted;
+  }, [requests, sortBy, sortOrder]);
 
   const handleCreateRequest = () => {
     navigate("/request");
   };
 
   const handleDeleteRequest = (requestId) => {
-    if (window.confirm("Are you sure you want to delete this request?")) {
-      deleteRequest(requestId);
+    setDeleteConfirmRequestId(requestId);
+    setShowDeleteConfirmModal(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (deleteConfirmRequestId) {
+      setShowDeleteConfirmModal(false);
+      await deleteRequest(deleteConfirmRequestId);
+      setDeleteConfirmRequestId(null);
+    }
+  };
+
+  const handleDeclineDelete = () => {
+    setShowDeleteConfirmModal(false);
+    setDeleteConfirmRequestId(null);
+  };
+
+  const checkIfRequestHasTasks = async (requestId) => {
+    try {
+      // Check if any ProductProcess tasks exist for this request's products
+      const response = await fetch(
+        "/app/productprocess/",
+        {
+          method: "GET",
+          credentials: "include",
+        }
+      );
+      if (response.ok) {
+        const tasks = await response.json();
+        // Check if any task belongs to this request's products
+        const requestProducts = requests
+          .find(r => r.RequestID === requestId)
+          ?.request_products.map(p => p.id) || [];
+        
+        const hasTasks = tasks.some(task => requestProducts.includes(task.request_product));
+        setRequestHasTasks(hasTasks);
+      }
+    } catch (err) {
+      console.error("Error checking tasks:", err);
+      setRequestHasTasks(false);
     }
   };
 
   const handleViewDetails = (requestId) => {
     const request = requests.find(r => r.RequestID === requestId);
     setSelectedRequest(request);
+    setRequestHasTasks(false); // Reset before checking
+    checkIfRequestHasTasks(requestId);
     setShowDetailsModal(true);
   };
 
@@ -121,111 +229,289 @@ function RequestList() {
       const data = await response.json();
       
       if (!response.ok) {
-        const errorMessage = data.hint ? `${data.error}\n\n${data.hint}` : data.error || "Failed to start project";
-        alert(`✗ Error: ${errorMessage}`);
+        let errorMessage = data.error || "Failed to start project";
+        if (data.removed_products && data.removed_products.length > 0) {
+          const removedItems = data.removed_products.map(p => `${p.product_name} (qty: ${p.quantity})`).join(", ");
+          errorMessage += ` - Removed: ${removedItems}`;
+        }
+        showToast(errorMessage, "error");
         return;
       }
 
       // Show success message
-      alert("✓ Project started successfully!");
+      const successMessage = `✓ Project started! Created ${data.tasks_created} task(s)`;
+      showToast(successMessage, "success");
+      
+      // Hide the details modal
+      setShowDetailsModal(false);
+      
+      // Remove the request from the list immediately
+      setRequests(requests.filter(r => r.RequestID !== selectedRequest.RequestID));
+      
+      // Set modal data and show success modal
+      setProjectStartData({
+        requestID: selectedRequest.RequestID,
+        taskCount: data.tasks_created,
+        message: data.message
+      });
+      setShowProjectStartModal(true);
       
       // Refresh notifications
       window.dispatchEvent(new Event('refreshNotifications'));
       
-      // Refresh the request list to remove the started request
-      fetchRequests(filterArchived, dateFilter);
-      
-      // Navigate to task-status after a short delay
+      // Navigate to task-status after 3 seconds
       setTimeout(() => {
+        setShowProjectStartModal(false);
         navigate("/task-status");
-      }, 500);
+      }, 3000);
     } catch (err) {
       console.error("Error starting project:", err);
-      alert("✗ Failed to start project: " + err.message);
+      showToast("Failed to start project: " + err.message, "error");
     }
   };
 
   const deleteRequest = async (requestId) => {
+    console.log(`[DeleteRequest] Starting delete for request ${requestId}`);
     try {
       const response = await fetch(
-        `http://localhost:8000/app/request/${requestId}`,
+        `/app/request/${requestId}/`,
         {
           method: "DELETE",
           credentials: "include",
+          headers: {
+            "Content-Type": "application/json",
+          }
         }
       );
 
+      console.log(`[DeleteRequest] Response status: ${response.status}`);
+      const data = await response.json();
+      console.log(`[DeleteRequest] Response data:`, data);
+
       if (response.ok) {
-        fetchRequests(filterArchived, dateFilter);
+        showToast("Request archived successfully!", "success");
+        console.log(`[DeleteRequest] Refreshing requests list after archive`);
+        fetchRequests();
       } else {
-        alert("Error deleting request");
+        const errorMsg = data.error || data.detail || "Error archiving request";
+        showToast(`Failed to archive: ${errorMsg}`, "error");
+        console.error("Archive error:", data);
       }
     } catch (err) {
-      console.error("Error deleting request:", err);
+      console.error("Error archiving request:", err);
+      showToast(`Network error: ${err.message}`, "error");
     }
   };
 
   return (
     <SidebarLayout>
       <div className="page-content">
-        {/* Create Request Button - Only for Admin users */}
-        {userRole !== "manager" && userRole !== "production_manager" && (
-          <div className="d-flex justify-content-end mb-5">
-            <button
-              className="btn btn-back-to-create"
-              onClick={() => navigate("/request")}
-              title="Go back to Create Request"
+        <style>{`
+        @keyframes slideIn {
+          from {
+            transform: translateX(400px);
+            opacity: 0;
+          }
+          to {
+            transform: translateX(0);
+            opacity: 1;
+          }
+        }
+        
+        @keyframes fadeInOut {
+          0% {
+            opacity: 0;
+            transform: scale(0.95);
+          }
+          50% {
+            opacity: 1;
+            transform: scale(1);
+          }
+          100% {
+            opacity: 0;
+            transform: scale(0.95);
+          }
+        }
+        
+        @keyframes tableRowFadeIn {
+          from {
+            opacity: 0;
+            transform: translateY(-5px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+      `}</style>
+
+      {/* Toast Notification */}
+      {toast.visible && (
+        <div className={`toast-notification toast-${toast.type}`}>
+          {toast.message}
+        </div>
+      )}
+
+      {/* Loading Popup Modal for Sort Filter */}
+      {isRefreshing && (
+        <div 
+          style={{ 
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: "rgba(0, 0, 0, 0.5)",
+            display: "flex", 
+            justifyContent: "center", 
+            alignItems: "center",
+            zIndex: 10000
+          }}
+        >
+          <div 
+            style={{
+              backgroundColor: "#fff",
+              borderRadius: "12px",
+              padding: "40px 60px",
+              textAlign: "center",
+              boxShadow: "0 4px 20px rgba(0, 0, 0, 0.15)",
+              animation: "fadeInOut 1.6s ease-in-out"
+            }}
+          >
+            <div 
+              className="spinner-border"
+              style={{
+                width: "50px",
+                height: "50px",
+                borderWidth: "4px",
+                color: "#1D6AB7",
+                marginBottom: "20px"
+              }}
+              role="status"
             >
-              <i className="bi bi-plus-circle me-2"></i> Create New Request
-            </button>
+              <span className="visually-hidden">Loading...</span>
+            </div>
+            <p style={{
+              fontSize: "16px",
+              fontWeight: "500",
+              color: "#333",
+              margin: 0
+            }}>
+              {loadingMessage}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Project Start Success Modal */}
+        {showProjectStartModal && (
+          <div 
+            className="modal d-block"
+            style={{ 
+              backgroundColor: "rgba(0, 0, 0, 0.5)", 
+              display: "flex", 
+              justifyContent: "center", 
+              alignItems: "center",
+              position: "fixed",
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              zIndex: 9999
+            }}
+          >
+            <div 
+              className="modal-dialog modal-dialog-centered" 
+              style={{ maxWidth: "450px" }}
+            >
+              <div className="modal-content border-0 shadow-lg">
+                <div className="modal-body p-5 text-center">
+                  <div 
+                    className="mb-4"
+                    style={{
+                      animation: "fadeIn 0.3s ease-in"
+                    }}
+                  >
+                    <i className="bi bi-check-circle text-success" style={{ fontSize: "4rem" }}></i>
+                  </div>
+                  <h3 className="fw-bold mb-4 text-success">Project Started!</h3>
+                  <div className="bg-light p-4 rounded mb-4" style={{ border: "2px solid #198754" }}>
+                    <p className="text-muted small mb-2 fw-600">ISSUANCE NO.</p>
+                    <p className="text-primary fw-bold" style={{ fontSize: "1.4rem" }}>#{projectStartData.requestID}</p>
+                  </div>
+                  <p className="text-dark mb-4" style={{ fontSize: "0.95rem", lineHeight: "1.6" }}>{projectStartData.message}</p>
+                  <p className="small text-muted">Redirecting to task status...</p>
+                  <div className="mt-3">
+                    <div className="spinner-border spinner-border-sm text-success" role="status">
+                      <span className="visually-hidden">Loading...</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         )}
 
-        {/* Filter and Controls Bar */}
-        <div className="filters-actions-bar">
-          <div className="filters-group">
-            <div className="filter-item">
-              <label>Status</label>
+        {/* Header with Filters and Create Button - Aligned at same level */}
+        <div className="d-flex justify-content-between align-items-center mb-4 gap-3">
+          {/* Filter and Controls Bar */}
+          <div className="filters-actions-bar flex-grow-1">
+            <div className="filters-group" style={{ display: "flex", gap: "12px", alignItems: "center", padding: "10px 0" }}>
+              <label style={{ fontWeight: "600", marginBottom: "0px", whiteSpace: "nowrap" }}>Sort By:</label>
               <select
-                value={filterArchived}
-                onChange={handleFilterChange}
+                value={sortBy}
+                onChange={handleSortChange}
                 className="filter-dropdown"
+                style={{ padding: "8px 12px", borderRadius: "6px", border: "1px solid #ddd", background: "#fff" }}
               >
-                <option value="false">Active Requests</option>
-                <option value="true">Archived Requests</option>
+                <option value="date">Date</option>
+                <option value="number">Number</option>
+                <option value="name">Name</option>
+              </select>
+              
+              <select
+                value={sortOrder}
+                onChange={handleSortOrderChange}
+                className="filter-dropdown"
+                style={{ padding: "8px 12px", borderRadius: "6px", border: "1px solid #ddd", background: "#fff" }}
+              >
+                <option value="desc">Descending</option>
+                <option value="asc">Ascending</option>
               </select>
             </div>
+          </div>
 
-            <button
-              className="filter-btn-date"
-              onClick={() => setShowDateRangePicker(!showDateRangePicker)}
-            >
-              Date Range
-            </button>
-
-            {showDateRangePicker && (
-              <div className="date-range-picker-inline">
-                <input
-                  type="date"
-                  name="created_from"
-                  value={dateFilter.created_from}
-                  onChange={handleDateInputChange}
-                  placeholder="From"
-                />
-                <input
-                  type="date"
-                  name="created_to"
-                  value={dateFilter.created_to}
-                  onChange={handleDateInputChange}
-                  placeholder="To"
-                />
-                <button
-                  className="btn-primary btn-small"
-                  onClick={handleDateRangeApply}
-                >
-                  Apply
-                </button>
-              </div>
+          {/* Right-side Actions: Search and Create */}
+          <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+            {/* Search Input */}
+            <input
+              type="text"
+              placeholder="Search"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              style={{
+                padding: "8px 12px",
+                borderRadius: "6px",
+                border: "1px solid #ddd",
+                fontSize: "14px",
+                minWidth: "200px",
+                outline: "none",
+                transition: "border-color 0.2s"
+              }}
+              onFocus={(e) => e.target.style.borderColor = "#1D6AB7"}
+              onBlur={(e) => e.target.style.borderColor = "#ddd"}
+            />
+            
+            {/* Create Request Button - Only for Admin users */}
+            {userData.role !== "manager" && userData.role !== "production_manager" && (
+              <button
+                className="btn btn-back-to-create"
+                onClick={() => navigate("/request")}
+                title="Go back to Create Request"
+                style={{ whiteSpace: "nowrap" }}
+              >
+                <i className="bi bi-plus-circle me-2"></i> Create New Request
+              </button>
             )}
           </div>
         </div>
@@ -246,8 +532,15 @@ function RequestList() {
               </tr>
             </thead>
             <tbody>
-              {requests.map((request) => (
-                <tr key={request.RequestID}>
+              {sortedRequests
+                .filter((request) =>
+                  searchTerm === "" ||
+                  request.RequestID.toString().includes(searchTerm) ||
+                  (request.requester_name && request.requester_name.toLowerCase().includes(searchTerm.toLowerCase())) ||
+                  (request.requester_company && request.requester_company.toLowerCase().includes(searchTerm.toLowerCase()))
+                )
+                .map((request) => (
+                <tr key={request.RequestID} style={isTableAnimating ? { animation: "tableRowFadeIn 0.5s ease-out" } : {}}>
                   <td>{request.RequestID}</td>
                   <td>{request.requester_name || "N/A"}</td>
                   <td>{request.requester_company || "N/A"}</td>
@@ -264,7 +557,7 @@ function RequestList() {
                     <button
                       className="btn-delete-action"
                       onClick={() => handleDeleteRequest(request.RequestID)}
-                      title="Delete request"
+                      title="Archive request"
                     >
                       🗑️
                     </button>
@@ -279,79 +572,199 @@ function RequestList() {
           <div className="no-data">No requests found.</div>
         )}
 
-        {/* Request Details Modal - Wireframe Style */}
+        {/* Request Details Modal - Production Manager Style */}
         {showDetailsModal && selectedRequest && (
-          <div className="modal-overlay" onClick={() => setShowDetailsModal(false)}>
-            <div className="modal-content modal-wireframe" onClick={(e) => e.stopPropagation()}>
-              {/* Header with Icon */}
-              <div className="modal-header-wireframe">
-                <img src="/Tools.png" alt="Tools Icon" className="modal-icon" />
-                <h2 className="modal-title-wireframe">Request ID {selectedRequest.RequestID}</h2>
-              </div>
-
-              {/* Body with 2-column Layout */}
-              <div className="modal-body-wireframe">
-                {/* Divider after Request ID */}
-                <div className="details-divider"></div>
-
-                {/* Requester Section */}
-                <div className="details-row">
-                  <label className="details-label">Requester</label>
-                  <span className="details-value">{selectedRequest.requester_name || "N/A"}</span>
-                </div>
-                <div className="details-row">
-                  <label className="details-label">Company Name</label>
-                  <span className="details-value">{selectedRequest.requester_company || "N/A"}</span>
-                </div>
-                <div className="details-row">
-                  <label className="details-label">Date Created</label>
-                  <span className="details-value">{selectedRequest.created_at || "N/A"}</span>
-                </div>
-
-                {/* Divider between sections */}
-                <div className="details-divider"></div>
-
-                {/* Product Section */}
-                <div className="details-row">
-                  <label className="details-label">Product Name</label>
-                  <span className="details-value">
-                    {selectedRequest.request_products && selectedRequest.request_products.length > 0
-                      ? selectedRequest.request_products.map(p => p.product_name || "N/A").join(", ")
-                      : "N/A"}
-                  </span>
-                </div>
-                <div className="details-row">
-                  <label className="details-label">Qty.</label>
-                  <span className="details-value">
-                    {selectedRequest.request_products && selectedRequest.request_products.length > 0
-                      ? selectedRequest.request_products.map(p => p.quantity).join(", ")
-                      : "N/A"}
-                  </span>
-                </div>
-                <div className="details-row">
-                  <label className="details-label">Deadline</label>
-                  <span className="details-value">
-                    {selectedRequest.request_products && selectedRequest.request_products.length > 0
-                      ? selectedRequest.request_products.map(p => p.deadline_extension || "N/A").join(", ")
-                      : selectedRequest.deadline || "N/A"}
-                  </span>
-                </div>
-              </div>
-
-              {/* Footer with Buttons */}
-              <div className="modal-footer-wireframe">
-                <button 
-                  className="btn-start-project-simple"
-                  onClick={handleStartProject}
-                >
-                  Start Project
-                </button>
-                <button 
-                  className="btn-cancel-simple"
+          <div className="modal-overlay" style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0, 0, 0, 0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999 }} onClick={() => setShowDetailsModal(false)}>
+            <div className="modal-dialog" style={{ backgroundColor: "white", borderRadius: "8px", maxWidth: "600px", width: "90%", maxHeight: "85vh", display: "flex", flexDirection: "column", overflow: "hidden", boxShadow: "0 4px 20px rgba(0,0,0,0.15)" }} onClick={e => e.stopPropagation()}>
+              {/* Header */}
+              <div className="modal-header" style={{ backgroundColor: "#9BC284", padding: "1.5rem", borderBottom: "2px solid #fff", color: "white", display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0, gap: "1rem" }}>
+                <h5 className="modal-title" style={{ color: "white", marginBottom: 0, flex: 1, fontSize: "1.25rem", fontWeight: "600" }}>ISSUANCE #{selectedRequest.RequestID}</h5>
+                <button
+                  type="button"
                   onClick={() => setShowDetailsModal(false)}
+                  style={{
+                    background: "transparent",
+                    border: "none",
+                    color: "white",
+                    fontSize: "2rem",
+                    cursor: "pointer",
+                    padding: "0",
+                    width: "2rem",
+                    height: "2rem",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    flexShrink: 0
+                  }}
+                  aria-label="Close modal"
                 >
-                  Cancel
+                  ×
                 </button>
+              </div>
+
+              {/* Body */}
+              <div style={{ padding: "1.5rem", overflowY: "auto", flex: 1, minHeight: 0 }}>
+                {/* Customer Information */}
+                <div style={{ marginBottom: "1.5rem", paddingBottom: "1rem", borderBottom: "1px solid #dee2e6" }}>
+                  <h6 style={{ marginBottom: "1rem", color: "#333", fontSize: "0.95rem", fontWeight: "600" }}>Customer Information</h6>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", fontSize: "0.9rem" }}>
+                    <div>
+                      <label style={{ fontWeight: "600", color: "#666", display: "block", marginBottom: "0.25rem" }}>Name:</label>
+                      <p style={{ margin: 0, color: "#333" }}>{selectedRequest.requester_name || "N/A"}</p>
+                    </div>
+                    <div>
+                      <label style={{ fontWeight: "600", color: "#666", display: "block", marginBottom: "0.25rem" }}>Company:</label>
+                      <p style={{ margin: 0, color: "#333" }}>{selectedRequest.requester_company || "N/A"}</p>
+                    </div>
+                    <div style={{ gridColumn: "1 / -1" }}>
+                      <label style={{ fontWeight: "600", color: "#666", display: "block", marginBottom: "0.25rem" }}>Date Created:</label>
+                      <p style={{ margin: 0, color: "#333" }}>{selectedRequest.created_at || "N/A"}</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Products */}
+                <div style={{ marginBottom: "1rem", paddingBottom: "1rem", borderBottom: "1px solid #dee2e6" }}>
+                  <h6 style={{ marginBottom: "1rem", color: "#333", fontSize: "0.95rem", fontWeight: "600" }}>
+                    Products ({selectedRequest.request_products?.length || 0})
+                  </h6>
+                  {!selectedRequest.request_products || selectedRequest.request_products.length === 0 ? (
+                    <p style={{ fontSize: "0.9rem", color: "#999", margin: 0 }}>No products</p>
+                  ) : (
+                    <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                      {selectedRequest.request_products.map((product, idx) => (
+                        <div key={idx} style={{ borderLeft: "3px solid #9BC284", paddingLeft: "1rem", paddingRight: "1rem" }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                            <strong style={{ fontSize: "0.95rem", color: "#333" }}>{product.product_name || "N/A"}</strong>
+                            <span style={{ fontSize: "0.9rem", color: "#666", fontWeight: "600" }}>Qty: {product.quantity || 0}</span>
+                          </div>
+                          <div style={{ marginTop: "0.5rem", fontSize: "0.85rem", color: "#666" }}>
+                            <strong>Deadline:</strong> {product.deadline_extension || "N/A"}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div style={{ backgroundColor: "#f8f9fa", padding: "1rem", borderTop: "2px solid #dee2e6", display: "flex", gap: "10px", justifyContent: "flex-end", position: "sticky", bottom: 0, zIndex: 999, flexShrink: 0 }}>
+                {userData.role === "production_manager" && (
+                  <button 
+                    className="btn"
+                    onClick={handleStartProject}
+                    disabled={requestHasTasks}
+                    style={{
+                      flex: 1,
+                      padding: "0.65rem 1rem",
+                      backgroundColor: "#28a745",
+                      color: "white",
+                      border: "none",
+                      borderRadius: "4px",
+                      cursor: requestHasTasks ? "not-allowed" : "pointer",
+                      fontWeight: "600",
+                      fontSize: "0.9rem",
+                      opacity: requestHasTasks ? 0.7 : 1
+                    }}
+                    title={requestHasTasks ? "This project has already been started" : "Start the project"}
+                  >
+                    {requestHasTasks ? "✓ Project Started" : "Start Project"}
+                  </button>
+                )}
+                <button 
+                  className="btn"
+                  onClick={() => setShowDetailsModal(false)}
+                  style={{
+                    flex: 1,
+                    padding: "0.65rem 1rem",
+                    backgroundColor: "#e9ecef",
+                    color: "#333",
+                    border: "1px solid #dee2e6",
+                    borderRadius: "4px",
+                    cursor: "pointer",
+                    fontWeight: "600",
+                    fontSize: "0.9rem"
+                  }}
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+        {/* Toast Notification */}
+        {toast.visible && (
+          <div
+            style={{
+              position: "fixed",
+              top: "20px",
+              right: "20px",
+              backgroundColor: toast.type === "success" ? "#d4edda" : "#f8d7da",
+              color: toast.type === "success" ? "#155724" : "#721c24",
+              border: `1px solid ${toast.type === "success" ? "#c3e6cb" : "#f5c6cb"}`,
+              borderRadius: "4px",
+              padding: "12px 20px",
+              boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
+              zIndex: 2000,
+              display: "flex",
+              alignItems: "center",
+              gap: "10px",
+              animation: "slideIn 0.3s ease-out"
+            }}
+          >
+            <i className={`bi ${toast.type === "success" ? "bi-check-circle" : "bi-exclamation-circle"}`}></i>
+            <span>{toast.message}</span>
+          </div>
+        )}
+
+        {/* Delete Confirmation Modal */}
+        {showDeleteConfirmModal && (
+          <div 
+            className="modal d-block"
+            style={{ 
+              backgroundColor: "rgba(0, 0, 0, 0.5)", 
+              display: "flex", 
+              justifyContent: "center", 
+              alignItems: "center",
+              zIndex: 1050
+            }}
+          >
+            <div className="modal-dialog modal-dialog-centered" style={{ zIndex: 1060 }}>
+              <div className="modal-content border-0 shadow-lg">
+                <div className="modal-header bg-light border-bottom">
+                  <h5 className="modal-title">
+                    <i className="bi bi-exclamation-circle-fill text-warning me-2"></i>
+                    Archive Request
+                  </h5>
+                  <button
+                    type="button"
+                    className="btn-close"
+                    onClick={handleDeclineDelete}
+                    aria-label="Close"
+                  ></button>
+                </div>
+                <div className="modal-body">
+                  <p className="mb-0 text-muted">
+                    Are you sure you want to archive this request? It will be moved to archived requests and can be accessed from the archive section.
+                  </p>
+                </div>
+                <div className="modal-footer border-top bg-light">
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={handleDeclineDelete}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-warning"
+                    onClick={handleConfirmDelete}
+                  >
+                    Archive Request
+                  </button>
+                </div>
               </div>
             </div>
           </div>

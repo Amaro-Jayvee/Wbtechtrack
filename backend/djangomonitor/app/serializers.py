@@ -17,6 +17,7 @@ class RequestProductReadSerializer(serializers.ModelSerializer):
     task_status = serializers.SerializerMethodField()
     deadline_extension = serializers.SerializerMethodField()
     requested_at = serializers.SerializerMethodField()
+    archived_at = serializers.SerializerMethodField()
 
     def get_completed_summary(self, obj):
         return f"{obj.get_completed_quota()}/{obj.quantity}"
@@ -26,7 +27,52 @@ class RequestProductReadSerializer(serializers.ModelSerializer):
         return final_step.defect_count if final_step else 0
 
     def get_progress(self, obj):
-        return f"{obj.get_progress_percentage()}%"
+        # Calculate progress using SAME formula as production manager (PST-01: 10% + Others: 90%)
+        # This ensures customer view matches production manager view
+        
+        # Get all steps for this product
+        all_steps = obj.process_steps.filter(archived_at__isnull=True).order_by('step_order')
+        
+        if not all_steps.exists():
+            return "0%"
+        
+        # Separate PST-01 and other steps
+        pst_01_steps = []
+        other_steps = []
+        
+        for step in all_steps:
+            is_pst_01 = False
+            # Check process_name first
+            if step.process_name:
+                process_name = str(step.process_name).upper()
+                if 'WITHDRAWAL' in process_name:
+                    is_pst_01 = True
+            # Check process_number - ONLY exact matches
+            if not is_pst_01 and step.process_number:
+                pst_num = str(step.process_number).strip().upper()
+                if pst_num in ['PST-01', 'PST01', 'PST 01', 'PST-1', 'PST1', 'PST 1']:
+                    is_pst_01 = True
+            
+            if is_pst_01:
+                pst_01_steps.append(step)
+            else:
+                other_steps.append(step)
+        
+        progress = 0
+        
+        # PST-01 steps share 10% equally
+        if pst_01_steps:
+            pst_01_completed = sum(1 for s in pst_01_steps if s.is_completed)
+            pst_01_progress = (pst_01_completed / len(pst_01_steps)) * 10
+            progress += pst_01_progress
+        
+        # Other steps share 90% equally
+        if other_steps:
+            other_completed = sum(1 for s in other_steps if s.is_completed)
+            other_progress = (other_completed / len(other_steps)) * 90
+            progress += other_progress
+        
+        return f"{int(progress)}%"
 
     def get_task_status(self, obj):
         return obj.task_status()   # ✅ reuse model method
@@ -36,6 +82,9 @@ class RequestProductReadSerializer(serializers.ModelSerializer):
 
     def get_requested_at(self, obj):
         return localtime(obj.requested_at).strftime("%Y-%m-%d %H:%M:%S") if obj.requested_at else None
+
+    def get_archived_at(self, obj):
+        return localtime(obj.archived_at).strftime("%Y-%m-%d %H:%M:%S") if obj.archived_at else None
 
     class Meta:
         model = RequestProduct
@@ -49,6 +98,7 @@ class RequestProductReadSerializer(serializers.ModelSerializer):
             "deadline_extension",
             "extension_status",
             "requested_at",
+            "archived_at",
             "progress",
             "task_status",
         ]
@@ -63,16 +113,36 @@ class RequestReadSerializer(serializers.ModelSerializer):
     created_at = serializers.SerializerMethodField()
     updated_at = serializers.SerializerMethodField()
     archived_at = serializers.SerializerMethodField()
+    restored_at = serializers.SerializerMethodField()
     deadline = serializers.SerializerMethodField()
     request_products = serializers.SerializerMethodField()
     
     def get_requester_name(self, obj):
-        try:
-            if obj.requester and hasattr(obj.requester, 'userprofile'):
-                return obj.requester.userprofile.full_name
-        except:
-            pass
-        return obj.requester.username if obj.requester else "Unknown"
+        # Try to get requester's full name
+        if obj.requester:
+            try:
+                if hasattr(obj.requester, 'userprofile'):
+                    full_name = obj.requester.userprofile.full_name
+                    # If full_name exists and is not empty, use it
+                    if full_name and full_name.strip():
+                        return full_name
+            except:
+                pass
+            # Fallback to username if no full_name
+            return obj.requester.username
+        
+        # If no requester, try to use created_by as fallback
+        if obj.created_by:
+            try:
+                if hasattr(obj.created_by, 'userprofile'):
+                    full_name = obj.created_by.userprofile.full_name
+                    if full_name and full_name.strip():
+                        return f"{full_name} (Creator)"
+            except:
+                pass
+            return f"{obj.created_by.username} (Creator)"
+        
+        return "Not Assigned"
     
     def get_requester_company(self, obj):
         try:
@@ -104,6 +174,9 @@ class RequestReadSerializer(serializers.ModelSerializer):
     def get_archived_at(self, obj):
         return localtime(obj.archived_at).strftime("%Y-%m-%d") if obj.archived_at else None
 
+    def get_restored_at(self, obj):
+        return localtime(obj.restored_at).strftime("%Y-%m-%d") if obj.restored_at else None
+
     def get_deadline(self, obj):
         return obj.deadline.strftime("%Y-%m-%d") if obj.deadline else None
 
@@ -124,6 +197,7 @@ class RequestReadSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
             "archived_at",
+            "restored_at",
             "request_products",
         ]
         read_only_fields = ["created_by"]
@@ -131,21 +205,32 @@ class RequestReadSerializer(serializers.ModelSerializer):
 class RequestProductSerializer(serializers.ModelSerializer):
     product_name = serializers.CharField(source='product.prodName', read_only=True)
     requested_at = serializers.SerializerMethodField()
+    request_id = serializers.CharField(source='request.RequestID', read_only=True)
+    archived_at = serializers.SerializerMethodField()
 
     def get_requested_at(self, obj):
         if obj.requested_at:  # DateTimeField
             return localtime(obj.requested_at).strftime("%Y-%m-%d")
         return None
 
+    def get_archived_at(self, obj):
+        if obj.archived_at:
+            return localtime(obj.archived_at).strftime("%Y-%m-%d %H:%M:%S")
+        return None
+
     class Meta:
         model = RequestProduct
         fields = [
+            'id',
+            'request_id',
             'product',
             'product_name',
             'quantity',
             'deadline_extension',
             'extension_status',
             'requested_at',
+            'archived_at',
+            'completed_at',
         ]
 
 
@@ -177,13 +262,21 @@ class RequestSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         products_data = validated_data.pop('request_products')
+        print(f"[SERIALIZER] Creating request with {len(products_data)} products")
+        for i, item in enumerate(products_data):
+            print(f"[SERIALIZER] Product[{i}]: {item}")
+        # Remove requester from validated_data if present (for security - always use current user)
+        validated_data.pop('requester', None)
+        # For customer-created requests, set requester to the current user
         request = Requests.objects.create(
             created_by=self.context['request'].user,
+            requester=self.context['request'].user,
             **validated_data
         )
         for item in products_data:
             # Simply create RequestProduct without process handling
             # ProcessTemplates will be used when starting the project via start_project endpoint
+            print(f"[SERIALIZER] Creating RequestProduct with: {item}")
             RequestProduct.objects.create(request=request, **item)
         return request
 
@@ -250,6 +343,7 @@ class ProductProcessSerializer(serializers.ModelSerializer):
     progress = serializers.SerializerMethodField()
     completed_summary = serializers.SerializerMethodField()
     request_id = serializers.SerializerMethodField()
+    requester_name = serializers.SerializerMethodField()
     request_product_id = serializers.SerializerMethodField()
     request_product_archived_at = serializers.SerializerMethodField()
     total_quota = serializers.SerializerMethodField()
@@ -260,6 +354,9 @@ class ProductProcessSerializer(serializers.ModelSerializer):
     deadline_extension = serializers.SerializerMethodField()
     updated_at = serializers.SerializerMethodField()
     production_date_formatted = serializers.SerializerMethodField()
+    request_product_completed_at = serializers.SerializerMethodField()
+    is_pst_01 = serializers.SerializerMethodField()
+    overall_progress = serializers.SerializerMethodField()
 
     def get_progress(self, obj):
         return obj.progress_summary()
@@ -272,12 +369,45 @@ class ProductProcessSerializer(serializers.ModelSerializer):
     def get_request_id(self, obj):
         return obj.request_product.request.RequestID if obj.request_product else None
     
+    def get_requester_name(self, obj):
+        """Return the requester's name (full name or username). Fall back to created_by if no requester."""
+        if obj.request_product and obj.request_product.request:
+            request = obj.request_product.request
+            
+            # Try to get requester first
+            if request.requester:
+                # Try to get full name from user profile
+                if hasattr(request.requester, 'userprofile'):
+                    full_name = request.requester.userprofile.full_name
+                    if full_name and full_name.strip():
+                        return full_name
+                # Fall back to username
+                return request.requester.username
+            
+            # If no requester, try created_by
+            if request.created_by:
+                if hasattr(request.created_by, 'userprofile'):
+                    full_name = request.created_by.userprofile.full_name
+                    if full_name and full_name.strip():
+                        return full_name
+                # Fall back to username
+                return request.created_by.username
+        
+        return "Unknown"
+    
     def get_request_product_id(self, obj):
         return obj.request_product.id if obj.request_product else None
     
     def get_request_product_archived_at(self, obj):
         """Return the archived_at timestamp from the request_product"""
         return obj.request_product.archived_at if obj.request_product else None
+    
+    def get_request_product_completed_at(self, obj):
+        """Return the completed_at timestamp from the request_product"""
+        if obj.request_product and obj.request_product.completed_at:
+            from django.utils.timezone import localtime
+            return localtime(obj.request_product.completed_at).strftime("%Y-%m-%d %H:%M:%S")
+        return None
     
     def get_total_quota(self, obj):
         return obj.request_product.quantity if obj.request_product else 0
@@ -294,7 +424,7 @@ class ProductProcessSerializer(serializers.ModelSerializer):
         return 0
     
     def get_process_name(self, obj):
-        return obj.process.name if obj.process else None
+        return obj.process_name if obj.process_name else (obj.process.name if obj.process else None)
     
     def get_product_name(self, obj):
         return obj.request_product.product.prodName if obj.request_product else None
@@ -329,37 +459,121 @@ class ProductProcessSerializer(serializers.ModelSerializer):
     def get_updated_at(self, obj):
         from django.utils.timezone import localtime
         return localtime(obj.updated_at).strftime("%Y-%m-%d") if obj.updated_at else None
+    
+    def get_is_pst_01(self, obj):
+        """Check if this is PST-01 (withdrawal process) - ONLY the main PST-01 step"""
+        # Check process_name first (most reliable)
+        if obj.process_name:
+            process_name = str(obj.process_name).upper()
+            if 'WITHDRAWAL' in process_name:
+                return True
+        
+        # Check process_number - must be EXACTLY PST-01 (with variations of spacing/dash)
+        if obj.process_number:
+            pst_num = str(obj.process_number).strip().upper()
+            # ONLY match exactly: "PST-01", "PST 01", "PST01", "PST-1", "PST 1", "PST1"
+            # NOT "PST-02", "PST-011", etc.
+            if pst_num in ['PST-01', 'PST01', 'PST 01', 'PST-1', 'PST1', 'PST 1']:
+                return True
+        
+        return False
+    
+    def get_overall_progress(self, obj):
+        """Calculate overall progress as work completed across all steps.
+        Progress = (Total work done) / (Total work needed across all steps)
+        Where: Total work needed = total_quantity × number_of_steps
+        """
+        if not obj.request_product:
+            return 0
+        
+        # Get all steps for this product
+        all_steps = ProductProcess.objects.filter(
+            request_product=obj.request_product,
+            archived_at__isnull=True
+        ).order_by('step_order')
+        
+        if not all_steps.exists():
+            return 0
+        
+        # Get the total quantity for this product
+        total_quantity = obj.request_product.quantity
+        if total_quantity <= 0:
+            return 0
+        
+        total_steps = all_steps.count()
+        
+        # Separate PST-01 and other steps
+        pst_01_steps = []
+        other_steps = []
+        
+        for s in all_steps:
+            is_pst_01 = False
+            # Check process_name first
+            if s.process_name:
+                process_name = str(s.process_name).upper()
+                if 'WITHDRAWAL' in process_name:
+                    is_pst_01 = True
+            # Check process_number - ONLY exact matches
+            if not is_pst_01 and s.process_number:
+                pst_num = str(s.process_number).strip().upper()
+                if pst_num in ['PST-01', 'PST01', 'PST 01', 'PST-1', 'PST1', 'PST 1']:
+                    is_pst_01 = True
+            
+            if is_pst_01:
+                pst_01_steps.append(s)
+            else:
+                other_steps.append(s)
+        
+        # DEBUG: Show detailed breakdown
+        product_name = obj.request_product.product.prodName if obj.request_product.product else "N/A"
+        print(f"\n[PROGRESS CALC] Product: {product_name} | Total Qty: {total_quantity} | Total Steps: {total_steps}")
+        
+        progress = 0
+        
+        # Calculate PST-01 progress (10% weight)
+        # PST-01 is binary: either completed or not
+        if pst_01_steps:
+            pst_01_completed = sum(1 for s in pst_01_steps if s.is_completed)
+            pst_01_weight = 10
+            pst_01_progress = (pst_01_completed / len(pst_01_steps)) * pst_01_weight
+            progress += pst_01_progress
+            print(f"  PST-01 Steps: {pst_01_completed}/{len(pst_01_steps)} completed → {pst_01_progress:.1f}%")
+            for i, s in enumerate(pst_01_steps, 1):
+                print(f"    [{i}] {s.process_name} - {'✓' if s.is_completed else '✗'}")
+        
+        # Calculate Other steps progress (90% weight)
+        # Progress = (total work done across other steps) / (total work needed)
+        if other_steps:
+            # Total work needed for other steps = total_quantity × num_other_steps
+            total_work_needed = total_quantity * len(other_steps)
+            
+            # Total work done = sum of completed_quota across all other steps
+            total_work_done = sum(s.completed_quota for s in other_steps)
+            
+            # Progress as percentage of work done (only count up to 100%)
+            work_progress = min((total_work_done / total_work_needed) * 100, 100) if total_work_needed > 0 else 0
+            
+            # Weight it at 90%
+            other_progress = (work_progress / 100) * 90
+            progress += other_progress
+            
+            print(f"  Other Steps: {len(other_steps)} steps")
+            print(f"    Total work needed: {total_work_needed} units ({total_quantity} qty × {len(other_steps)} steps)")
+            print(f"    Total work done: {total_work_done} units")
+            print(f"    Work progress: {work_progress:.1f}% → {other_progress:.1f}%")
+            for i, s in enumerate(other_steps, 1):
+                print(f"    [{i}] {s.process_name} - {s.completed_quota}/{total_quantity} {'✓' if s.is_completed else '✗'}")
+        
+        final_progress = int(min(progress, 100))  # Cap at 100%
+        print(f"  ✅ FINAL PROGRESS: {final_progress}%\n")
+        return final_progress
 
-    def validate_workers(self, value):
-        for w in value:
-            # CHECK IF WORKER IS ACTIVE
-            if not w.is_active:
-                raise serializers.ValidationError(
-                    f"Worker {w.FirstName} {w.LastName} is inactive and cannot be assigned."
-                )
-
-            # COUNT ALL ACTIVE TASKS (ANY PRODUCT, ANY STEP)
-            active_steps = ProductProcess.objects.filter(
-                workers=w,
-                is_completed=False,
-                archived_at__isnull=True
-            )
-
-            # EXCLUDE CURRENT INSTANCE IF UPDATING
-            if self.instance:
-                active_steps = active_steps.exclude(pk=self.instance.pk)
-
-            # ENFORCE MAX 2 ACTIVE TASKS TOTAL
-            if active_steps.count() >= 2:
-                raise serializers.ValidationError(
-                    f"Worker {w.FirstName} {w.LastName} is already assigned to 2 active tasks."
-                )
-
-        return value
+    # Workers are optional - all workers are flexible (production requirement)
+    # validate_workers function removed per production decision
 
     class Meta:
         model = ProductProcess
-        fields = ['id', 'request_product', 'workers', 'process', 'step_order', 'completed_quota', 'defect_count', 'is_completed', 'production_date', 'created_at', 'updated_at', 'archived_at', 'progress', 'completed_summary', 'request_id', 'request_product_id', 'request_product_archived_at', 'total_quota', 'total_steps', 'process_name', 'product_name', 'worker_names', 'due_date', 'deadline_extension', 'production_date_formatted']
+        fields = ['id', 'request_product', 'workers', 'process', 'process_number', 'step_order', 'completed_quota', 'defect_count', 'is_completed', 'production_date', 'created_at', 'updated_at', 'archived_at', 'progress', 'completed_summary', 'request_id', 'requester_name', 'request_product_id', 'request_product_archived_at', 'request_product_completed_at', 'total_quota', 'total_steps', 'process_name', 'product_name', 'worker_names', 'due_date', 'deadline_extension', 'production_date_formatted', 'is_pst_01', 'overall_progress']
 
 class ProcessTemplateSerializer(serializers.ModelSerializer):
     process_name = serializers.CharField(source='process.name', read_only=True)
@@ -392,6 +606,8 @@ class CustomerProductDetailSerializer(serializers.ModelSerializer):
     task_status = serializers.SerializerMethodField()
     deadline_extension = serializers.SerializerMethodField()
     workers = serializers.SerializerMethodField()
+    completed_quota = serializers.SerializerMethodField()
+    defect_count = serializers.SerializerMethodField()
 
     class Meta:
         model = RequestProduct
@@ -403,28 +619,106 @@ class CustomerProductDetailSerializer(serializers.ModelSerializer):
             "task_status",
             "deadline_extension",
             "workers",
+            "completed_quota",
+            "defect_count",
         ]
 
     product_name = serializers.CharField(source='product.prodName', read_only=True)
 
     def get_progress(self, obj):
-        return f"{obj.get_progress_percentage()}%"
+        """Calculate overall progress matching production manager calculation.
+        Progress = (Total work done) / (Total work needed across all steps)
+        Includes partial progress from in-progress steps.
+        """
+        # Get all steps for this product
+        all_steps = obj.process_steps.filter(archived_at__isnull=True).order_by('step_order')
+        
+        if not all_steps.exists():
+            return "0%"
+        
+        # Get the total quantity for this product
+        total_quantity = obj.quantity
+        if total_quantity <= 0:
+            return "0%"
+        
+        total_steps = all_steps.count()
+        
+        # Separate PST-01 and other steps
+        pst_01_steps = []
+        other_steps = []
+        
+        for step in all_steps:
+            is_pst_01 = False
+            # Check process_name first
+            if step.process_name:
+                process_name = str(step.process_name).upper()
+                if 'WITHDRAWAL' in process_name:
+                    is_pst_01 = True
+            # Check process_number - ONLY exact matches
+            if not is_pst_01 and step.process_number:
+                pst_num = str(step.process_number).strip().upper()
+                if pst_num in ['PST-01', 'PST01', 'PST 01', 'PST-1', 'PST1', 'PST 1']:
+                    is_pst_01 = True
+            
+            if is_pst_01:
+                pst_01_steps.append(step)
+            else:
+                other_steps.append(step)
+        
+        progress = 0
+        
+        # Calculate PST-01 progress (10% weight) - binary completion
+        if pst_01_steps:
+            pst_01_completed = sum(1 for s in pst_01_steps if s.is_completed)
+            pst_01_weight = 10
+            pst_01_progress = (pst_01_completed / len(pst_01_steps)) * pst_01_weight
+            progress += pst_01_progress
+        
+        # Calculate Other steps progress (90% weight)
+        # Includes full step completions AND partial progress from work done
+        if other_steps:
+            # Total work needed for other steps = total_quantity × num_other_steps
+            total_work_needed = total_quantity * len(other_steps)
+            
+            # Total work done = sum of completed_quota across all other steps
+            total_work_done = sum(s.completed_quota for s in other_steps)
+            
+            # Progress as percentage of work done (cap at 100%)
+            work_progress = min((total_work_done / total_work_needed) * 100, 100) if total_work_needed > 0 else 0
+            
+            # Weight it at 90%
+            other_progress = (work_progress / 100) * 90
+            progress += other_progress
+        
+        final_progress = int(min(progress, 100))  # Cap at 100%
+        return f"{final_progress}%"
 
     def get_task_status(self, obj):
         return obj.task_status()
 
     def get_deadline_extension(self, obj):
         return obj.deadline_extension.strftime("%Y-%m-%d") if obj.deadline_extension else None
+    
+    def get_completed_quota(self, obj):
+        """Get total completed quota across all steps"""
+        return obj.get_completed_quota()
+    
+    def get_defect_count(self, obj):
+        """Get total defect count across all steps"""
+        total_defects = 0
+        for step in obj.process_steps.all():
+            total_defects += step.defect_count
+        return total_defects
 
     def get_workers(self, obj):
-    # Collect all workers across all steps
+        # Collect all workers across all steps
         all_workers = []
         for step in obj.process_steps.all():
             for worker in step.workers.all():
                 worker_name = f"{worker.FirstName} {worker.LastName}"
                 all_workers.append({"name": worker_name})
 
-    # Deduplicate by name
+        # Deduplicate by name
         unique_workers = {w["name"]: w for w in all_workers}.values()
         return list(unique_workers)
 
@@ -467,28 +761,36 @@ class CustomerRequestStatusSerializer(serializers.ModelSerializer):
 
 
 class AuditLogSerializer(serializers.ModelSerializer):
-    request_id = serializers.SerializerMethodField()
-    request_product_id = serializers.SerializerMethodField()
+    request = serializers.SerializerMethodField()
+    request_product = serializers.SerializerMethodField()
     performed_by_username = serializers.SerializerMethodField()
+    timestamp = serializers.SerializerMethodField()
 
     class Meta:
         model = AuditLog
         fields = [
             "id",
             "action_type",
-            "request_id",
-            "request_product_id",
+            "request",
+            "request_product",
             "old_value",
             "new_value",
             "performed_by_username",
             "timestamp",
         ]
 
-    def get_request_id(self, obj):
+    def get_request(self, obj):
         return obj.request.RequestID if obj.request else None
 
-    def get_request_product_id(self, obj):
+    def get_request_product(self, obj):
         return obj.request_product.id if obj.request_product else None
+
+    def get_performed_by_username(self, obj):
+        return obj.performed_by.username if obj.performed_by else "System"
+
+    def get_timestamp(self, obj):
+        from django.utils.timezone import localtime
+        return localtime(obj.timestamp).strftime("%Y-%m-%d %H:%M:%S") if obj.timestamp else None
 
     def get_performed_by_username(self, obj):
         return obj.performed_by.username if obj.performed_by else None
@@ -518,6 +820,9 @@ class SystemSettingsSerializer(serializers.ModelSerializer):
 
 
 class NotificationSerializer(serializers.ModelSerializer):
+    related_request = serializers.SerializerMethodField()
+    related_request_product_id = serializers.SerializerMethodField()
+    
     class Meta:
         model = Notification
         fields = [
@@ -526,7 +831,89 @@ class NotificationSerializer(serializers.ModelSerializer):
             'title',
             'message',
             'related_request',
+            'related_request_product_id',
+            'action_data',
             'is_read',
             'created_at'
         ]
         read_only_fields = ['id', 'created_at']
+    
+    def get_related_request(self, obj):
+        if obj.related_request:
+            return obj.related_request.RequestID
+        return None
+    
+    def get_related_request_product_id(self, obj):
+        if obj.related_request_product:
+            return obj.related_request_product.id
+        return None
+    
+    def get_related_request(self, obj):
+        """Get the related request ID from the model instance"""
+        # Now that we've mapped the field with db_column, we can use the model's field name
+        return obj.related_request_id if obj.related_request_id else None
+
+
+class AccountSignupRequestSerializer(serializers.ModelSerializer):
+    reviewed_by_username = serializers.CharField(source='reviewed_by.username', read_only=True)
+    
+    class Meta:
+        model = AccountSignupRequest
+        fields = [
+            'id',
+            'username',
+            'email',
+            'full_name',
+            'company_name',
+            'contact_number',
+            'role',
+            'status',
+            'created_at',
+            'reviewed_at',
+            'reviewed_by',
+            'reviewed_by_username',
+            'review_notes'
+        ]
+        read_only_fields = ['id', 'created_at', 'reviewed_at', 'reviewed_by', 'reviewed_by_username']
+
+
+class AccountSignupRequestCreateSerializer(serializers.ModelSerializer):
+    password = serializers.CharField(write_only=True, required=True)
+    
+    class Meta:
+        model = AccountSignupRequest
+        fields = [
+            'username',
+            'email',
+            'password',
+            'full_name',
+            'company_name',
+            'contact_number',
+            'role'
+        ]
+    
+    def validate_username(self, value):
+        if User.objects.filter(username=value).exists():
+            raise serializers.ValidationError("This username is already taken.")
+        if AccountSignupRequest.objects.filter(username=value, status="pending").exists():
+            raise serializers.ValidationError("This username is already pending approval.")
+        return value
+    
+    def validate_email(self, value):
+        if User.objects.filter(email=value).exists():
+            raise serializers.ValidationError("This email is already registered.")
+        if AccountSignupRequest.objects.filter(email=value, status="pending").exists():
+            raise serializers.ValidationError("This email is already pending approval.")
+        return value
+    
+    def create(self, validated_data):
+        from django.contrib.auth.hashers import make_password
+        
+        password = validated_data.pop('password')
+        password_hash = make_password(password)
+        
+        signup_request = AccountSignupRequest.objects.create(
+            password_hash=password_hash,
+            **validated_data
+        )
+        return signup_request

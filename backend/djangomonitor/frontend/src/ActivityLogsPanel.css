@@ -1,0 +1,139 @@
+.activity-logs-panel {
+  background: white;
+  border-radius: 8px;
+  border: 1px solid #e0e0e0;
+  padding: 20px;
+  margin: 20px 0;
+}
+
+.activity-logs-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+  padding-bottom: 15px;
+  border-bottom: 2px solid #f0f0f0;
+}
+
+.activity-logs-header h3 {
+  margin: 0;
+  color: #333;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.activity-logs-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.activity-log-item {
+  display: flex;
+  gap: 15px;
+  padding: 12px;
+  border-radius: 6px;
+  background-color: #f9f9f9;
+  border-left: 3px solid #ddd;
+  transition: all 0.2s ease;
+}
+
+.activity-log-item:hover {
+  background-color: #f5f5f5;
+  border-left-color: #007bff;
+}
+
+.activity-log-icon {
+  flex-shrink: 0;
+}
+
+.activity-log-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.activity-log-action {
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 2px;
+  font-size: 14px;
+}
+
+.activity-log-description {
+  color: #666;
+  font-size: 13px;
+  margin-bottom: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.activity-log-timestamp {
+  color: #999;
+  font-size: 12px;
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+  .activity-logs-panel {
+    padding: 15px;
+  }
+
+  .activity-logs-header {
+    flex-direction: column;
+    gap: 10px;
+    align-items: flex-start;
+  }
+
+  .activity-logs-header h3 {
+    font-size: 16px;
+  }
+
+  .activity-log-item {
+    gap: 10px;
+  }
+}
+
+/* Empty state styling */
+.text-center {
+  text-align: center;
+}
+
+.py-4 {
+  padding-top: 1.5rem;
+  padding-bottom: 1.5rem;
+}
+
+.text-muted {
+  color: #999;
+}
+
+/* Spinner styling */
+.spinner-border {
+  display: inline-block;
+  width: 2rem;
+  height: 2rem;
+  vertical-align: text-bottom;
+  border: 0.25em solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: spinner-border 0.75s linear infinite;
+}
+
+@keyframes spinner-border {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}

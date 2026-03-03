@@ -121,6 +121,297 @@ def register_manager(request):
 
 @csrf_exempt
 @require_POST
+def create_customer_by_admin(request):
+    """
+    Admin endpoint to create customer accounts and send email invitation
+    POST /app/create-customer/
+    {
+        "username": "customer1",
+        "email": "customer@example.com",
+        "full_name": "Customer Name",
+        "company_name": "Company Name",
+        "contact_number": "555-1234"
+    }
+    """
+    try:
+        # Check if user is authenticated and is admin
+        if not request.user.is_authenticated:
+            return JsonResponse({"error": "Authentication required"}, status=401)
+        
+        try:
+            user_profile = UserProfile.objects.get(user=request.user)
+            if user_profile.role != Roles.ADMIN:
+                return JsonResponse({
+                    "error": "Only admins can create customer accounts"
+                }, status=403)
+        except UserProfile.DoesNotExist:
+            return JsonResponse({"error": "User profile not found"}, status=403)
+        
+        data = JSONParser().parse(request)
+        username = data.get("username", "").strip()
+        email = data.get("email", "").strip()
+        full_name = data.get("full_name", "").strip()
+        company_name = data.get("company_name", "").strip()
+        contact_number = data.get("contact_number", "").strip()
+        
+        # Validate required fields
+        if not all([username, email, full_name, company_name, contact_number]):
+            return JsonResponse({
+                "error": "All fields are required (username, email, full_name, company_name, contact_number)"
+            }, status=400)
+        
+        # Check if username already exists
+        if User.objects.filter(username=username).exists():
+            return JsonResponse({"error": "Username already taken"}, status=400)
+        
+        # Check if email already exists
+        if User.objects.filter(email=email).exists():
+            return JsonResponse({"error": "Email already registered"}, status=400)
+        
+        # Generate a temporary password (12 random characters)
+        import string
+        import random
+        chars = string.ascii_letters + string.digits + "!@#$%^&*"
+        temp_password = ''.join(random.choice(chars) for _ in range(12))
+        
+        # Create user account
+        user = User.objects.create_user(
+            username=username,
+            password=temp_password,
+            email=email
+        )
+        
+        # Create user profile (customer role, marked as verified by admin)
+        UserProfile.objects.create(
+            user=user,
+            full_name=full_name,
+            company_name=company_name,
+            contact_number=contact_number,
+            role=Roles.CUSTOMER,
+            is_verified=True,  # Admin verified directly
+            verified_at=timezone.now()
+        )
+        
+        # Send welcome email with temporary password
+        try:
+            email_subject = 'TechTrack Account Created'
+            email_body = f"""
+Hello {full_name},
+
+Your TechTrack customer account has been created by an administrator.
+
+Account Details:
+- Username: {username}
+- Email: {email}
+- Temporary Password: {temp_password}
+
+Please log in at: http://localhost:5174 (or your production URL)
+
+After logging in, we recommend changing your password for security.
+
+Best regards,
+TechTrack Admin Team
+"""
+            
+            send_mail(
+                email_subject,
+                email_body,
+                settings.EMAIL_HOST_USER,
+                [email],
+                fail_silently=False
+            )
+            
+            email_sent = True
+            email_message = "Account created successfully and welcome email sent"
+        except Exception as email_err:
+            # Account created but email failed - still return success but note the email issue
+            email_sent = False
+            email_message = f"Account created but email could not be sent: {str(email_err)}"
+            print(f"[ADMIN CREATE CUSTOMER] Email error: {email_err}")
+        
+        return JsonResponse({
+            "success": True,
+            "message": email_message,
+            "username": username,
+            "email": email,
+            "email_sent": email_sent
+        }, status=201)
+        
+    except Exception as e:
+        print(f"[ADMIN CREATE CUSTOMER] Error: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return JsonResponse({
+            "error": f"Failed to create account: {str(e)}"
+        }, status=500)
+
+
+# New signup flow endpoints
+@csrf_exempt
+@require_POST
+def signup_request(request):
+    """
+    User signup endpoint - creates a pending signup request
+    POST /app/signup/
+    {
+        "username": "user1",
+        "email": "user@example.com",
+        "password": "password123",
+        "full_name": "User Name",
+        "company_name": "Company Name",
+        "contact_number": "555-1234",
+        "role": "customer"
+    }
+    """
+    try:
+        data = JSONParser().parse(request)
+        
+        serializer = AccountSignupRequestCreateSerializer(data=data)
+        if serializer.is_valid():
+            signup_request = serializer.save()
+            return JsonResponse({
+                "detail": "Signup request submitted. Please wait for admin approval.",
+                "id": signup_request.id,
+                "username": signup_request.username
+            }, status=201)
+        else:
+            return JsonResponse(serializer.errors, status=400)
+    except Exception as e:
+        return error_response(f"Signup error: {str(e)}", code=400, detail=str(e))
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def list_pending_signups(request):
+    """
+    Admin endpoint to list pending signup requests
+    GET /app/pending-signups/?status=pending
+    """
+    try:
+        if not request.user.is_authenticated:
+            return error_response("Authentication required", code=401)
+        
+        try:
+            user_profile = UserProfile.objects.get(user=request.user)
+            if user_profile.role != Roles.ADMIN:
+                return error_response("Only admins can view signup requests", code=403)
+        except UserProfile.DoesNotExist:
+            return error_response("User profile not found", code=403)
+        
+        status = request.GET.get('status', 'pending')
+        signups = AccountSignupRequest.objects.filter(status=status).order_by('-created_at')
+        
+        serializer = AccountSignupRequestSerializer(signups, many=True)
+        return JsonResponse(serializer.data, safe=False, status=200)
+    except Exception as e:
+        return error_response(f"Error fetching signups: {str(e)}", code=400)
+
+
+@csrf_exempt
+@require_POST
+def approve_signup(request, signup_id):
+    """
+    Admin endpoint to approve a signup request
+    POST /app/signups/{signup_id}/approve/
+    {
+        "review_notes": "Approved - valid customer"
+    }
+    """
+    try:
+        if not request.user.is_authenticated:
+            return error_response("Authentication required", code=401)
+        
+        try:
+            user_profile = UserProfile.objects.get(user=request.user)
+            if user_profile.role != Roles.ADMIN:
+                return error_response("Only admins can approve signups", code=403)
+        except UserProfile.DoesNotExist:
+            return error_response("User profile not found", code=403)
+        
+        signup = get_object_or_404(AccountSignupRequest, id=signup_id)
+        
+        if signup.status != "pending":
+            return error_response(f"Cannot approve signup with status '{signup.status}'", code=400)
+        
+        data = JSONParser().parse(request)
+        review_notes = data.get('review_notes', '')
+        
+        # Approve and create user
+        user = signup.approve(admin_user=request.user, notes=review_notes)
+        
+        return JsonResponse({
+            "detail": "Signup approved successfully",
+            "username": user.username,
+            "email": user.email
+        }, status=200)
+    except Exception as e:
+        return error_response(f"Error approving signup: {str(e)}", code=400)
+
+
+@csrf_exempt
+@require_POST
+def decline_signup(request, signup_id):
+    """
+    Admin endpoint to decline a signup request
+    POST /app/signups/{signup_id}/decline/
+    {
+        "review_notes": "Declined - invalid information"
+    }
+    """
+    try:
+        if not request.user.is_authenticated:
+            return error_response("Authentication required", code=401)
+        
+        try:
+            user_profile = UserProfile.objects.get(user=request.user)
+            if user_profile.role != Roles.ADMIN:
+                return error_response("Only admins can decline signups", code=403)
+        except UserProfile.DoesNotExist:
+            return error_response("User profile not found", code=403)
+        
+        signup = get_object_or_404(AccountSignupRequest, id=signup_id)
+        
+        if signup.status != "pending":
+            return error_response(f"Cannot decline signup with status '{signup.status}'", code=400)
+        
+        data = JSONParser().parse(request)
+        review_notes = data.get('review_notes', '')
+        
+        signup.decline(admin_user=request.user, notes=review_notes)
+        
+        return JsonResponse({
+            "detail": "Signup declined successfully",
+            "username": signup.username
+        }, status=200)
+    except Exception as e:
+        return error_response(f"Error declining signup: {str(e)}", code=400)
+
+
+@csrf_exempt
+@require_POST
+def cancel_signup(request, signup_id):
+    """
+    User endpoint to cancel their own signup request
+    POST /app/signups/{signup_id}/cancel/
+    """
+    try:
+        signup = get_object_or_404(AccountSignupRequest, id=signup_id)
+        
+        if signup.status != "pending":
+            return error_response(f"Cannot cancel signup with status '{signup.status}'", code=400)
+        
+        signup.cancel()
+        
+        return JsonResponse({
+            "detail": "Signup request cancelled",
+            "username": signup.username
+        }, status=200)
+    except Exception as e:
+        return error_response(f"Error cancelling signup: {str(e)}", code=400)
+
+
+@csrf_exempt
+@require_POST
 def login_view(request):
     """
     User login endpoint with validation and error handling
@@ -176,6 +467,16 @@ def login_view(request):
     # Create session
     login(request, user)
     
+    # Log audit entry for login
+    try:
+        log_audit(
+            user=user,
+            action_type="login",
+            new_value=json.dumps({"username": user.username, "email": user.email, "role": profile.role})
+        )
+    except Exception as e:
+        print(f"[AUDIT] Failed to log login: {str(e)}")
+    
     return JsonResponse({
         "username": user.username,
         "email": user.email,
@@ -200,6 +501,14 @@ def logout_view(request):
         )
     
     try:
+        # Log audit entry for logout
+        user = request.user
+        log_audit(
+            user=user,
+            action_type="logout",
+            new_value=json.dumps({"username": user.username})
+        )
+        
         logout(request)
         return JsonResponse({
             "detail": "Successfully logged out"
@@ -244,16 +553,59 @@ def whoami_view(request):
         )
     
     return JsonResponse({
+        "id": request.user.id,
         "username": request.user.username,
         "first_name": request.user.first_name,
         "last_name": request.user.last_name,
         "email": request.user.email,
         "role": profile.role,
         "is_verified": profile.is_verified,
+        "terms_accepted": profile.terms_accepted,
         "detail": "User authenticated"
     }, status=200)
 
-@role_required('admin', 'manager')
+@csrf_exempt
+@require_POST
+def accept_terms_view(request):
+    """
+    Accept terms and agreements for current user
+    
+    POST /app/accept-terms/
+    
+    Marks the user's profile as having accepted terms
+    """
+    if not request.user.is_authenticated:
+        return error_response(
+            "Not authenticated",
+            code=401,
+            detail="No active session"
+        )
+    
+    try:
+        profile = request.user.userprofile
+        profile.terms_accepted = True
+        profile.terms_accepted_at = timezone.now()
+        profile.save()
+        
+        return JsonResponse({
+            "detail": "Terms and agreements accepted successfully",
+            "terms_accepted": True,
+            "terms_accepted_at": profile.terms_accepted_at.isoformat()
+        }, status=200)
+    except AttributeError:
+        return error_response(
+            "User profile not found",
+            code=500,
+            detail="User profile is missing"
+        )
+    except Exception as e:
+        return error_response(
+            "Failed to accept terms",
+            code=500,
+            detail=str(e)
+        )
+
+@role_required('admin', 'production_manager')
 @csrf_exempt
 def workerAPI(request, id=0):
     if request.method == 'GET':
@@ -265,35 +617,99 @@ def workerAPI(request, id=0):
         worker_data = JSONParser().parse(request)
         workers_serializer = WorkerSerializer(data=worker_data)
         if workers_serializer.is_valid():
-            workers_serializer.save()
+            worker = workers_serializer.save()
+            
+            # Log audit entry
+            try:
+                log_audit(
+                    user=request.user,
+                    action_type="worker_create",
+                    new_value=json.dumps({
+                        "id": worker.WorkerID,
+                        "first_name": worker.FirstName,
+                        "last_name": worker.LastName
+                    })
+                )
+            except Exception as audit_err:
+                print(f"[AUDIT] Failed to log worker creation: {str(audit_err)}")
+            
             return JsonResponse("Added successfully!", safe=False)
         return JsonResponse("Failed to add", safe=False)
     
     elif request.method == 'PUT':
         worker_data = JSONParser().parse(request)
         worker = get_object_or_404(Worker, WorkerID=worker_data['WorkerID'])
+        
+        # Capture old values
+        old_data = WorkerSerializer(worker).data
+        
         workers_serializer = WorkerSerializer(worker, data=worker_data)
         if workers_serializer.is_valid():
-            workers_serializer.save()
+            updated_worker = workers_serializer.save()
+            
+            # Log audit entry
+            try:
+                new_data = WorkerSerializer(updated_worker).data
+                log_audit(
+                    user=request.user,
+                    action_type="worker_update",
+                    old_value=json.dumps(old_data),
+                    new_value=json.dumps(new_data)
+                )
+            except Exception as audit_err:
+                print(f"[AUDIT] Failed to log worker update: {str(audit_err)}")
+            
             return JsonResponse("Updated successfully!", safe=False)
         return JsonResponse("Failed to update", safe=False)
 
     elif request.method == 'PATCH':
         worker_data = JSONParser().parse(request)
         worker = get_object_or_404(Worker, WorkerID=worker_data['WorkerID'])
+        
+        # Capture old values
+        old_data = WorkerSerializer(worker).data
+        
         workers_serializer = WorkerSerializer(worker, data=worker_data, partial=True)
         if workers_serializer.is_valid():
-            workers_serializer.save()
+            updated_worker = workers_serializer.save()
+            
+            # Log audit entry
+            try:
+                new_data = WorkerSerializer(updated_worker).data
+                log_audit(
+                    user=request.user,
+                    action_type="worker_update",
+                    old_value=json.dumps(old_data),
+                    new_value=json.dumps(new_data)
+                )
+            except Exception as audit_err:
+                print(f"[AUDIT] Failed to log worker update: {str(audit_err)}")
+            
             return JsonResponse("Patched successfully!", safe=False)
         return JsonResponse("Failed to patch", safe=False)    
 
     elif request.method == 'DELETE':
         worker = get_object_or_404(Worker, WorkerID=id)
+        
+        # Capture old values before deletion
+        old_data = WorkerSerializer(worker).data
+        
         worker.delete()
+        
+        # Log audit entry
+        try:
+            log_audit(
+                user=request.user,
+                action_type="worker_delete",
+                old_value=json.dumps(old_data)
+            )
+        except Exception as audit_err:
+            print(f"[AUDIT] Failed to log worker deletion: {str(audit_err)}")
+        
         return JsonResponse("Deleted successfully!", safe=False)
 
 
-@role_required('admin', 'manager')
+@role_required('admin', 'production_manager')
 @csrf_exempt
 @require_POST
 def verify_customer(request):
@@ -419,26 +835,40 @@ def verify_customer(request):
 
 #         return JsonResponse({"message": "Deleted successfully!"}, status=200)
 
-@role_required('admin', 'manager', 'customer')
+@role_required('admin', 'production_manager', 'customer')
 @csrf_exempt
 def requestAPI(request, id=0):
     if request.method == 'GET':
         # Get current user's requests based on their role
         user = request.user
+        
         if user.is_authenticated:
-            # Check if user is admin (has staff status or is superuser)
-            if user.is_staff or user.is_superuser:
-                # For admins, show requests they created (created_by) - EXCLUDE archived
-                requests_obj = Requests.objects.filter(created_by=user, archived_at__isnull=True)
-                print(f"[DEBUG] Admin {user.username} fetching requests they created. Found: {requests_obj.count()}")
+            try:
+                user_profile = UserProfile.objects.get(user=user)
+                user_role = user_profile.role
+            except UserProfile.DoesNotExist:
+                user_role = None
+            
+            # Check if user is admin or production_manager
+            if user.is_staff or user.is_superuser or user_role in [Roles.ADMIN, Roles.PRODUCTION_MANAGER]:
+                # For production_managers, show only non-archived, non-started requests
+                # A project is "started" when it has ProductProcess steps
+                requests_obj = Requests.objects.filter(
+                    archived_at__isnull=True,
+                    approval_status="approved"
+                ).exclude(
+                    request_products__process_steps__isnull=False
+                ).distinct().order_by('-RequestID')
+                print(f"[DEBUG] {user_role or 'Staff'} user {user.username} fetching non-archived approved requests.")
+                print(f"[DEBUG] Total non-archived requests: {requests_obj.count()}")
+
             else:
-                # For regular users (customers), show requests where they are EITHER the creator OR the requester
-                # This way they can see requests they created (regardless of who requester is) and requests where they are the requester
+                # For regular users (customers), show only non-archived requests
                 requests_obj = Requests.objects.filter(
                     Q(created_by=user) | Q(requester=user),
                     archived_at__isnull=True
-                )
-                print(f"[DEBUG] Customer {user.username} fetching their requests (as creator or requester). Found: {requests_obj.count()}")
+                ).order_by('-RequestID')
+                print(f"[DEBUG] Customer {user.username} fetching their non-archived requests. Found: {requests_obj.count()}")
         else:
             requests_obj = Requests.objects.none()
         request_serializer = RequestReadSerializer(requests_obj, many=True)
@@ -472,6 +902,8 @@ def requestAPI(request, id=0):
             with open(log_file, 'a', encoding='utf-8') as f:
                 f.write(f"[CREATE_REQUEST] User: {request.user.username}, Staff: {request.user.is_staff}\n")
             
+            print(f"[DEBUG] Request data received: {request_data}")
+            
             request_serializer = RequestSerializer(data=request_data, context={'request': request})
             if request_serializer.is_valid():
                 new_request = request_serializer.save()
@@ -481,6 +913,10 @@ def requestAPI(request, id=0):
                 print(f"       - requester: {new_request.requester.username if new_request.requester else 'None'}")
                 print(f"       - deadline: {new_request.deadline}")
                 print(f"       - products: {new_request.request_products.count()}")
+                
+                # Debug: show product quantities
+                for i, rp in enumerate(new_request.request_products.all()):
+                    print(f"       - product[{i}]: {rp.product.prodName if rp.product else 'Unknown'}, quantity: {rp.quantity}")
                 
                 # Create notification for the customer (requester)
                 if new_request.requester:
@@ -513,6 +949,20 @@ def requestAPI(request, id=0):
                         related_request=new_request
                     )
                 
+                # Ensure ProcessTemplate records exist for all products in this request
+                # This is needed when products are created via Add Product/Part modal
+                for request_product in new_request.request_products.all():
+                    product = request_product.product
+                    if product:
+                        # Check if this product already has ProcessTemplate records
+                        existing_templates = ProcessTemplate.objects.filter(product_name=product).exists()
+                        
+                        if not existing_templates:
+                            print(f"[DEBUG] Product {product.prodName} has no ProcessTemplate - checking for ProcessName records to link")
+                            # If no templates exist, try to find any ProcessName records that match this product's processes
+                            # This handles the case where products are created via the Add Product/Part modal
+                            # For now, create templates for common processes if needed by other logic
+                
                 # Return the created request data instead of just a message
                 return JsonResponse(request_serializer.data, safe=False, status=201)
             else:
@@ -526,22 +976,87 @@ def requestAPI(request, id=0):
     
     elif request.method == 'DELETE':
         try:
-            request_instance = Requests.objects.get(RequestID=id)
-        except Requests.DoesNotExist:
-            return JsonResponse({"error": "Request not found"}, status=404)
+            # Check if user is authenticated
+            if not request.user.is_authenticated:
+                return JsonResponse({"error": "User must be authenticated"}, status=401)
+            
+            print(f"[DELETE_REQUEST] User {request.user.username} attempting to delete/archive request {id}")
+            
+            # Get user profile to check role
+            try:
+                user_profile = UserProfile.objects.get(user=request.user)
+            except UserProfile.DoesNotExist:
+                print(f"[DELETE_REQUEST] ERROR: User profile not found for {request.user.username}")
+                return JsonResponse({"error": "User profile not found"}, status=403)
+            
+            # Check if user is allowed to delete (admin or production_manager only)
+            allowed_roles = [Roles.ADMIN, Roles.PRODUCTION_MANAGER]
+            if user_profile.role not in allowed_roles:
+                print(f"[DELETE_REQUEST] ERROR: User {request.user.username} has role {user_profile.role}, not allowed")
+                return JsonResponse({"error": f"Only admins and production managers can delete requests. Your role: {user_profile.role}"}, status=403)
+            
+            try:
+                request_instance = Requests.objects.get(RequestID=id)
+                print(f"[DELETE_REQUEST] Found request {id} for archiving")
+            except Requests.DoesNotExist:
+                print(f"[DELETE_REQUEST] ERROR: Request {id} not found")
+                return JsonResponse({"error": "Request not found"}, status=404)
 
-        old_snapshot = RequestSerializer(request_instance).data
-        
-        # Soft-delete using archive() method instead of hard delete
-        # This prevents orphaned ProductProcess records
-        request_instance.archive()
+            old_snapshot = RequestSerializer(request_instance).data
+            requester_name = request_instance.requester.username if request_instance.requester else "Unknown"
+            
+            # Soft-delete using archive() method instead of hard delete
+            # This prevents orphaned ProductProcess records
+            print(f"[DELETE_REQUEST] Archiving request {id}...")
+            print(f"[DELETE_REQUEST] Before archive - archived_at: {request_instance.archived_at}")
+            
+            request_instance.archive()
+            
+            # Verify archive was set
+            request_instance.refresh_from_db()
+            print(f"[DELETE_REQUEST] Request {id} archived successfully, archived_at={request_instance.archived_at}")
+            
+            # Also verify products are archived
+            products = request_instance.request_products.all()
+            print(f"[DELETE_REQUEST] Checking {products.count()} products for request {id}:")
+            for prod in products:
+                print(f"  - Product {prod.id}: {prod.product.prodName if prod.product else 'N/A'}, archived_at={prod.archived_at}")
 
-        AuditLog.objects.create(
-            action_type="delete",
-            old_value=json.dumps(old_snapshot),
-            performed_by=request.user
-        )
-        return JsonResponse({"message": "Deleted successfully!"}, status=200)
+            AuditLog.objects.create(
+                action_type="archive",
+                old_value=json.dumps(old_snapshot),
+                performed_by=request.user
+            )
+            
+            # Create notifications for archived request
+            # Notify the requester (customer) that their request was archived
+            if request_instance.requester:
+                create_notification(
+                    user=request_instance.requester,
+                    notification_type='request_archived',
+                    title='Request Archived',
+                    message=f'Request #{request_instance.RequestID} has been archived by {request.user.username}',
+                    related_request=request_instance
+                )
+            
+            # Notify all admin users about the archival
+            admin_users = User.objects.filter(Q(is_staff=True) | Q(is_superuser=True)).exclude(id=request.user.id)
+            for admin_user in admin_users:
+                create_notification(
+                    user=admin_user,
+                    notification_type='request_archived',
+                    title='Request Archived',
+                    message=f'Request #{request_instance.RequestID} (requester: {requester_name}) was archived by {request.user.username}',
+                    related_request=request_instance
+                )
+            
+            print(f"[DELETE_REQUEST] Archive complete for request {id}")
+            return JsonResponse({"message": "Request archived successfully!"}, status=200)
+        except Exception as e:
+            print(f"[ERROR] Error archiving request: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return JsonResponse({"error": str(e)}, status=500)
 
 
 @csrf_exempt
@@ -581,10 +1096,166 @@ def submit_requests(request):
         return JsonResponse({"error": str(e)}, status=500)
 
 
+def _extract_process_details(process_name_str):
+    """Extract process_number and process_name from a combined string like 'PST-01 - WITHDRAWAL'"""
+    if not process_name_str:
+        return "", ""
+    
+    # Try to split on " - " if it exists
+    if " - " in process_name_str:
+        parts = process_name_str.split(" - ", 1)
+        return parts[0].strip(), parts[1].strip()
+    else:
+        # If no separator, treat the whole thing as process_name
+        return "", process_name_str.strip()
+
+
+def _auto_start_project_tasks(req, requesting_user):
+    """Helper function to create ProductProcess tasks for a request (auto-called on request creation)"""
+    try:
+        # Get all RequestProducts for this request
+        request_products = req.request_products.all()
+        
+        if not request_products.exists():
+            print(f"[DEBUG] No products found for request {req.RequestID}")
+            return []
+        
+        created_tasks = []
+        
+        # Process each product individually
+        for request_product in request_products:
+            product = request_product.product
+            
+            # Check if THIS product already has tasks (don't skip entire request)
+            existing_product_tasks = ProductProcess.objects.filter(
+                request_product=request_product
+            ).exists()
+            
+            if existing_product_tasks:
+                print(f"[DEBUG] Product {product.prodName} in request {req.RequestID} already has tasks created - skipping")
+                continue
+            
+            # Check if product has process templates
+            process_templates = ProcessTemplate.objects.filter(product_name=product).order_by('step_order')
+            
+            if process_templates.exists():
+                # Create ProductProcess for each template-based product
+                for template in process_templates:
+                    # Extract process number and name from the combined ProcessName.name
+                    process_num, process_name_text = _extract_process_details(template.process.name)
+                    
+                    task = ProductProcess.objects.create(
+                        request_product=request_product,
+                        process=template.process,
+                        process_number=process_num,
+                        process_name=process_name_text,
+                        step_order=template.step_order,
+                        completed_quota=0,
+                        is_completed=False
+                    )
+                    created_tasks.append({
+                        'id': task.id,
+                        'request_id': req.RequestID,
+                        'product': product.prodName,
+                        'process': template.process.name,
+                        'quantity': request_product.quantity
+                    })
+            else:
+                # Product has no templates - create a generic "Assembly" task
+                try:
+                    assembly_process = ProcessName.objects.get(name="Assembly")
+                    
+                    # Extract process number and name from the combined ProcessName.name
+                    process_num, process_name_text = _extract_process_details(assembly_process.name)
+                    
+                    task = ProductProcess.objects.create(
+                        request_product=request_product,
+                        process=assembly_process,
+                        process_number=process_num,
+                        process_name=process_name_text,
+                        step_order=1,
+                        completed_quota=0,
+                        is_completed=False
+                    )
+                    created_tasks.append({
+                        'id': task.id,
+                        'request_id': req.RequestID,
+                        'product': product.prodName,
+                        'process': 'Assembly (Generic)',
+                        'quantity': request_product.quantity
+                    })
+                    print(f"[DEBUG] Created generic Assembly task for product {product.prodName}")
+                except ProcessName.DoesNotExist:
+                    print(f"[DEBUG] Warning: Assembly process not found for product {product.prodName}")
+        
+        # Create notifications only if tasks were created
+        if created_tasks:
+            try:
+                if req.requester:
+                    create_notification(
+                        user=req.requester,
+                        notification_type='project_started',
+                        title=f'Project Started for Request #{req.RequestID}',
+                        message=f'Your request #{req.RequestID} has been started. {len(created_tasks)} task(s) have been created.',
+                        related_request=req
+                    )
+            except Exception as notif_error:
+                print(f"[DEBUG] Error creating notification for requester: {notif_error}")
+            
+            try:
+                create_notification(
+                    user=requesting_user,
+                    notification_type='project_started',
+                    title=f'Project Started for Request #{req.RequestID}',
+                    message=f'Request #{req.RequestID} has been automatically started with {len(created_tasks)} task(s).',
+                    related_request=req
+                )
+            except Exception as notif_error:
+                print(f"[DEBUG] Error creating notification for creator: {notif_error}")
+            
+            try:
+                admin_users = User.objects.filter(Q(is_staff=True) | Q(is_superuser=True)).exclude(id=requesting_user.id)
+                for admin_user in admin_users:
+                    create_notification(
+                        user=admin_user,
+                        notification_type='project_started',
+                        title=f'Project Started for Request #{req.RequestID}',
+                        message=f'Request #{req.RequestID} has been automatically started with {len(created_tasks)} task(s).',
+                        related_request=req
+                    )
+            except Exception as notif_error:
+                print(f"[DEBUG] Error creating notifications for admin users: {notif_error}")
+            
+            # Create audit log entry for project start
+            try:
+                AuditLog.objects.create(
+                    request=req,
+                    action_type="create",
+                    new_value=json.dumps({
+                        "RequestID": req.RequestID,
+                        "tasks_created": len(created_tasks),
+                        "action": "Project started with ProductProcess tasks"
+                    }),
+                    performed_by=requesting_user
+                )
+            except Exception as audit_err:
+                print(f"[DEBUG] Warning: Failed to create audit log for project start: {audit_err}")
+        
+        print(f"[DEBUG] Auto-started project for request {req.RequestID}: tasks_created={len(created_tasks)}")
+        return created_tasks
+        
+    except Exception as e:
+        print(f"[DEBUG] Error in _auto_start_project_tasks: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return []
+
+
 @csrf_exempt
 @require_POST
+@role_required(Roles.PRODUCTION_MANAGER)
 def start_project(request, id=0):
-    """Create ProductProcess (tasks) from a request"""
+    """Create ProductProcess (tasks) from a request - Only Production Manager can start projects"""
     try:
         # Get request_id from URL parameter if provided, otherwise from JSON body
         if id:
@@ -596,136 +1267,27 @@ def start_project(request, id=0):
         if not request_id:
             return JsonResponse({"error": "No request ID provided"}, status=400)
         
-        # Get the request and its products
+        # Get the request
         try:
             req = Requests.objects.get(RequestID=request_id)
         except Requests.DoesNotExist:
             return JsonResponse({"error": "Request not found"}, status=404)
         
-        # Get all RequestProducts for this request
-        request_products = req.request_products.all()
+        # Use the helper function to create tasks
+        created_tasks = _auto_start_project_tasks(req, request.user)
         
-        if not request_products.exists():
-            return JsonResponse({"error": "No products found for this request"}, status=400)
-        
-        # Check which products have process templates and remove those that don't
-        valid_products = []
-        removed_products = []
-        
-        for rp in request_products:
-            process_templates = ProcessTemplate.objects.filter(product_name=rp.product)
-            if process_templates.exists():
-                valid_products.append(rp)
-            else:
-                removed_products.append({
-                    'product_name': rp.product.prodName,
-                    'quantity': rp.quantity
-                })
-                # Don't delete the product - just skip it
-                # The product will remain in the request but won't have tasks
-                print(f"[DEBUG] Skipping product {rp.product.prodName} from request {request_id} - no process template")
-        
-        if not valid_products:
+        if not created_tasks:
             return JsonResponse({
-                "error": f"No products with process templates found. All items are missing process step definitions: {', '.join([p['product_name'] for p in removed_products])}",
-                "hint": "Please configure process templates for these products before starting the project. Go to the Product Configuration page to add processes.",
-                "removed_products": removed_products
+                "error": "This project has already been started or no products found.",
             }, status=400)
-        
-        created_tasks = []
-        
-        # Get the process template for each valid request product
-        for request_product in valid_products:
-            product = request_product.product
-            
-            # Get process templates for this product
-            process_templates = ProcessTemplate.objects.filter(product_name=product).order_by('step_order')
-            
-            # Create ProductProcess for each process step
-            for template in process_templates:
-                # Check if this step already exists to prevent duplicates
-                existing_task = ProductProcess.objects.filter(
-                    request_product=request_product,
-                    process=template.process,
-                    step_order=template.step_order
-                ).first()
-                
-                if existing_task:
-                    # Skip if already exists
-                    print(f"[DEBUG] ProductProcess already exists for request_product {request_product.id}, process {template.process.name}, step {template.step_order}")
-                    continue
-                
-                task = ProductProcess.objects.create(
-                    request_product=request_product,
-                    process=template.process,
-                    step_order=template.step_order,
-                    completed_quota=0,
-                    is_completed=False
-                )
-                created_tasks.append({
-                    'id': task.id,
-                    'request_id': request_id,
-                    'product': product.prodName,
-                    'process': template.process.name,
-                    'quantity': request_product.quantity
-                })
-        
-        # Archive the request to mark it as started/in-process
-        # This removes it from the active requests list so it doesn't appear duplicated
-        req.archived_at = timezone.now()
-        req.save()
-        
-        # Create notification for the requester (customer)
-        try:
-            if req.requester:
-                create_notification(
-                    user=req.requester,
-                    notification_type='project_started',
-                    title=f'Project Started for Request #{req.RequestID}',
-                    message=f'Your request #{req.RequestID} has been started. {len(created_tasks)} task(s) have been created.',
-                    related_request=req
-                )
-        except Exception as notif_error:
-            print(f"[DEBUG] Error creating notification for requester: {notif_error}")
-        
-        # Create notification for the user who started the project
-        try:
-            create_notification(
-                user=request.user,
-                notification_type='project_started',
-                title=f'Project Started for Request #{req.RequestID}',
-                message=f'You started project #{req.RequestID}. {len(created_tasks)} task(s) have been created.',
-                related_request=req
-            )
-        except Exception as notif_error:
-            print(f"[DEBUG] Error creating notification for project starter: {notif_error}")
-        
-        # Create notification for all admin/manager users
-        try:
-            admin_users = User.objects.filter(Q(is_staff=True) | Q(is_superuser=True)).exclude(id=request.user.id)
-            for admin_user in admin_users:
-                create_notification(
-                    user=admin_user,
-                    notification_type='project_started',
-                    title=f'Project Started for Request #{req.RequestID}',
-                    message=f'Request #{req.RequestID} has been started with {len(created_tasks)} task(s).',
-                    related_request=req
-                )
-        except Exception as notif_error:
-            print(f"[DEBUG] Error creating notifications for admin users: {notif_error}")
-        
-        print(f"[DEBUG] start_project completed for request {request_id}: archived_at={req.archived_at}, tasks_created={len(created_tasks)}")
         
         # Prepare response message
         message = f"Successfully created {len(created_tasks)} task(s)"
-        if removed_products:
-            message += f". Removed {len(removed_products)} item(s) without process templates: {', '.join([p['product_name'] for p in removed_products])}"
         
         return JsonResponse({
             "message": message,
             "tasks_created": len(created_tasks),
             "tasks": created_tasks,
-            "removed_items": removed_products
         }, status=201)
     
     except Exception as e:
@@ -748,9 +1310,7 @@ def assign_workers_to_request(request):
         if not request_id or not product_id:
             return JsonResponse({"error": "request_id and product_id are required"}, status=400)
         
-        if not worker_ids:
-            return JsonResponse({"error": "At least one worker must be assigned"}, status=400)
-        
+        # Workers are optional - production decided all workers are flexible
         # Get the request and product
         try:
             req = Requests.objects.get(RequestID=request_id)
@@ -1063,9 +1623,12 @@ def processAPI(request, id=0):
         return JsonResponse("Deleted successfully!", safe=False)
 
 @csrf_exempt
-@role_required('admin')
 def productnameAPI(request, id=0):
+    # Allow GET for all authenticated users, POST/PUT/DELETE for admins only
     if request.method == 'GET':
+        # Allow all authenticated users to view products
+        if not request.user.is_authenticated:
+            return JsonResponse({"error": "Authentication required"}, status=401)
         # Check if filtering for products with templates
         with_templates = request.GET.get('with_templates', 'false').lower() == 'true'
         
@@ -1081,6 +1644,14 @@ def productnameAPI(request, id=0):
         return JsonResponse(prodname_serializer.data, safe=False)
 
     elif request.method == 'POST':
+        # Only admins can create products
+        try:
+            user_profile = UserProfile.objects.get(user=request.user)
+            if user_profile.role != Roles.ADMIN:
+                return JsonResponse({"error": "Only admins can create products"}, status=403)
+        except UserProfile.DoesNotExist:
+            return JsonResponse({"error": "User profile not found"}, status=403)
+        
         prodname_data = JSONParser().parse(request)
         prodname_serializer = ProductNameSerializer(data=prodname_data)
         if prodname_serializer.is_valid():
@@ -1113,13 +1684,20 @@ def productnameAPI(request, id=0):
 
 
 @csrf_exempt
-@role_required('admin')
 def save_product_configuration(request):
     """
     Save a product with its processes for later use.
     POST: {"product_name": "Motor Assembly", "processes": [{"process_name": "Blanking", "step_order": 1}]}
     """
     if request.method == 'POST':
+        # Only admins can configure products
+        try:
+            user_profile = UserProfile.objects.get(user=request.user)
+            if user_profile.role != Roles.ADMIN:
+                return JsonResponse({"error": "Only admins can configure products"}, status=403)
+        except UserProfile.DoesNotExist:
+            return JsonResponse({"error": "User profile not found"}, status=403)
+        
         try:
             data = JSONParser().parse(request)
             product_name = data.get('product_name', '').strip()
@@ -1167,6 +1745,10 @@ def save_product_configuration(request):
 
     elif request.method == 'GET':
         """Get all products with their configured processes"""
+        # Allow all authenticated users to view configured products
+        if not request.user.is_authenticated:
+            return JsonResponse({"error": "Authentication required"}, status=401)
+        
         try:
             products = ProductName.objects.all().order_by('-created_at')
             
@@ -1202,6 +1784,116 @@ def save_product_configuration(request):
             return JsonResponse({"error": str(e)}, status=500)
 
     return JsonResponse({"error": "Method not allowed"}, status=405)
+
+
+@csrf_exempt
+@require_http_methods(['POST', 'GET'])
+def create_product_with_processes(request):
+    """
+    Create a new ProductName with its ProcessName records AND ProcessTemplate records.
+    This endpoint allows both admins and customers to create products with their workflows.
+    
+    POST: {
+        "product_name": "Motor Assembly",
+        "processes": [
+            {"process_name": "Blanking", "process_number": "PST-01"},
+            {"process_name": "Forming", "process_number": "PST-07"}
+        ]
+    }
+    """
+    if request.method == 'POST':
+        if not request.user.is_authenticated:
+            return JsonResponse({"error": "Authentication required"}, status=401)
+        
+        try:
+            data = JSONParser().parse(request)
+            product_name = data.get('product_name', '').strip()
+            processes = data.get('processes', [])
+
+            if not product_name:
+                return JsonResponse({"error": "Product name is required"}, status=400)
+
+            if not processes:
+                return JsonResponse({"error": "At least one process is required"}, status=400)
+
+            # Create or get the ProductName
+            product_obj, created = ProductName.objects.get_or_create(prodName=product_name)
+            print(f"[DEBUG] {'Created' if created else 'Using existing'} product: {product_obj.prodName} (ID: {product_obj.ProdID})")
+
+            # Create ProcessName records and ProcessTemplate records for each process
+            step_order = 0
+            created_count = 0
+            for process_data in processes:
+                process_name = process_data.get('process_name', '').strip()
+                process_number = process_data.get('process_number', process_name).strip()
+                if not process_name:
+                    print(f"[DEBUG] WARNING: Skipping process with no name from data: {process_data}")
+                    continue
+                step_order += 1
+                
+                # Create or get ProcessName
+                # Use either the process_number (e.g., "PST-07") or process_name as the name
+                process_display = f"{process_number} - {process_name}" if process_number != process_name else process_name
+                process_obj, proc_created = ProcessName.objects.get_or_create(name=process_display)
+                print(f"[DEBUG] {'✓ Created' if proc_created else '→ Using existing'} process: {process_obj.name} (ProcessID: {process_obj.ProcessID})")
+                
+                # Create ProcessTemplate so start_project can find it
+                template, template_created = ProcessTemplate.objects.get_or_create(
+                    product_name=product_obj,
+                    process=process_obj,
+                    defaults={'step_order': step_order}
+                )
+                if template_created:
+                    created_count += 1
+                print(f"[DEBUG] {'✓ Created' if template_created else '→ Using existing'} template for {product_obj.prodName} -> {process_obj.name} (step {step_order})")
+            
+            print(f"[DEBUG] ✓ COMPLETE: Product '{product_name}' with {created_count} new templates created")
+
+            return JsonResponse({
+                "success": True,
+                "message": f"Product '{product_name}' created successfully with {len(processes)} process(es)",
+                "product_id": product_obj.ProdID,
+                "product_name": product_obj.prodName
+            }, status=201)
+
+        except Exception as e:
+            print(f"[DEBUG] Error in create_product_with_processes: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return JsonResponse({"error": str(e)}, status=500)
+    
+    elif request.method == 'GET':
+        """Get all products with their configured processes"""
+        if not request.user.is_authenticated:
+            return JsonResponse({"error": "Authentication required"}, status=401)
+        
+        try:
+            products = ProductName.objects.all().order_by('-created_at')
+            
+            result = []
+            for product in products:
+                # Get ProcessTemplate records for this product (ordered by step)
+                templates = ProcessTemplate.objects.filter(product_name=product).order_by('step_order')
+                
+                # Collect all processes with their step orders
+                processes_list = []
+                for template in templates:
+                    processes_list.append({
+                        "process_name": template.process.name,
+                        "step_order": template.step_order
+                    })
+                
+                result.append({
+                    "id": product.ProdID,
+                    "prodName": product.prodName,
+                    "created_at": product.created_at.isoformat() if product.created_at else None,
+                    "processes": processes_list
+                })
+            
+            return JsonResponse(result, safe=False)
+
+        except Exception as e:
+            return JsonResponse({"error": str(e)}, status=500)
 
 
 # @csrf_exempt
@@ -1341,7 +2033,7 @@ def save_product_configuration(request):
 #         return JsonResponse("Step deleted successfully!", safe=False)
 
 @csrf_exempt
-@role_required('admin', 'manager')
+@role_required('admin', 'production_manager')
 def productProcessAPI(request, id=0):
     if request.method == 'GET':
         # If ID is provided, return single ProductProcess
@@ -1356,31 +2048,67 @@ def productProcessAPI(request, id=0):
                 }, status=404)
         
         # Otherwise return all or filtered ProductProcess objects
+
+        # If request_product_id is given, return ALL steps for that product (for delete modal)
+        request_product_id_filter = request.GET.get("request_product_id")
+        if request_product_id_filter:
+            try:
+                rp_id = int(request_product_id_filter)
+            except (ValueError, TypeError):
+                return JsonResponse({"error": "Invalid request_product_id"}, status=400)
+            all_steps = ProductProcess.objects.filter(
+                request_product_id=rp_id
+            ).order_by('step_order')
+            serializer = ProductProcessSerializer(all_steps, many=True)
+            print(f"[GET Products] request_product_id={rp_id} → {all_steps.count()} steps")
+            return JsonResponse(serializer.data, safe=False)
+
+        include_completed = request.GET.get("include_completed", "false").lower() == "true"
         include_archived = request.GET.get("include_archived", "false").lower() == "true"
 
-        if include_archived:
-            # Only return steps that are linked to actual requests (have request_product set)
-            all_steps = ProductProcess.objects.filter(
-                request_product__isnull=False
-            ).order_by('request_product_id', 'step_order')
+        if include_completed:
+            # Only return steps that are linked to completed AND non-archived requests (have completed_at set)
+            if include_archived:
+                # Show all completed steps (including archived)
+                all_steps = ProductProcess.objects.filter(
+                    request_product__isnull=False,
+                    request_product__completed_at__isnull=False
+                ).order_by('request_product_id', 'step_order')
+            else:
+                # Show only completed steps from non-archived requests
+                all_steps = ProductProcess.objects.filter(
+                    request_product__isnull=False,
+                    request_product__completed_at__isnull=False,
+                    request_product__archived_at__isnull=True
+                ).order_by('request_product_id', 'step_order')
         else:
-            # Filter out steps whose request_product is archived, OR whose step itself is archived
+            # Filter out steps whose request_product is completed
             # Also filter out template records (request_product=None)
-            all_steps = ProductProcess.objects.filter(
-                request_product__isnull=False,
-                archived_at__isnull=True,
-                request_product__archived_at__isnull=True
-            ).order_by('request_product_id', 'step_order')
+            if include_archived:
+                # Show all in-progress steps (even if parent request is archived)
+                all_steps = ProductProcess.objects.filter(
+                    request_product__isnull=False,
+                    archived_at__isnull=True,
+                    request_product__completed_at__isnull=True
+                ).order_by('request_product_id', 'step_order')
+            else:
+                # Show only in-progress steps from non-archived requests (DEFAULT)
+                all_steps = ProductProcess.objects.filter(
+                    request_product__isnull=False,
+                    archived_at__isnull=True,
+                    request_product__completed_at__isnull=True,
+                    request_product__archived_at__isnull=True
+                ).order_by('request_product_id', 'step_order')
 
-        # Auto-archive request products if all their steps are completed
+        # Auto-mark request products as completed if all their steps are completed
         from django.utils import timezone
         from django.db.models import Q
         
-        # Get all unique request products from the steps (including already archived ones for checking)
-        if include_archived:
-            temp_all_steps = ProductProcess.objects.all()
+        # Get all unique request products from the steps (including completed ones for checking)
+        if include_completed:
+            temp_all_steps = ProductProcess.objects.filter(request_product__completed_at__isnull=False)
         else:
-            temp_all_steps = ProductProcess.objects.filter(archived_at__isnull=True)
+            temp_all_steps = ProductProcess.objects.filter(request_product__completed_at__isnull=True)
             
         request_product_ids = temp_all_steps.values_list('request_product_id', flat=True).distinct()
         
@@ -1388,8 +2116,8 @@ def productProcessAPI(request, id=0):
             try:
                 rp = RequestProduct.objects.get(id=rp_id)
                 
-                # Check if this request product should be archived
-                if rp.archived_at is None:  # Only archive if not already archived
+                # Check if this request product should be marked as completed
+                if rp.completed_at is None:  # Only mark complete if not already completed
                     # Get all non-archived steps for this request product
                     rp_steps = ProductProcess.objects.filter(
                         request_product_id=rp_id,
@@ -1401,16 +2129,24 @@ def productProcessAPI(request, id=0):
                         all_completed = rp_steps.filter(is_completed=True).count() == rp_steps.count()
                         
                         if all_completed:
-                            print(f"[AUTO-ARCHIVE] Archiving request product {rp_id} - all {rp_steps.count()} steps completed")
-                            rp.archived_at = timezone.now()
-                            rp.save(update_fields=['archived_at'])
+                            print(f"[AUTO-COMPLETE] Marking request product {rp_id} as completed - all {rp_steps.count()} steps completed")
+                            rp.completed_at = timezone.now()
+                            rp.save(update_fields=['completed_at'])
             except RequestProduct.DoesNotExist:
                 pass
             except Exception as e:
-                print(f"[AUTO-ARCHIVE ERROR] Error archiving request product {rp_id}: {str(e)}")
+                print(f"[AUTO-COMPLETE ERROR] Error marking request product {rp_id} as complete: {str(e)}")
 
         serializer = ProductProcessSerializer(all_steps, many=True)
-        return JsonResponse(serializer.data, safe=False)
+        response_data = serializer.data
+        
+        # Log to verify overall_progress is included
+        if response_data:
+            print(f"[DEBUG GET Products] Returning {len(response_data)} steps")
+            print(f"[DEBUG GET Products] First step data keys: {list(response_data[0].keys())}")
+            print(f"[DEBUG GET Products] First step - is_completed: {response_data[0].get('is_completed')}, overall_progress: {response_data[0].get('overall_progress')}")
+        
+        return JsonResponse(response_data, safe=False)
 
     elif request.method == 'PATCH':
         try:
@@ -1454,7 +2190,13 @@ def productProcessAPI(request, id=0):
                 step.save()
                 print(f"[DEBUG PATCH] After save - DB now has: ProductProcess id={step.id}, completed_quota={step.completed_quota}")
                 print(f"[DEBUG PATCH] Updated ProductProcess {id}: completed_quota={step.completed_quota}, request_product={step.request_product.id}, request={step.request_product.request.RequestID}")
-                step.mark_completed_if_ready()
+                was_marked_complete = step.mark_completed_if_ready()
+                # Refresh from DB to get the latest is_completed value
+                step.refresh_from_db()
+                print(f"[DEBUG PATCH] After mark_completed_if_ready: step.is_completed={step.is_completed}, was_marked_complete={was_marked_complete}")
+                print(f"[DEBUG PATCH] Total quantity for request_product: {step.request_product.quantity}, completed_quota: {step.completed_quota}")
+                if was_marked_complete:
+                    print(f"[PROGRESS] ✅ Step {step.id} marked as COMPLETED! (quota {step.completed_quota}/{step.request_product.quantity})")
 
             # Handle defect_count
             if 'defect_count' in data:
@@ -1479,10 +2221,13 @@ def productProcessAPI(request, id=0):
 
             # Update the remaining fields via serializer (excluding workers since we handled it)
             data_for_serializer = {k: v for k, v in data.items() if k != 'workers'}
+            print(f"[DEBUG PATCH] Data for serializer: {data_for_serializer}")
+            print(f"[DEBUG PATCH] Is 'is_completed' in data? {'is_completed' in data_for_serializer}")
+            
             serializer = ProductProcessSerializer(step, data=data_for_serializer, partial=True)
             if serializer.is_valid():
                 updated_step = serializer.save()
-                print(f"[DEBUG PATCH] Serializer save successful for id={updated_step.id}, completed_quota={updated_step.completed_quota}")
+                print(f"[DEBUG PATCH] Serializer save successful for id={updated_step.id}, is_completed={updated_step.is_completed}, completed_quota={updated_step.completed_quota}")
 
                 # Audit log entry
                 try:
@@ -1610,6 +2355,8 @@ def productProcessAPI(request, id=0):
             step = ProductProcess.objects.create(
                 request_product=request_product,
                 process=template.process,
+                process_number=_extract_process_details(template.process.name)[0],
+                process_name=_extract_process_details(template.process.name)[1],
                 step_order=template.step_order,
                 production_date=production_date
             )
@@ -1637,16 +2384,59 @@ def productProcessAPI(request, id=0):
             )
         
         old_snapshot = ProductProcessSerializer(step).data
+        request_product = step.request_product
+        request_instance = request_product.request
+        
         step.delete()
 
         # Audit log entry
         AuditLog.objects.create(
-            request=step.request_product.request,
-            request_product=step.request_product,
+            request=request_instance,
+            request_product=request_product,
             action_type="delete",
             old_value=json.dumps(old_snapshot),
             performed_by=request.user
         )
+
+        # Create notifications for step deletion
+        try:
+            # Notification for the customer (requester) about step deletion
+            if request_instance.requester:
+                create_notification(
+                    user=request_instance.requester,
+                    notification_type='task_deleted',
+                    title='Task Step Deleted',
+                    message=f'Step {old_snapshot.get("step_order", "?")} ({old_snapshot.get("process_name", "Unknown")}) for {request_product.product.prodName} has been deleted',
+                    related_request=request_instance
+                )
+        except Exception as notif_err:
+            print(f"[DELETE NOTIFICATION ERROR] Error creating requester notification: {str(notif_err)}")
+        
+        try:
+            # Notification for the user who deleted the step
+            create_notification(
+                user=request.user,
+                notification_type='task_deleted',
+                title='Task Step Deleted',
+                message=f'You deleted Step {old_snapshot.get("step_order", "?")} ({old_snapshot.get("process_name", "Unknown")}) for {request_product.product.prodName}',
+                related_request=request_instance
+            )
+        except Exception as notif_err:
+            print(f"[DELETE NOTIFICATION ERROR] Error creating deleter notification: {str(notif_err)}")
+        
+        try:
+            # Notification for all admin/manager users about step deletion
+            admin_users = User.objects.filter(Q(is_staff=True) | Q(is_superuser=True)).exclude(id=request.user.id)
+            for admin_user in admin_users:
+                create_notification(
+                    user=admin_user,
+                    notification_type='task_deleted',
+                    title='Task Step Deleted',
+                    message=f'Step {old_snapshot.get("step_order", "?")} ({old_snapshot.get("process_name", "Unknown")}) for {request_product.product.prodName} (Request #{request_instance.RequestID}) was deleted by {request.user.username}',
+                    related_request=request_instance
+                )
+        except Exception as notif_err:
+            print(f"[DELETE NOTIFICATION ERROR] Error creating admin notifications: {str(notif_err)}")
 
         return JsonResponse({"message": "Step deleted successfully!"}, status=200)
 
@@ -1710,7 +2500,7 @@ def request_progress_view(request, pk):
 #     return JsonResponse(serializer.data, safe=False)
 
 @require_http_methods(['POST'])
-@role_required('admin', 'manager')
+@role_required('admin', 'production_manager')
 def request_extension(request, id):
     # id can be either ProductProcess ID or RequestProduct ID
     # Try to find RequestProduct first, then look up via ProductProcess if needed
@@ -1847,10 +2637,21 @@ def reject_extension(request, id):
     return JsonResponse({"error": "Invalid status."}, status=400)
 
 def get_final_step_processes(month, year, include_archived=False):
+    from datetime import datetime, timedelta, time
+    from django.utils import timezone
+    
+    # Calculate date range for the month
+    first_day = datetime(year, month, 1)
+    last_day = (first_day + timedelta(days=32)).replace(day=1) - timedelta(days=1)
+    
+    # Convert to timezone-aware datetimes for comparison
+    start_datetime = timezone.make_aware(datetime.combine(first_day, time.min))
+    end_datetime = timezone.make_aware(datetime.combine(last_day, time.max))
+    
     # Filter by updated_at date (more reliable than production_date)
     base_qs = ProductProcess.objects.filter(
-        updated_at__month=month,
-        updated_at__year=year,
+        updated_at__gte=start_datetime,
+        updated_at__lte=end_datetime,
         request_product__isnull=False  # Only actual tasks, not templates
     )
 
@@ -1870,24 +2671,27 @@ def get_final_step_processes(month, year, include_archived=False):
     final_qs = ProductProcess.objects.filter(id__in=final_ids)
     print(f"[get_final_step_processes] Final step query found {final_qs.count()} ProductProcess")
 
-    # Apply archive filtering only if include_archived is False
+    # Apply archive filtering - now check for completed tasks
     if not include_archived:
-        # Show items that are either not archived OR are completed (done work visible by default)
-        # Also allow archived RequestProducts if the task inside is completed
+        # Show items that are either not completed OR from active requests
+        # Filter to show non-completed tasks (in-progress ones)
         final_qs = final_qs.filter(
-            (Q(archived_at__isnull=True) | Q(is_completed=True)) &  # Show non-archived OR completed tasks
-            Q(request_product__request__archived_at__isnull=True) &  # But requests must not be archived
-            (Q(request_product__archived_at__isnull=True) | Q(is_completed=True))  # Allow archived request products if task is completed
+            request_product__completed_at__isnull=True,  # Task is still in progress
+            archived_at__isnull=True,  # Step itself is not archived
+            request_product__request__archived_at__isnull=True  # Request is not archived
         )
         print(f"[get_final_step_processes] After filtering (include_archived=False): {final_qs.count()} ProductProcess")
     else:
-        # Show ALL items - no filters applied
-        print(f"[get_final_step_processes] include_archived=True: showing all {final_qs.count()} ProductProcess without filters")
+        # Show completed tasks (when include_archived=True, show completed work)
+        final_qs = final_qs.filter(
+            request_product__completed_at__isnull=False  # Task is completed
+        )
+        print(f"[get_final_step_processes] include_archived=True: showing completed tasks {final_qs.count()} ProductProcess")
 
     return final_qs
 
 @require_http_methods(['GET'])
-@role_required('admin', 'manager')
+@role_required('admin', 'production_manager')
 def bar_report(request):
     today = date.today()
     month = int(request.GET.get("month", today.month))
@@ -1922,19 +2726,29 @@ def bar_report(request):
 
 def get_bar_report_data(month, year, include_archived=False):
     import calendar
+    from datetime import datetime, timedelta, time
+    from django.utils import timezone
+    
+    # Calculate date range for the month
+    first_day = datetime(year, month, 1)
+    last_day = (first_day + timedelta(days=32)).replace(day=1) - timedelta(days=1)
+    
+    # Convert to timezone-aware datetimes for comparison
+    start_datetime = timezone.make_aware(datetime.combine(first_day, time.min))
+    end_datetime = timezone.make_aware(datetime.combine(last_day, time.max))
     
     # Get all ProductProcess for this month (not just final steps)
     base_qs = ProductProcess.objects.filter(
-        updated_at__month=month,
-        updated_at__year=year,
+        updated_at__gte=start_datetime,
+        updated_at__lte=end_datetime,
         request_product__isnull=False  # Only actual tasks, not templates
     )
 
     if not include_archived:
-        # Filter out archived items
+        # Filter to show only non-completed tasks (in-progress work)
         base_qs = base_qs.filter(
             archived_at__isnull=True,
-            request_product__archived_at__isnull=True
+            request_product__completed_at__isnull=True
         )
 
     print(f"[get_bar_report_data] Base query found {base_qs.count()} ProductProcess for {month}/{year}")
@@ -2029,7 +2843,7 @@ def get_bar_report_data(month, year, include_archived=False):
 #         "total": total
 #     })
 @require_http_methods(['GET'])
-@role_required('admin', 'manager')
+@role_required('admin', 'production_manager')
 def pie_report(request):
     today = date.today()
     month = int(request.GET.get("month", today.month))
@@ -2072,7 +2886,7 @@ def pie_report(request):
 
 
 @require_http_methods(['GET'])
-@role_required('admin', 'manager')
+@role_required('admin', 'production_manager')
 def donut_top_products(request):
     today = datetime.date.today()
     month = int(request.GET.get("month", today.month))
@@ -2107,7 +2921,7 @@ def donut_top_products(request):
 
 
 @require_http_methods(['GET'])
-@role_required('admin', 'manager')
+@role_required('admin', 'production_manager')
 def top_movers(request):
     """Get top products by quantity completed this month"""
     today = date.today()
@@ -2164,14 +2978,25 @@ def get_pie_report_data(month, year, include_archived=False):
     Shows: In Progress (units still being worked on), Completed (finished units), Rejected (defects)
     Note: We track the CURRENT step's progress for each product, not sum across steps (to avoid double-counting)
     """
+    from datetime import datetime, timedelta, time
+    from django.utils import timezone
+    
     active_qty = 0
     completed_qty = 0
     rejected_qty = 0
 
+    # Calculate date range for the month
+    first_day = datetime(year, month, 1)
+    last_day = (first_day + timedelta(days=32)).replace(day=1) - timedelta(days=1)
+    
+    # Convert to timezone-aware datetimes for comparison
+    start_datetime = timezone.make_aware(datetime.combine(first_day, time.min))
+    end_datetime = timezone.make_aware(datetime.combine(last_day, time.max))
+    
     # Get ALL ProductProcess records within the date range (not just final steps)
     base_qs = ProductProcess.objects.filter(
-        updated_at__month=month,
-        updated_at__year=year,
+        updated_at__gte=start_datetime,
+        updated_at__lte=end_datetime,
         request_product__isnull=False  # Only actual tasks, not templates
     )
 
@@ -2247,12 +3072,26 @@ def get_donut_top_products(month, year, limit=5, include_archived=False):
     return list(product_totals)
 
 @csrf_exempt
-@role_required('admin', 'manager')
 @require_http_methods(['GET'])
 def list_users(request):
+    # Allow all authenticated users to view verified (active) users
+    if not request.user.is_authenticated:
+        return JsonResponse({"error": "Authentication required"}, status=401)
+    
     try:
         # Get query parameter to filter by status: 'pending', 'active', or 'all'
         status = request.GET.get('status', 'pending').lower()
+        
+        # Only admins and production managers can see pending users
+        try:
+            user_profile = UserProfile.objects.get(user=request.user)
+            is_admin_or_manager = user_profile.role in [Roles.ADMIN, Roles.PRODUCTION_MANAGER]
+        except UserProfile.DoesNotExist:
+            is_admin_or_manager = False
+        
+        # Override status to only show active users if not admin/manager
+        if not is_admin_or_manager:
+            status = 'active'
         
         if status == 'pending':
             # Only unverified users
@@ -2321,36 +3160,7 @@ def pending_signups(request):
         traceback.print_exc()
         return JsonResponse({"detail": f"Server error: {str(e)}"}, status=500)
 
-@require_http_methods(['POST'])
-@csrf_exempt
-def approve_signup(request):
-    """Approve a pending signup"""
-    try:
-        data = json.loads(request.body)
-        username = data.get('username')
-        
-        if not username:
-            return JsonResponse({"error": "Username is required"}, status=400)
-        
-        user = User.objects.filter(username=username).first()
-        if not user:
-            return JsonResponse({"error": "User not found"}, status=404)
-        
-        profile = UserProfile.objects.filter(user=user).first()
-        if not profile:
-            return JsonResponse({"error": "User profile not found"}, status=404)
-        
-        profile.is_verified = True
-        profile.verified_at = timezone.now()
-        profile.save()
-        
-        return JsonResponse({
-            "message": "User approved successfully",
-            "username": username,
-            "is_verified": True
-        })
-    except Exception as e:
-        return JsonResponse({"error": str(e)}, status=500)
+
 
 @require_http_methods(['POST'])
 @csrf_exempt
@@ -2379,7 +3189,7 @@ def decline_signup(request):
 
 @require_http_methods(['GET'])
 @require_http_methods(['GET'])
-@role_required('admin', 'manager')
+@role_required('admin', 'production_manager')
 @csrf_exempt
 def full_report_csv(request):
     try:
@@ -2437,7 +3247,7 @@ def full_report_csv(request):
 
 
 @require_http_methods(['POST', 'PATCH'])
-@role_required('admin', 'manager')
+@role_required('admin', 'production_manager')
 @csrf_exempt
 def archive_request(request, id):
     try:
@@ -2474,7 +3284,7 @@ def archive_request(request, id):
     }, status=200)
 
 @require_http_methods(['POST', 'PATCH'])
-@role_required('admin', 'manager')
+@role_required('admin', 'production_manager')
 @csrf_exempt
 def unarchive_request(request, id):
     try:
@@ -2676,13 +3486,17 @@ def get_archived_tasks(request):
             "detail": "Failed to fetch archived tasks"
         }, status=500)
 
-@role_required('admin', 'manager')
+@require_http_methods(["GET"])
 @csrf_exempt
 def auditlog_view(request):
+    """Get all audit logs - requires authentication"""
+    if not request.user.is_authenticated:
+        return JsonResponse({"error": "Not authenticated"}, status=401)
+    
     # Grab latest 50 logs (newest first)
-    logs = AuditLog.objects.select_related("request", "request_product", "performed_by")[:50]
+    logs = AuditLog.objects.select_related("request", "request_product", "performed_by").order_by('-timestamp')[:50]
     serializer = AuditLogSerializer(logs, many=True)
-    return JsonResponse({"audit_logs": serializer.data}, status=200)
+    return JsonResponse(serializer.data, safe=False, status=200)
 
 @role_required('admin', 'manager')
 @csrf_exempt
@@ -2694,10 +3508,75 @@ def auditlog_delete(request, pk: int):
     except AuditLog.DoesNotExist:
         return JsonResponse({"error": "Audit log not found."}, status=404)
 
-@require_http_methods(["GET", "PUT", "PATCH"])
-@role_required("customer")
+@require_http_methods(["GET"])
+@csrf_exempt
+def user_activity_logs(request):
+    """Fetch activity logs for the current user - includes actions performed by user and actions on their requests"""
+    if not request.user.is_authenticated:
+        return JsonResponse({"error": "Not authenticated"}, status=401)
+    
+    try:
+        from django.utils import timezone
+        from datetime import datetime, timedelta
+        
+        user = request.user
+        limit = int(request.GET.get('limit', 50))
+        offset = int(request.GET.get('offset', 0))
+        
+        # Get date filter parameters
+        start_date_str = request.GET.get('start_date')
+        end_date_str = request.GET.get('end_date')
+        
+        # Build base queryset
+        logs_query = AuditLog.objects.select_related(
+            "request", "request_product", "performed_by"
+        ).filter(
+            # Actions performed by this user
+            Q(performed_by=user) |
+            # Actions on requests created by this user
+            Q(request__requester=user) |
+            # Actions on products related to this user's requests
+            Q(request_product__request__requester=user)
+        )
+        
+        # Apply date filters if provided
+        if start_date_str:
+            try:
+                start_date = datetime.fromisoformat(start_date_str).replace(hour=0, minute=0, second=0)
+                logs_query = logs_query.filter(timestamp__gte=start_date)
+            except:
+                pass
+        
+        if end_date_str:
+            try:
+                end_date = datetime.fromisoformat(end_date_str).replace(hour=23, minute=59, second=59)
+                logs_query = logs_query.filter(timestamp__lte=end_date)
+            except:
+                pass
+        
+        # Get total count for pagination
+        total_count = logs_query.count()
+        
+        # Apply ordering and pagination
+        logs = logs_query.order_by('-timestamp')[offset:offset + limit]
+        
+        serializer = AuditLogSerializer(logs, many=True)
+        return JsonResponse({
+            "logs": serializer.data,
+            "total_count": total_count,
+            "offset": offset,
+            "limit": limit
+        }, safe=False, status=200)
+    except Exception as e:
+        print(f"[ERROR] Error fetching user activity logs: {str(e)}")
+        return JsonResponse({"error": str(e)}, status=500)
+
+@require_http_methods(["GET", "PATCH", "PUT"])
 @csrf_exempt
 def profile_view(request):
+    if not request.user.is_authenticated:
+        return JsonResponse({"error": "Not authenticated"}, status=401)
+    
     profile = UserProfile.objects.get(user=request.user)
 
     if request.method == "GET":
@@ -2707,6 +3586,7 @@ def profile_view(request):
             "full_name": profile.full_name,
             "company_name": profile.company_name,
             "contact_number": profile.contact_number,
+            "role": profile.role,
             "is_verified": profile.is_verified,
             "created_at": profile.created_at,
             "verified_at": profile.verified_at,
@@ -2720,10 +3600,28 @@ def profile_view(request):
             request.user.email = data["email"]
             request.user.save()
 
+        # Store old values for audit log
+        old_values = {
+            "full_name": UserProfile.objects.get(user=request.user).full_name,
+            "contact_number": UserProfile.objects.get(user=request.user).contact_number
+        }
+
         profile.full_name = data.get("full_name", profile.full_name)
         profile.company_name = data.get("company_name", profile.company_name)
         profile.contact_number = data.get("contact_number", profile.contact_number)
         profile.save()
+
+        # Log audit entry for profile update
+        new_values = {
+            "full_name": profile.full_name,
+            "contact_number": profile.contact_number
+        }
+        log_audit(
+            user=request.user,
+            action_type="profile_update",
+            old_value=json.dumps(old_values),
+            new_value=json.dumps(new_values)
+        )
 
         return JsonResponse({
             "detail": "Profile updated successfully",
@@ -2737,15 +3635,104 @@ def profile_view(request):
             "verified_at": profile.verified_at,
         }, status=200)
 
+@require_http_methods(['POST'])
+def change_password_view(request):
+    """Change the current user's password with validation and rate limiting."""
+    try:
+        from django.utils.timezone import now
+        from datetime import timedelta
+        
+        profile = UserProfile.objects.get(user=request.user)
+        data = json.loads(request.body)
+        
+        current_password = data.get("current_password", "").strip()
+        new_password = data.get("new_password", "").strip()
+        confirm_password = data.get("confirm_password", "").strip()
+        
+        # Validate inputs
+        if not all([current_password, new_password, confirm_password]):
+            return JsonResponse({
+                "detail": "All fields are required"
+            }, status=400)
+        
+        # Check if current password is correct
+        if not request.user.check_password(current_password):
+            return JsonResponse({
+                "detail": "Current password is incorrect"
+            }, status=400)
+        
+        # Check if new passwords match
+        if new_password != confirm_password:
+            return JsonResponse({
+                "detail": "New passwords do not match"
+            }, status=400)
+        
+        # Password strength validation (minimum 6 characters)
+        if len(new_password) < 6:
+            return JsonResponse({
+                "detail": "Password must be at least 6 characters long"
+            }, status=400)
+        
+        # Check if new password is same as old password
+        if request.user.check_password(new_password):
+            return JsonResponse({
+                "detail": "New password cannot be the same as current password"
+            }, status=400)
+        
+        # Rate limiting: Check if user changed password in the last 24 hours
+        last_password_change = AuditLog.objects.filter(
+            performed_by=request.user,
+            action_type="password_change"
+        ).order_by("-timestamp").first()
+        
+        if last_password_change:
+            time_since_last_change = now() - last_password_change.timestamp
+            if time_since_last_change < timedelta(hours=24):
+                hours_remaining = 24 - int(time_since_last_change.total_seconds() / 3600)
+                return JsonResponse({
+                    "detail": f"You can only change your password once per 24 hours. Try again in {hours_remaining} hour(s)."
+                }, status=429)
+        
+        # Update password
+        request.user.set_password(new_password)
+        request.user.save()
+        
+        # Log audit entry
+        log_audit(
+            user=request.user,
+            action_type="password_change",
+            old_value="[password_changed]",
+            new_value="[password_changed]"
+        )
+        
+        return JsonResponse({
+            "detail": "Password changed successfully"
+        }, status=200)
+        
+    except UserProfile.DoesNotExist:
+        return JsonResponse({
+            "detail": "User profile not found"
+        }, status=404)
+    except json.JSONDecodeError:
+        return JsonResponse({
+            "detail": "Invalid request body"
+        }, status=400)
+    except Exception as e:
+        return JsonResponse({
+            "detail": str(e)
+        }, status=500)
+
 @csrf_exempt
 @require_http_methods(['GET', 'PATCH'])
 def requestProductAPI(request, id=0):
     include_archived = request.GET.get("include_archived", "false").lower() == "true"
+    archived_only = request.GET.get("archived_only", "false").lower() == "true"
     status_filter = request.GET.get("status", "").lower()
 
     # Map query params to normalized status strings
     status_map = {
-        "not-started": "🕒 not started",
+        "not-started": "not started",
+        "started": "🚀 started",
         "in-progress": "⏳ in progress",
         "done": "✅ done"
     }
@@ -2770,15 +3757,24 @@ def requestProductAPI(request, id=0):
         return avg_percent, weighted_percent
 
     if request.method == 'PATCH' and id:
-        # Archive a request product
+        # Archive a request product (only this one, NOT the entire request)
         try:
             request_product = RequestProduct.objects.get(id=id)
             data = JSONParser().parse(request)
+            
+            print(f"[requestProductAPI PATCH] Archiving RequestProduct ID={id}")
+            print(f"   Product: {request_product.product.prodName if request_product.product else 'N/A'}")
+            print(f"   Issuance/Request ID: {request_product.request.RequestID if request_product.request else 'N/A'}")
+            print(f"   Other products in same issuance BEFORE: {request_product.request.request_products.count()}")
             
             if 'archived_at' in data:
                 from django.utils import timezone
                 request_product.archived_at = timezone.now()
                 request_product.save()
+                
+                print(f"   ✅ RequestProduct {id} archived successfully")
+                print(f"   Verify: archived_at is now {request_product.archived_at}")
+                print(f"   Other products in same issuance AFTER: {request_product.request.request_products.filter(archived_at__isnull=True).count()}")
                 
                 # Create notification for requester
                 try:
@@ -2812,13 +3808,16 @@ def requestProductAPI(request, id=0):
                 return JsonResponse({
                     "message": "Request product archived successfully",
                     "id": request_product.id,
-                    "archived_at": request_product.archived_at
+                    "archived_at": request_product.archived_at,
+                    "request_id": request_product.request.RequestID if request_product.request else None,
+                    "product_name": request_product.product.prodName if request_product.product else None
                 }, status=200)
             
             return JsonResponse({"error": "No archived_at provided"}, status=400)
         except RequestProduct.DoesNotExist:
             return JsonResponse({"error": "Request product not found"}, status=404)
         except Exception as e:
+            print(f"[ERROR] Exception in requestProductAPI PATCH: {str(e)}")
             return JsonResponse({"error": str(e)}, status=400)
     
     if id == 0:
@@ -2827,7 +3826,13 @@ def requestProductAPI(request, id=0):
 
         for req in requests.order_by('-created_at'):
             products = req.request_products.all().order_by('-request__created_at')
-            products = products if include_archived else products.filter(archived_at__isnull=True)
+            
+            # Apply archived filter
+            if archived_only:
+                products = products.filter(archived_at__isnull=False)
+            elif not include_archived:
+                products = products.filter(archived_at__isnull=True)
+            
             products = apply_filters(products)
 
             # 👉 Skip requests with no matching products
@@ -2855,7 +3860,13 @@ def requestProductAPI(request, id=0):
             return JsonResponse({"error": "Request not found"}, status=404)
 
         products = req.request_products.all().order_by('-request__created_at')
-        products = products if include_archived else products.filter(archived_at__isnull=True)
+        
+        # Apply archived filter
+        if archived_only:
+            products = products.filter(archived_at__isnull=False)
+        elif not include_archived:
+            products = products.filter(archived_at__isnull=True)
+        
         products = apply_filters(products)
 
         # 👉 Skip if no matching products
@@ -2885,7 +3896,8 @@ def customer_request_view(request):
 
     # Map query params to normalized status strings
     status_map = {
-        "not-started": "🕒 not started",
+        "not-started": "not started",
+        "started": "🚀 started",
         "in-progress": "⏳ in progress",
         "done": "✅ done"
     }
@@ -2914,10 +3926,10 @@ def customer_request_view(request):
 
         serializer = CustomerProductDetailSerializer(products, many=True)
         response_data.append({
-            "request_id": req.RequestID,
-            "due_date": req.deadline,
+            "RequestID": req.RequestID,
+            "deadline": req.deadline,
             "created_at": req.created_at,
-            "product_details": serializer.data
+            "request_products": serializer.data
         })
 
     return JsonResponse(response_data, safe=False)
@@ -3204,12 +4216,36 @@ def get_settings(request):
         return JsonResponse({"detail": "Not authenticated"}, status=401)
     
     try:
-        settings_obj = SystemSettings.get_settings()
+        print("[GET_SETTINGS] Attempting to fetch system settings...")
+        try:
+            settings_obj = SystemSettings.get_settings()
+            print(f"[GET_SETTINGS] Got settings object: {settings_obj}")
+        except Exception as e:
+            print(f"[GET_SETTINGS] ERROR getting settings object: {str(e)}")
+            # Return default settings if there's an issue
+            return JsonResponse({
+                "enable_email_alerts": True,
+                "data_retention_days": 365,
+                "enable_audit_logs": True,
+                "session_timeout_minutes": 15,
+                "enable_session_timeout": True
+            }, status=200)
+        
         serializer = SystemSettingsSerializer(settings_obj)
+        print(f"[GET_SETTINGS] Serialized settings successfully")
         return JsonResponse(serializer.data, status=200)
     except Exception as e:
-        print(f"Error fetching settings: {str(e)}")
-        return JsonResponse({"detail": f"Server error: {str(e)}"}, status=500)
+        print(f"[ERROR] Error fetching settings: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        # Return default settings instead of 500 error
+        return JsonResponse({
+            "enable_email_alerts": True,
+            "data_retention_days": 365,
+            "enable_audit_logs": True,
+            "session_timeout_minutes": 15,
+            "enable_session_timeout": True
+        }, status=200)
 
 
 @csrf_exempt
@@ -3229,15 +4265,10 @@ def update_settings(request):
         data = json.loads(request.body)
         settings_obj = SystemSettings.get_settings()
         
+        # Capture old values before changes
+        old_values = SystemSettingsSerializer(settings_obj).data
+        
         # Update fields
-        if 'session_timeout_minutes' in data:
-            settings_obj.session_timeout_minutes = data['session_timeout_minutes']
-        if 'enable_session_timeout' in data:
-            settings_obj.enable_session_timeout = data['enable_session_timeout']
-        if 'enable_auto_archive' in data:
-            settings_obj.enable_auto_archive = data['enable_auto_archive']
-        if 'archive_threshold_days' in data:
-            settings_obj.archive_threshold_days = data['archive_threshold_days']
         if 'enable_email_alerts' in data:
             settings_obj.enable_email_alerts = data['enable_email_alerts']
         if 'data_retention_days' in data:
@@ -3247,6 +4278,18 @@ def update_settings(request):
         
         settings_obj.updated_by = request.user
         settings_obj.save()
+        
+        # Log audit entry for settings update
+        try:
+            new_values = SystemSettingsSerializer(settings_obj).data
+            log_audit(
+                user=request.user,
+                action_type="settings_update",
+                old_value=json.dumps(old_values),
+                new_value=json.dumps(new_values)
+            )
+        except Exception as audit_err:
+            print(f"[AUDIT] Failed to log settings update: {str(audit_err)}")
         
         serializer = SystemSettingsSerializer(settings_obj)
         return JsonResponse(serializer.data, status=200)
@@ -3259,7 +4302,7 @@ def update_settings(request):
 
 @csrf_exempt
 @csrf_exempt
-@role_required('admin', 'manager')
+@role_required('admin', 'production_manager')
 @require_http_methods(['GET'])
 def dashboard_bar_chart(request):
     """Get Production & Defect Overview by Week data"""
@@ -3297,7 +4340,7 @@ def dashboard_bar_chart(request):
 
 
 @csrf_exempt
-@role_required('admin', 'manager')
+@role_required('admin', 'production_manager')
 @require_http_methods(['GET'])
 def dashboard_pie_chart(request):
     """Get Production Percentages Report data"""
@@ -3330,7 +4373,7 @@ def dashboard_pie_chart(request):
 
 
 @csrf_exempt
-@role_required('admin', 'manager')
+@role_required('admin', 'production_manager')
 @require_http_methods(['GET'])
 def dashboard_top_movers(request):
     """Get Top Movers This Month data"""
@@ -3403,7 +4446,245 @@ def debug_dashboard_data(request):
         traceback.print_exc()
         return JsonResponse({"detail": f"Error: {str(e)}"}, status=500)
 
-def create_notification(user, notification_type, title, message, related_request=None):
+def log_audit(user, action_type, request_obj=None, request_product_obj=None, old_value=None, new_value=None):
+    """
+    Helper function to create audit logs for all user activities
+    
+    Parameters:
+    - user: User who performed the action
+    - action_type: Type of action (create, update, delete, archive, etc.)
+    - request_obj: Optional Requests object
+    - request_product_obj: Optional RequestProduct object
+    - old_value: Previous value (JSON or string)
+    - new_value: New value (JSON or string)
+    """
+    try:
+        from django.utils import timezone
+        AuditLog.objects.create(
+            request=request_obj,
+            request_product=request_product_obj,
+            action_type=action_type,
+            old_value=old_value,
+            new_value=new_value,
+            performed_by=user
+        )
+        print(f"[AUDIT] {user.username} - {action_type} at {timezone.now()}")
+    except Exception as e:
+        print(f"[AUDIT ERROR] Failed to create audit log: {str(e)}")
+
+
+
+# Extension Request Endpoints
+@csrf_exempt
+@require_http_methods(['POST'])
+def request_deadline_extension(request, id):
+    """Request a deadline extension for a request product"""
+    try:
+        # Check authentication
+        if not request.user.is_authenticated:
+            return error_response("Authentication required", code=401)
+        
+        data = JSONParser().parse(request)
+        new_deadline = data.get('new_deadline')
+        reason = data.get('reason', '')
+        
+        if not new_deadline:
+            return error_response("new_deadline is required", code=400)
+        
+        request_product = RequestProduct.objects.get(id=id)
+        product_request = request_product.request
+        
+        # Check if user is authorized (production manager can request extension)
+        try:
+            user_role = request.user.userprofile.role if hasattr(request.user, 'userprofile') else None
+        except Exception as e:
+            print(f"[ERROR] Error getting user role: {str(e)}")
+            user_role = None
+        
+        # Only production managers and admins can request extensions
+        is_manager = user_role in ('production_manager', 'admin')
+        
+        if not is_manager:
+            print(f"[ERROR] User {request.user.username} role '{user_role}' not authorized to request extension")
+            return error_response(f"Only production managers can request extensions. Your role: {user_role}", code=403)
+        
+        # Set extension details
+        request_product.deadline_extension = new_deadline
+        request_product.extension_status = 'pending'
+        request_product.requested_at = timezone.now()
+        request_product.save()
+        
+        # Create audit log
+        AuditLog.objects.create(
+            request_product=request_product,
+            action_type='extension_request',
+            new_value=f"Extension requested to {new_deadline}. Reason: {reason}",
+            performed_by=request.user
+        )
+        
+        # Notify customer
+        if product_request.requester:
+            create_notification(
+                user=product_request.requester,
+                notification_type='extension_requested',
+                title=f"WB Technology is requesting an extension",
+                message=f"Extension requested for {request_product.product.prodName} until {new_deadline}",
+                related_request=product_request,
+                related_request_product=request_product,
+                action_data={
+                    'request_product_id': id,
+                    'new_deadline': str(new_deadline),
+                    'reason': reason,
+                    'type': 'extension_request'
+                }
+            )
+        
+        return success_response({
+            'id': request_product.id,
+            'request_id': product_request.RequestID,
+            'product': request_product.product.prodName,
+            'new_deadline': str(new_deadline),
+            'status': 'pending',
+            'message': 'Extension request submitted successfully'
+        })
+    except RequestProduct.DoesNotExist:
+        return error_response("Request product not found", code=404)
+    except Exception as e:
+        print(f"[ERROR] Extension request error: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return error_response(f"Error requesting extension: {str(e)}", code=500)
+
+
+@csrf_exempt
+@require_http_methods(['POST'])
+def approve_deadline_extension(request, id):
+    """Approve a deadline extension request"""
+    try:
+        # Check authentication
+        if not request.user.is_authenticated:
+            return error_response("Authentication required", code=401)
+        
+        data = JSONParser().parse(request)
+        
+        request_product = RequestProduct.objects.get(id=id)
+        product_request = request_product.request
+        
+        # Check if user is authorized (customer who submitted the request)
+        user_role = request.user.userprofile.role if hasattr(request.user, 'userprofile') else None
+        is_customer = user_role == 'customer' and product_request.requester == request.user
+        
+        if not is_customer:
+            return error_response("Only the customer who submitted the request can approve extensions", code=403)
+        
+        if request_product.extension_status != 'pending':
+            return error_response(f"Cannot approve extension with status: {request_product.extension_status}", code=400)
+        
+        # Approve the extension
+        request_product.extension_status = 'approved'
+        request_product.save()
+        
+        # Create audit log
+        AuditLog.objects.create(
+            request_product=request_product,
+            action_type='extension_approved',
+            new_value=f"Extension approved to {request_product.deadline_extension}",
+            performed_by=request.user
+        )
+        
+        # Notify production managers
+        production_managers = User.objects.filter(userprofile__role__in=['production_manager', 'admin'])
+        for pm in production_managers:
+            create_notification(
+                user=pm,
+                notification_type='extension_approved',
+                title=f"Extension Approved: {request_product.product.prodName}",
+                message=f"Customer {request.user.username} approved the deadline extension to {request_product.deadline_extension}.",
+                related_request=product_request,
+                related_request_product=request_product
+            )
+        
+        return success_response({
+            'id': request_product.id,
+            'request_id': product_request.RequestID,
+            'status': 'approved',
+            'new_deadline': str(request_product.deadline_extension),
+            'message': 'Extension approved successfully'
+        })
+    except RequestProduct.DoesNotExist:
+        return error_response("Request product not found", code=404)
+    except Exception as e:
+        print(f"[ERROR] Approve extension error: {str(e)}")
+        return error_response(f"Error approving extension: {str(e)}", code=500)
+
+
+@csrf_exempt
+@require_http_methods(['POST'])
+def reject_deadline_extension(request, id):
+    """Reject a deadline extension request"""
+    try:
+        # Check authentication
+        if not request.user.is_authenticated:
+            return error_response("Authentication required", code=401)
+        
+        data = JSONParser().parse(request)
+        rejection_reason = data.get('rejection_reason', '')
+        
+        request_product = RequestProduct.objects.get(id=id)
+        product_request = request_product.request
+        
+        # Check if user is authorized (customer who submitted the request)
+        user_role = request.user.userprofile.role if hasattr(request.user, 'userprofile') else None
+        is_customer = user_role == 'customer' and product_request.requester == request.user
+        
+        if not is_customer:
+            return error_response("Only the customer who submitted the request can reject extensions", code=403)
+        
+        if request_product.extension_status != 'pending':
+            return error_response(f"Cannot reject extension with status: {request_product.extension_status}", code=400)
+        
+        # Reject the extension
+        old_deadline = request_product.deadline_extension
+        request_product.extension_status = 'rejected'
+        request_product.deadline_extension = None  # Clear the proposed deadline
+        request_product.save()
+        
+        # Create audit log
+        AuditLog.objects.create(
+            request_product=request_product,
+            action_type='extension_rejected',
+            new_value=f"Extension to {old_deadline} rejected. Reason: {rejection_reason}",
+            performed_by=request.user
+        )
+        
+        # Notify production managers
+        production_managers = User.objects.filter(userprofile__role__in=['production_manager', 'admin'])
+        for pm in production_managers:
+            create_notification(
+                user=pm,
+                notification_type='extension_rejected',
+                title=f"Extension Rejected: {request_product.product.prodName}",
+                message=f"Customer {request.user.username} rejected the deadline extension. Reason: {rejection_reason}",
+                related_request=product_request,
+                related_request_product=request_product
+            )
+        
+        return success_response({
+            'id': request_product.id,
+            'request_id': product_request.RequestID,
+            'status': 'rejected',
+            'message': 'Extension rejected successfully'
+        })
+    except RequestProduct.DoesNotExist:
+        return error_response("Request product not found", code=404)
+    except Exception as e:
+        print(f"[ERROR] Reject extension error: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return error_response(f"Error rejecting extension: {str(e)}", code=500)
+
+
+def create_notification(user, notification_type, title, message, related_request=None, related_request_product=None, action_data=None):
     """Helper function to create notifications"""
     try:
         import os
@@ -3416,7 +4697,9 @@ def create_notification(user, notification_type, title, message, related_request
             notification_type=notification_type,
             title=title,
             message=message,
-            related_request=related_request
+            related_request=related_request,
+            related_request_product=related_request_product,
+            action_data=action_data or {}
         )
         
         with open(log_file, 'a', encoding='utf-8') as f:
@@ -3430,6 +4713,8 @@ def create_notification(user, notification_type, title, message, related_request
         return None
 
 
+@csrf_exempt
+@require_http_methods(['GET'])
 @csrf_exempt
 @require_http_methods(['GET'])
 def get_notifications(request):
@@ -3509,3 +4794,318 @@ def mark_notification_read(request, notification_id):
         with open(log_file, 'a', encoding='utf-8') as f:
             f.write(f"[MARK_READ] ERROR {str(e)}\n")
         return JsonResponse({"detail": str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(['POST'])
+def delete_notification(request, notification_id):
+    """Delete a notification"""
+    import os
+    log_file = os.path.join(os.path.dirname(__file__), '../notification_debug.log')
+    
+    with open(log_file, 'a', encoding='utf-8') as f:
+        f.write(f"[DELETE_NOTIF] User: {request.user.username}, Notification ID: {notification_id}\n")
+    
+    if not request.user.is_authenticated:
+        with open(log_file, 'a', encoding='utf-8') as f:
+            f.write(f"[DELETE_NOTIF] ERROR User not authenticated!\n")
+        return JsonResponse({"detail": "Unauthorized"}, status=401)
+    
+    try:
+        notification = Notification.objects.get(id=notification_id, user=request.user)
+        
+        with open(log_file, 'a', encoding='utf-8') as f:
+            f.write(f"[DELETE_NOTIF] Found notification, deleting...\n")
+        
+        notification.delete()
+        
+        with open(log_file, 'a', encoding='utf-8') as f:
+            f.write(f"[DELETE_NOTIF] Notification deleted successfully\n")
+        
+        # Get updated unread count
+        unread_count = Notification.objects.filter(user=request.user, is_read=False).count()
+        with open(log_file, 'a', encoding='utf-8') as f:
+            f.write(f"[DELETE_NOTIF] Updated unread count: {unread_count}\n")
+        
+        return JsonResponse({
+            "success": True,
+            "message": "Notification deleted",
+            "unread_count": unread_count
+        }, status=200)
+    except Notification.DoesNotExist:
+        with open(log_file, 'a', encoding='utf-8') as f:
+            f.write(f"[DELETE_NOTIF] ERROR Notification not found!\n")
+        return JsonResponse({"detail": "Notification not found"}, status=404)
+    except Exception as e:
+        with open(log_file, 'a', encoding='utf-8') as f:
+            f.write(f"[DELETE_NOTIF] ERROR {str(e)}\n")
+        return JsonResponse({"detail": str(e)}, status=500)
+
+@require_http_methods(['GET'])
+@csrf_exempt
+def archived_requests_view(request):
+    """Get all archived requests with their products"""
+    try:
+        if not request.user.is_authenticated:
+            print("[ARCHIVED_REQUESTS] ERROR: User not authenticated")
+            return JsonResponse({"error": "Not authenticated"}, status=401)
+        
+        print(f"[ARCHIVED_REQUESTS] User {request.user.username} fetching archived requests")
+        
+        # Get all archived RequestProducts (regardless of Requests.archived_at)
+        archived_products = RequestProduct.objects.filter(archived_at__isnull=False).select_related('request').order_by('-archived_at')
+        print(f"[ARCHIVED_REQUESTS] Found {archived_products.count()} archived products in DB")
+        
+        # Group archived products by their request
+        requests_map = {}
+        for prod in archived_products:
+            req_id = prod.request.RequestID
+            if req_id not in requests_map:
+                requests_map[req_id] = {
+                    'request': prod.request,
+                    'products': []
+                }
+            requests_map[req_id]['products'].append(prod)
+        
+        print(f"[ARCHIVED_REQUESTS] Grouped into {len(requests_map)} requests")
+        
+        response_data = []
+        for req_id, data in requests_map.items():
+            try:
+                req = data['request']
+                products = data['products']
+                
+                print(f"[ARCHIVED_REQUESTS] Processing request {req.RequestID} with {len(products)} archived products")
+                
+                # Get the earliest archived_at from products as the request's archive timestamp
+                earliest_archived = min(prod.archived_at for prod in products)
+                
+                try:
+                    serializer = RequestProductReadSerializer(products, many=True)
+                    print(f"[ARCHIVED_REQUESTS] Serialized {len(serializer.data)} products for request {req.RequestID}")
+                    response_data.append({
+                        "request_id": req.RequestID,
+                        "request_created_at": req.created_at,
+                        "archived_at": earliest_archived,
+                        "products": serializer.data
+                    })
+                except Exception as serializer_err:
+                    print(f"[ARCHIVED_REQUESTS] ERROR serializing products for request {req.RequestID}: {str(serializer_err)}")
+                    import traceback
+                    traceback.print_exc()
+            except Exception as req_err:
+                print(f"[ARCHIVED_REQUESTS] ERROR processing request {req_id}: {str(req_err)}")
+                import traceback
+                traceback.print_exc()
+                continue
+        
+        print(f"[ARCHIVED_REQUESTS] Returning {len(response_data)} requests in response")
+        if len(response_data) == 0:
+            print("[ARCHIVED_REQUESTS] WARNING: No archived products to return!")
+        
+        return JsonResponse(response_data, safe=False, status=200)
+    except Exception as e:
+        print(f"[ERROR] Error fetching archived requests: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return JsonResponse({"error": str(e)}, status=500)
+
+
+
+@require_http_methods(['GET'])
+@csrf_exempt
+def task_update_logs_view(request):
+    """Fetch task update logs - only task-related actions from audit log"""
+    if not request.user.is_authenticated:
+        return JsonResponse({"error": "Not authenticated"}, status=401)
+    
+    try:
+        user = request.user
+        limit = int(request.GET.get('limit', 50))
+        
+        # Task-related action types
+        task_actions = ['create', 'update', 'delete', 'worker_create', 'worker_update', 'worker_delete']
+        
+        # Get logs that are task-related (have request_product) and performed by production managers or admins
+        logs = AuditLog.objects.select_related(
+            "request", "request_product", "request_product__request", "performed_by"
+        ).filter(
+            Q(request_product__isnull=False) &  # Only logs with request_product (task-related)
+            Q(action_type__in=task_actions)      # Only task-related actions
+        ).order_by('-timestamp')[:limit]
+        
+        serializer = AuditLogSerializer(logs, many=True)
+        return JsonResponse(serializer.data, safe=False, status=200)
+    except Exception as e:
+        print(f"[ERROR] Error fetching task update logs: {str(e)}")
+        return JsonResponse({"error": str(e)}, status=500)
+
+@require_http_methods(['DELETE'])
+@csrf_exempt
+def task_update_log_delete_view(request, pk: int):
+    """Delete a task update log"""
+    if not request.user.is_authenticated:
+        return JsonResponse({"error": "Not authenticated"}, status=401)
+    
+    try:
+        log = AuditLog.objects.get(pk=pk)
+        log_data = {
+            "id": log.id,
+            "action_type": log.action_type
+        }
+        log.delete()
+        return JsonResponse({"message": f"Task update log deleted successfully", "log": log_data}, status=200)
+    except AuditLog.DoesNotExist:
+        return JsonResponse({"error": "Task update log not found"}, status=404)
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
+@require_http_methods(['POST'])
+@csrf_exempt
+def restore_request_view(request):
+    """Restore an archived request and its products"""
+    if not request.user.is_authenticated:
+        return JsonResponse({"error": "Not authenticated"}, status=401)
+    
+    try:
+        data = json.loads(request.body)
+        request_id = data.get('request_id')
+        
+        print(f"[RESTORE_REQUEST] Received restore request for request_id={request_id}")
+        
+        if not request_id:
+            print(f"[RESTORE_REQUEST] ERROR: request_id is missing")
+            return JsonResponse({"error": "request_id is required"}, status=400)
+        
+        # Find the archived request
+        try:
+            archived_request = Requests.objects.get(RequestID=request_id, archived_at__isnull=False)
+            print(f"[RESTORE_REQUEST] Found archived request {request_id}")
+        except Requests.DoesNotExist:
+            print(f"[RESTORE_REQUEST] ERROR: Request {request_id} not found or is not archived")
+            return JsonResponse({"error": "Archived request not found"}, status=404)
+        
+        # Capture the archived_at value before unarchiving
+        archived_at_value = archived_request.archived_at
+        
+        # Restore the request and all its products
+        print(f"[RESTORE_REQUEST] Unarchiving request {request_id}...")
+        archived_request.unarchive()
+        print(f"[RESTORE_REQUEST] Request {request_id} unarchived successfully")
+
+        # Return success immediately — logging/notifications are non-critical
+        print(f"[RESTORE_REQUEST] Restore completed for request {request_id}")
+        result = JsonResponse({"message": "Request restored successfully!"}, status=200)
+
+        # Log + notify in try/except so failures don't break the restore
+        try:
+            AuditLog.objects.create(
+                action_type="restore",
+                request=archived_request,
+                old_value=str(archived_at_value),
+                new_value="Restored",
+                performed_by=request.user,
+            )
+        except Exception as log_err:
+            print(f"[RESTORE_REQUEST] WARNING: AuditLog creation failed: {log_err}")
+
+        try:
+            if archived_request.requester:
+                Notification.objects.create(
+                    user=archived_request.requester,
+                    notification_type='request_restored',
+                    title='Request Restored',
+                    message=f'Request #{archived_request.RequestID} has been restored by {request.user.username}',
+                )
+        except Exception as notif_err:
+            print(f"[RESTORE_REQUEST] WARNING: Notification creation failed: {notif_err}")
+
+        return result
+    except Requests.DoesNotExist:
+        print(f"[RESTORE_REQUEST] ERROR: Request not found")
+        return JsonResponse({"error": "Archived request not found"}, status=404)
+    except Exception as e:
+        print(f"[ERROR] Error restoring request: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return JsonResponse({"error": str(e)}, status=500)
+
+
+@require_http_methods(['POST'])
+@csrf_exempt
+def restore_request_product_view(request):
+    """
+    Restore an individual archived RequestProduct.
+    Expects: { request_product_id: X }
+    """
+    try:
+        data = JSONParser().parse(request)
+        request_product_id = data.get('request_product_id')
+
+        if not request_product_id:
+            print(f"[RESTORE_PRODUCT] ERROR: No request_product_id provided")
+            return JsonResponse({"error": "request_product_id is required"}, status=400)
+
+        print(f"[RESTORE_PRODUCT] Processing restore for RequestProduct {request_product_id}...")
+
+        # Find the archived RequestProduct
+        try:
+            request_product = RequestProduct.objects.get(id=request_product_id, archived_at__isnull=False)
+        except RequestProduct.DoesNotExist:
+            print(f"[RESTORE_PRODUCT] ERROR: RequestProduct {request_product_id} not found or not archived")
+            return JsonResponse({"error": "Archived product not found"}, status=404)
+
+        # Get parent request and product info for logging
+        parent_request = request_product.request
+        product_name = request_product.product.prodName if request_product.product else "Unknown Product"
+        archived_at_value = request_product.archived_at
+
+        print(f"[RESTORE_PRODUCT] Restoring: Product '{product_name}' from Issuance #{parent_request.RequestID}")
+
+        # Restore the individual RequestProduct
+        now = timezone.now()
+        request_product.archived_at = None
+        request_product.restored_at = now
+        request_product.save()
+        print(f"[RESTORE_PRODUCT] RequestProduct {request_product_id} unarchived successfully")
+
+        # Return success immediately
+        result = JsonResponse({
+            "message": f"Product '{product_name}' restored successfully!",
+            "request_product_id": request_product_id,
+            "restored_at": now.isoformat()
+        }, status=200)
+
+        # Log + notify in try/except so failures don't break the restore
+        try:
+            AuditLog.objects.create(
+                action_type="restore_product",
+                request=parent_request,
+                old_value=str(archived_at_value),
+                new_value="Restored",
+                performed_by=request.user,
+            )
+        except Exception as log_err:
+            print(f"[RESTORE_PRODUCT] WARNING: AuditLog creation failed: {log_err}")
+
+        try:
+            if parent_request.requester:
+                Notification.objects.create(
+                    user=parent_request.requester,
+                    notification_type='product_restored',
+                    title='Product Restored',
+                    message=f'Product "{product_name}" from Request #{parent_request.RequestID} has been restored by {request.user.username}',
+                )
+        except Exception as notif_err:
+            print(f"[RESTORE_PRODUCT] WARNING: Notification creation failed: {notif_err}")
+
+        return result
+
+    except RequestProduct.DoesNotExist:
+        print(f"[RESTORE_PRODUCT] ERROR: RequestProduct not found or not archived")
+        return JsonResponse({"error": "Archived product not found"}, status=404)
+    except Exception as e:
+        print(f"[ERROR] Error restoring product: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return JsonResponse({"error": str(e)}, status=500)

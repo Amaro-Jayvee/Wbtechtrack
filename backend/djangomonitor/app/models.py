@@ -4,6 +4,8 @@ from datetime import date
 from django.contrib.auth.models import User
 from django.utils import timezone
 from django.utils.timezone import localtime
+from django.core.mail import send_mail
+from django.conf import settings
 # from django.db.models.signals import m2m_changed
 # from django.core.exceptions import ValidationError
 # from django.dispatch 
@@ -11,6 +13,7 @@ from django.utils.timezone import localtime
 class Roles(models.TextChoices):
     CUSTOMER = "customer", "Customer"
     MANAGER = "manager", "Manager"
+    PRODUCTION_MANAGER = "production_manager", "Production Manager"
     ADMIN = "admin", "Admin"
 
 class UserProfile(models.Model):
@@ -22,6 +25,8 @@ class UserProfile(models.Model):
     is_verified = models.BooleanField("Is Verified", default=False)
     created_at = models.DateTimeField("Account Created At", auto_now_add=True)
     verified_at = models.DateTimeField("Verified At", null=True, blank=True)
+    terms_accepted = models.BooleanField("Terms Accepted", default=False)
+    terms_accepted_at = models.DateTimeField("Terms Accepted At", null=True, blank=True)
 
     def save(self, *args, **kwargs):
         if self.is_verified and not self.verified_at:
@@ -30,6 +35,105 @@ class UserProfile(models.Model):
 
     def __str__(self):
         return f"{self.full_name} ({self.role})"
+
+
+class AccountSignupRequest(models.Model):
+    """Stores pending account signup requests awaiting admin approval"""
+    STATUS_CHOICES = [
+        ("pending", "Pending"),
+        ("approved", "Approved"),
+        ("declined", "Declined"),
+        ("cancelled", "Cancelled"),
+    ]
+    
+    username = models.CharField("Username", max_length=150, unique=True)
+    email = models.EmailField("Email")
+    password_hash = models.CharField("Password Hash", max_length=255)
+    full_name = models.CharField("Full Name", max_length=100)
+    company_name = models.CharField("Company Name", max_length=100)
+    contact_number = models.CharField("Contact Number", max_length=15)
+    role = models.CharField("Role", max_length=20, choices=Roles.choices, default=Roles.CUSTOMER)
+    status = models.CharField("Status", max_length=20, choices=STATUS_CHOICES, default="pending")
+    created_at = models.DateTimeField("Created At", auto_now_add=True)
+    reviewed_at = models.DateTimeField("Reviewed At", null=True, blank=True)
+    reviewed_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='reviewed_signups')
+    review_notes = models.TextField("Review Notes", blank=True, null=True)
+    
+    class Meta:
+        ordering = ['-created_at']
+    
+    def __str__(self):
+        return f"{self.username} ({self.status})"
+    
+    def approve(self, admin_user, notes=""):
+        """Approve signup and create user account"""
+        from django.contrib.auth.hashers import make_password
+        
+        # Create Django user with the stored password hash
+        user = User.objects.create_user(
+            username=self.username,
+            email=self.email,
+            password=self.password_hash  # This will be hashed by create_user
+        )
+        
+        # Create UserProfile
+        UserProfile.objects.create(
+            user=user,
+            full_name=self.full_name,
+            company_name=self.company_name,
+            contact_number=self.contact_number,
+            role=self.role,
+            is_verified=True
+        )
+        
+        # Update signup request status
+        self.status = "approved"
+        self.reviewed_by = admin_user
+        self.reviewed_at = timezone.now()
+        self.review_notes = notes
+        self.save()
+        
+        # Send approval email to user
+        subject = "Account Approved - TechTrack"
+        message = f"""Dear {self.full_name},
+
+Your account has been successfully approved!
+
+You can now login to TechTrack with the following credentials:
+- Username: {self.username}
+- Email: {self.email}
+
+Please visit our application to get started.
+
+Best regards,
+TechTrack Team"""
+        
+        try:
+            send_mail(
+                subject,
+                message,
+                settings.EMAIL_HOST_USER,
+                [self.email],
+                fail_silently=False,
+            )
+        except Exception as e:
+            # Log error but don't fail the approval if email fails
+            print(f"Error sending approval email to {self.email}: {str(e)}")
+        
+        return user
+    
+    def decline(self, admin_user, notes=""):
+        """Decline signup request"""
+        self.status = "declined"
+        self.reviewed_by = admin_user
+        self.reviewed_at = timezone.now()
+        self.review_notes = notes
+        self.save()
+    
+    def cancel(self):
+        """Cancel signup request"""
+        self.status = "cancelled"
+        self.save()
 
 class ProductName(models.Model):
     ProdID = models.AutoField(primary_key=True)
@@ -41,6 +145,12 @@ class ProductName(models.Model):
         return self.prodName
 
 class Requests(models.Model):
+    APPROVAL_STATUS_CHOICES = [
+        ("pending", "Pending"),
+        ("approved", "Approved"),
+        ("declined", "Declined"),
+    ]
+    
     RequestID = models.AutoField(primary_key=True)
     created_by = models.ForeignKey(User, on_delete=models.CASCADE, null=True, blank=True, related_name='encode_requests') #New field
     requester = models.ForeignKey(User, on_delete=models.CASCADE, null=True, blank=True, related_name='customer_requests') #New field
@@ -49,6 +159,10 @@ class Requests(models.Model):
     created_at = models.DateField("Created At", auto_now_add=True)
     updated_at = models.DateTimeField("Updated At", auto_now=True) 
     archived_at = models.DateTimeField("Archived At", null=True, blank=True)
+    restored_at = models.DateTimeField("Restored At", null=True, blank=True)
+    approval_status = models.CharField("Approval Status", max_length=20, choices=APPROVAL_STATUS_CHOICES, default="pending")
+    approved_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='approved_requests')
+    approval_notes = models.TextField("Approval Notes", blank=True, null=True)
 
     def __str__(self):
         return f"Request #{self.RequestID} by {self.requester.username if self.requester else 'Unknown'}"
@@ -68,7 +182,9 @@ class Requests(models.Model):
 
     def unarchive(self):
         """Restore this request and cascade to related RequestProducts + ProductProcesses."""
+        now = timezone.now()
         self.archived_at = None
+        self.restored_at = now  # Track when it was restored
         self.save()
 
         for rp in self.request_products.all():
@@ -140,52 +256,93 @@ class RequestProduct(models.Model):
         default="pending"
     )
     requested_at = models.DateTimeField("Requested At", null=True, blank=True)
+    completed_at = models.DateTimeField("Completed At", null=True, blank=True)
     archived_at = models.DateTimeField("Archived At", null=True, blank=True)
+    restored_at = models.DateTimeField("Restored At", null=True, blank=True)
 
     def __str__(self):
         return f"{self.product.name} x{self.quantity} for Request #{self.request.RequestID}"
 
     def get_completed_quota(self):
-        # Calculate total completed work across all steps
-        # This includes completed previous steps + progress on current step
+        """
+        Calculate total completed work across all steps.
+        This method sums up only ACTUAL completed units, not theoretical ones.
+        Completed steps before current + work done on current step.
+        """
         all_steps = self.process_steps.order_by('step_order')
         if not all_steps.exists():
             return 0
         
+        quantity = self.quantity
         total_steps = all_steps.count()
-        completed_steps_before = 0
-        current_step_completed = 0
         
-        # Find current step (first step that's not completed)
+        # First, find the current step (first incomplete one)
+        current_step = None
+        completed_before_count = 0
+        
         for step in all_steps:
             if step.is_completed:
-                completed_steps_before += 1
+                completed_before_count += 1
             else:
-                # This is the current step being worked on
-                current_step_completed = step.completed_quota
+                current_step = step
                 break
         
-        # Calculate equivalent completed units:
-        # (completed_steps_before / total_steps * quantity) + current_step_completed
-        completed_from_steps = (completed_steps_before / total_steps) * self.quantity if total_steps > 0 else 0
-        total_completed = completed_from_steps + current_step_completed
+        # If all steps are completed, return full quantity
+        if current_step is None:
+            all_completed = all_steps.filter(is_completed=True).count()
+            if all_completed == total_steps:
+                return quantity
         
-        return int(total_completed) if total_completed > 0 else 0
+        # Calculate based on:
+        # - Percentage of steps already fully done
+        # - Plus progress on current step
+        if current_step:
+            # Weight: each completed step = 1/total_steps of the quantity
+            completed_from_prev_steps = (completed_before_count / total_steps) * quantity
+            current_progress = current_step.completed_quota or 0
+            total_completed = completed_from_prev_steps + current_progress
+        else:
+            # Shouldn't reach here, but safety check
+            total_completed = quantity
+        
+        return int(min(total_completed, quantity))
 
     def get_progress_percentage(self):
+        """Calculate progress percentage for this request product."""
         completed = self.get_completed_quota()
         requested = self.quantity
-        return round(min(100 * completed / requested, 100), 2) if requested else 0
+        
+        if requested == 0:
+            return 0
+        
+        percentage = round(min(100 * completed / requested, 100), 2)
+        
+        # Log for debugging
+        all_steps = self.process_steps.order_by('step_order')
+        completed_count = all_steps.filter(is_completed=True).count()
+        
+        # Only log if percentage is significantly different (helps identify discrepancies)
+        if percentage >= 50:  # Log high percentages for investigation
+            import sys
+            print(f"[PROGRESS DEBUG] RequestProduct {self.id} (Qty:{requested}): {percentage}% | completed_quota={completed} | Steps: {completed_count}/{all_steps.count()} completed", file=sys.stderr)
+        
+        return percentage
 
     def task_status(self):
         completed = self.get_completed_quota()
         requested = self.quantity
+        # Check if this product has any ProductProcess steps (indicating project has been started)
+        has_steps = self.process_steps.exists()
+        
         if requested == 0:
             return "⚪ Not Started"
         elif completed >= requested:
-            return "✅ Done"
+            return "✅ Completed"
         elif completed > 0:
             return "⏳ In Progress"
+        elif has_steps:
+            # Project started but no work done yet
+            return "🚀 Started"
         return "🕒 Not Started"
 
 class Worker(models.Model):
@@ -211,6 +368,8 @@ class ProductProcess(models.Model):
     product = models.ForeignKey(ProductName, on_delete=models.CASCADE, null=True, blank=True, related_name='configured_processes')
     workers = models.ManyToManyField(Worker, related_name="products", blank=True)
     process = models.ForeignKey(ProcessName, on_delete=models.PROTECT)
+    process_number = models.CharField("Process Number", max_length=50, null=True, blank=True, default="")
+    process_name = models.CharField("Process Name", max_length=255, null=True, blank=True, default="")
     step_order = models.PositiveIntegerField("Step Order")
     completed_quota = models.PositiveIntegerField("Completed Quota", default=0)
     defect_count = models.PositiveIntegerField("Defect Count", default=0)
@@ -285,13 +444,22 @@ class ProcessTemplate(models.Model):
 
 class AuditLog(models.Model):
     ACTION_CHOICES = [
+        ("login", "Login"),
+        ("logout", "Logout"),
         ("create", "Create"),
         ("update", "Update"),
         ("delete", "Delete"),
         ("archive", "Archive"),
+        ("restore", "Restore"),
         ("extension_request", "Extension Request"),
         ("extension_approved", "Extension Approved"),
         ("extension_rejected", "Extension Rejected"),
+        ("settings_update", "Settings Update"),
+        ("worker_create", "Worker Create"),
+        ("worker_update", "Worker Update"),
+        ("worker_delete", "Worker Delete"),
+        ("password_change", "Password Change"),
+        ("profile_update", "Profile Update"),
     ]
 
     id = models.AutoField(primary_key=True)
@@ -366,19 +534,26 @@ class Notification(models.Model):
     """Store notifications for users"""
     NOTIFICATION_TYPES = (
         ('request_created', 'Request Created'),
+        ('request_approved', 'Request Approved'),
+        ('request_declined', 'Request Declined'),
         ('project_started', 'Project Started'),
         ('task_status_updated', 'Task Status Updated'),
         ('product_completed', 'Product Completed'),
         ('request_completed', 'Request Completed'),
         ('deadline_approaching', 'Deadline Approaching'),
+        ('extension_requested', 'Extension Requested'),
+        ('extension_approved', 'Extension Approved'),
+        ('extension_rejected', 'Extension Rejected'),
     )
     
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='notifications')
     notification_type = models.CharField(max_length=50, choices=NOTIFICATION_TYPES)
     title = models.CharField(max_length=200)
     message = models.TextField()
-    related_request = models.ForeignKey(Requests, on_delete=models.CASCADE, null=True, blank=True)
+    related_request = models.ForeignKey(Requests, on_delete=models.CASCADE, null=True, blank=True, db_column='request_id')
+    related_request_product = models.ForeignKey(RequestProduct, on_delete=models.CASCADE, null=True, blank=True, related_name='notifications')
     is_read = models.BooleanField(default=False)
+    action_data = models.JSONField(null=True, blank=True, default=dict)
     created_at = models.DateTimeField(auto_now_add=True)
     
     class Meta:

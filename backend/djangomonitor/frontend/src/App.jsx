@@ -9,22 +9,25 @@ import Dashboard from "./Dashboard";
 import Settings from "./Settings";
 import CustomerViewRequests from "./CustomerViewRequests";
 import CustomerSettings from "./CustomerSettings";
+import { UserProvider } from "./UserContext.jsx";
 
 function App() {
   return (
     <Router>
-      <Routes>
-        <Route path="/login" element={<Login />} />
-        <Route path="/" element={<Navigate to="/login" replace />} />
-        <Route path="/accounts" element={<Accounts />} />
-        <Route path="/request" element={<Request />} />
-        <Route path="/request-list" element={<RequestList />} />
-        <Route path="/customer-requests" element={<CustomerViewRequests />} />
-        <Route path="/customer/settings" element={<CustomerSettings />} />
-        <Route path="/task-status" element={<TaskStatus />} />
-        <Route path="/dashboard" element={<Dashboard />} />
-        <Route path="/settings" element={<Settings />} />
-      </Routes>
+      <UserProvider>
+        <Routes>
+          <Route path="/login" element={<Login />} />
+          <Route path="/" element={<Navigate to="/login" replace />} />
+          <Route path="/accounts" element={<Accounts />} />
+          <Route path="/request" element={<Request />} />
+          <Route path="/request-list" element={<RequestList />} />
+          <Route path="/customer-requests" element={<CustomerViewRequests />} />
+          <Route path="/customer/settings" element={<CustomerSettings />} />
+          <Route path="/task-status" element={<TaskStatus />} />
+          <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/settings" element={<Settings />} />
+        </Routes>
+      </UserProvider>
     </Router>
   );
 }
