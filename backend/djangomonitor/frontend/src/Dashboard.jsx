@@ -27,10 +27,15 @@ const pieChartLabelsPlugin = {
       const meta = chart.getDatasetMeta(i);
       if (!meta.hidden) {
         meta.data.forEach((datapoint, index) => {
-          const { x, y } = datapoint.tooltipPosition();
           const value = dataset.data[index];
+          // Skip drawing labels for zero or very small values
+          if (value <= 0) {
+            return;
+          }
+          
+          const { x, y } = datapoint.tooltipPosition();
           const total = dataset.data.reduce((a, b) => a + b, 0);
-          const percentage = Math.round((value / total) * 100);
+          const percentage = total > 0 ? Math.round((value / total) * 100) : 0;
           
           ctx.fillStyle = '#000';
           ctx.font = 'bold 14px Arial';
@@ -72,8 +77,6 @@ function Dashboard() {
     try {
       const params = `?month=${selectedMonth}&year=${selectedYear}&include_archived=${includeArchived}`;
 
-      console.log(`[Dashboard] Fetching reports for ${selectedMonth}/${selectedYear}, archived=${includeArchived}`);
-
       // Fetch bar chart data
       const barRes = await fetch(`http://localhost:8000/app/reports/bar-chart/${params}`, {
         method: "GET",
@@ -81,7 +84,6 @@ function Dashboard() {
       });
       if (barRes.ok) {
         const barData = await barRes.json();
-        console.log("[Dashboard] Bar chart data:", barData);
         setBarData(barData);
       } else {
         console.error("[Dashboard] Bar chart fetch failed:", barRes.status);
@@ -94,7 +96,6 @@ function Dashboard() {
       });
       if (pieRes.ok) {
         const pieData = await pieRes.json();
-        console.log("[Dashboard] Pie chart data:", pieData);
         setPieData(pieData);
       } else {
         console.error("[Dashboard] Pie chart fetch failed:", pieRes.status);
@@ -107,7 +108,6 @@ function Dashboard() {
       });
       if (moversRes.ok) {
         const moversData = await moversRes.json();
-        console.log("[Dashboard] Top movers data:", moversData);
         setTopMovers(moversData);
       } else {
         console.error("[Dashboard] Top movers fetch failed:", moversRes.status);
@@ -119,8 +119,7 @@ function Dashboard() {
         credentials: "include",
       });
       if (debugRes.ok) {
-        const debugData = await debugRes.json();
-        console.log("[Dashboard] Debug data:", debugData);
+        // Debug data logged successfully
       }
     } catch (err) {
       console.error("Error fetching reports:", err);
@@ -131,7 +130,7 @@ function Dashboard() {
 
   const handleDownloadReport = () => {
     const params = `?month=${selectedMonth}&year=${selectedYear}&include_archived=${includeArchived}`;
-    window.location.href = `http://localhost:8000/app/full_report_csv/${params}`;
+    window.location.href = `http://localhost:8000/app/full_report_pdf/${params}`;
   };
 
 
@@ -200,7 +199,7 @@ function Dashboard() {
           </div>
           <button className="btn btn-success" onClick={handleDownloadReport}>
             <i className="bi bi-download" style={{ marginRight: "8px" }}></i>
-            Download
+            Downloadable Report
           </button>
         </div>
 
@@ -389,7 +388,7 @@ function Dashboard() {
                         labels: pieData.labels,
                         datasets: [
                           {
-                            data: pieData.data,
+                            data: pieData.percentages,
                             backgroundColor: ["#4A90E2", "#2FCC71", "#E74C3C"],
                             borderColor: ["#fff", "#fff", "#fff"],
                             borderWidth: 3,
@@ -420,10 +419,10 @@ function Dashboard() {
                             callbacks: {
                               label(context) {
                                 const label = context.label || "";
-                                const value = context.parsed || 0;
                                 const dataIndex = context.dataIndex;
+                                const rawValue = pieData.data[dataIndex] || 0;
                                 const percentage = pieData.percentages[dataIndex] || 0;
-                                return `${label}: ${value} units (${percentage}%)`;
+                                return `${label}: ${rawValue} units (${percentage}%)`;
                               },
                             },
                           },
@@ -445,7 +444,7 @@ function Dashboard() {
                       <div className="stat-percent">{pieData.percentages[1] || 0}%</div>
                     </div>
                     <div className="stat-item" style={{ borderLeft: "4px solid #E74C3C" }}>
-                      <div className="stat-label">Rejected</div>
+                      <div className="stat-label">Defects</div>
                       <div className="stat-value">{pieData.data[2] || 0}</div>
                       <div className="stat-percent">{pieData.percentages[2] || 0}%</div>
                     </div>

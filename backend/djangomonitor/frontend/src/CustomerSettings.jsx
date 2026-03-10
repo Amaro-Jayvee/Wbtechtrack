@@ -44,6 +44,7 @@ function CustomerSettings() {
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [showNotificationDropdown, setShowNotificationDropdown] = useState(false);
+  const [notificationFilter, setNotificationFilter] = useState("all");
 
   const getInitial = (username) => username.charAt(0).toUpperCase();
 
@@ -93,13 +94,22 @@ function CustomerSettings() {
 
   const markNotificationRead = async (notificationId) => {
     try {
+      // Update local state immediately (optimistic update)
+      const updatedNotifications = notifications.map(n =>
+        n.id === notificationId ? { ...n, is_read: true } : n
+      );
+      setNotifications(updatedNotifications);
+      const newUnreadCount = updatedNotifications.filter(n => !n.is_read).length;
+      setUnreadCount(newUnreadCount);
+      
+      // Mark as read on server (fire and forget, don't refetch)
       const response = await fetch(`http://localhost:8000/app/notifications/${notificationId}/read/`, {
         method: "POST",
         credentials: "include",
       });
 
-      if (response.ok) {
-        fetchNotifications();
+      if (!response.ok) {
+        console.error("Error marking notification as read:", response.status);
       }
     } catch (err) {
       console.error("Error marking notification as read:", err);
@@ -337,7 +347,13 @@ function CustomerSettings() {
           {/* Notification Bell */}
           <div style={{ position: "relative" }}>
             <button
-              onClick={() => setShowNotificationDropdown(!showNotificationDropdown)}
+              onClick={() => {
+                // If opening the dropdown, clear the badge visually
+                if (!showNotificationDropdown) {
+                  setUnreadCount(0);
+                }
+                setShowNotificationDropdown(!showNotificationDropdown);
+              }}
               style={{
                 backgroundColor: "rgba(255,255,255,0.2)",
                 color: "white",
@@ -395,17 +411,80 @@ function CustomerSettings() {
                   zIndex: 1000,
                 }}
               >
-                {/* Notification Header */}
-                <div
-                  style={{
-                    padding: "12px 16px",
-                    borderBottom: "1px solid #eee",
-                    fontWeight: "600",
-                    fontSize: "14px",
-                    color: "#333",
-                  }}
-                >
-                  Notifications {unreadCount > 0 && `(${unreadCount} new)`}
+                {/* Notification Header with Filter */}
+                <div style={{ borderBottom: "1px solid #eee" }}>
+                  <div
+                    style={{
+                      padding: "12px 16px",
+                      fontWeight: "600",
+                      fontSize: "14px",
+                      color: "#333",
+                    }}
+                  >
+                    Notifications
+                  </div>
+                  {/* Filter Tabs */}
+                  <div
+                    style={{
+                      display: "flex",
+                      borderTop: "1px solid #eee",
+                      backgroundColor: "#f8f9fa",
+                    }}
+                  >
+                    <button
+                      onClick={() => setNotificationFilter("all")}
+                      style={{
+                        flex: 1,
+                        padding: "8px 12px",
+                        border: "none",
+                        backgroundColor: notificationFilter === "all" ? "white" : "transparent",
+                        color: notificationFilter === "all" ? "#1D6AB7" : "#666",
+                        borderBottom: notificationFilter === "all" ? "2px solid #1D6AB7" : "none",
+                        cursor: "pointer",
+                        fontSize: "13px",
+                        fontWeight: notificationFilter === "all" ? "600" : "500",
+                        transition: "all 0.2s",
+                      }}
+                    >
+                      All
+                    </button>
+                    <button
+                      onClick={() => setNotificationFilter("unread")}
+                      style={{
+                        flex: 1,
+                        padding: "8px 12px",
+                        border: "none",
+                        backgroundColor: notificationFilter === "unread" ? "white" : "transparent",
+                        color: notificationFilter === "unread" ? "#1D6AB7" : "#666",
+                        borderBottom: notificationFilter === "unread" ? "2px solid #1D6AB7" : "none",
+                        borderLeft: "1px solid #eee",
+                        cursor: "pointer",
+                        fontSize: "13px",
+                        fontWeight: notificationFilter === "unread" ? "600" : "500",
+                        transition: "all 0.2s",
+                      }}
+                    >
+                      Unread
+                    </button>
+                    <button
+                      onClick={() => setNotificationFilter("read")}
+                      style={{
+                        flex: 1,
+                        padding: "8px 12px",
+                        border: "none",
+                        backgroundColor: notificationFilter === "read" ? "white" : "transparent",
+                        color: notificationFilter === "read" ? "#1D6AB7" : "#666",
+                        borderBottom: notificationFilter === "read" ? "2px solid #1D6AB7" : "none",
+                        borderLeft: "1px solid #eee",
+                        cursor: "pointer",
+                        fontSize: "13px",
+                        fontWeight: notificationFilter === "read" ? "600" : "500",
+                        transition: "all 0.2s",
+                      }}
+                    >
+                      Read
+                    </button>
+                  </div>
                 </div>
 
                 {/* Notifications List */}
@@ -422,7 +501,14 @@ function CustomerSettings() {
                   </div>
                 ) : (
                   <div>
-                    {notifications.map((notification) => (
+                    {notifications
+                      .filter((notification) => {
+                        if (notificationFilter === "all") return true;
+                        if (notificationFilter === "unread") return !notification.is_read;
+                        if (notificationFilter === "read") return notification.is_read;
+                        return true;
+                      })
+                      .map((notification) => (
                       <div
                         key={notification.id}
                         style={{
@@ -619,22 +705,6 @@ function CustomerSettings() {
           <h3 style={{ margin: "0 0 20px 0", fontSize: "18px", fontWeight: "600", color: "#333" }}>
             Settings
           </h3>
-
-          {/* Search */}
-          <div style={{ marginBottom: "20px" }}>
-            <input
-              type="text"
-              placeholder="Search"
-              style={{
-                width: "100%",
-                padding: "8px 12px",
-                border: "1px solid #ddd",
-                borderRadius: "4px",
-                fontSize: "14px",
-                boxSizing: "border-box",
-              }}
-            />
-          </div>
 
           {/* Menu Items */}
           <nav style={{ display: "flex", flexDirection: "column", gap: "8px" }}>

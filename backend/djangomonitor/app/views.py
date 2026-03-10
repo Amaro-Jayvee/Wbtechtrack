@@ -6,6 +6,7 @@ import json
 import csv
 import datetime
 import calendar
+import os
 from rest_framework.parsers import JSONParser
 from django.contrib.auth import authenticate, login, logout
 from django.http import JsonResponse, HttpResponse
@@ -47,6 +48,13 @@ from django.db.models import Max, Sum
 from .permissions import role_required
 from django.core.mail import send_mail
 from django.conf import settings
+from io import BytesIO
+from reportlab.lib.pagesizes import letter
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import inch
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image
+from reportlab.lib import colors
+from django.http import FileResponse
 
 # Helper functions for API responses
 def error_response(message, code=400, detail=None):
@@ -851,24 +859,20 @@ def requestAPI(request, id=0):
             
             # Check if user is admin or production_manager
             if user.is_staff or user.is_superuser or user_role in [Roles.ADMIN, Roles.PRODUCTION_MANAGER]:
-                # For production_managers, show only non-archived, non-started requests
-                # A project is "started" when it has ProductProcess steps
+                # For production_managers, show only non-archived, APPROVED requests that are NOT STARTED yet
+                # request_status = "new_request" means it's pending (has tasks but not yet started)
+                # request_status = "active" means project has been started (moved to Task Status)
                 requests_obj = Requests.objects.filter(
                     archived_at__isnull=True,
-                    approval_status="approved"
-                ).exclude(
-                    request_products__process_steps__isnull=False
+                    approval_status="approved",
+                    request_status="new_request"
                 ).distinct().order_by('-RequestID')
-                print(f"[DEBUG] {user_role or 'Staff'} user {user.username} fetching non-archived approved requests.")
-                print(f"[DEBUG] Total non-archived requests: {requests_obj.count()}")
-
             else:
                 # For regular users (customers), show only non-archived requests
                 requests_obj = Requests.objects.filter(
                     Q(created_by=user) | Q(requester=user),
                     archived_at__isnull=True
                 ).order_by('-RequestID')
-                print(f"[DEBUG] Customer {user.username} fetching their non-archived requests. Found: {requests_obj.count()}")
         else:
             requests_obj = Requests.objects.none()
         request_serializer = RequestReadSerializer(requests_obj, many=True)
@@ -889,12 +893,20 @@ def requestAPI(request, id=0):
             if not request.user.is_authenticated:
                 return JsonResponse({"error": "User must be authenticated"}, status=401)
             
-            # Optional: Check UserProfile (can be removed if not required)
+            # ===== NEW FLOW: Only admins can create requests =====
+            # Check if user is admin
             try:
                 user_profile = UserProfile.objects.get(user=request.user)
+                user_role = user_profile.role
+                is_admin = user_role in [Roles.ADMIN, 'admin']
             except UserProfile.DoesNotExist:
-                print(f"[DEBUG] Warning: UserProfile not found for user {request.user.username}")
-                # Don't block - allow users without profile to create requests
+                is_admin = request.user.is_staff or request.user.is_superuser
+            
+            # Block customers from creating requests
+            if not is_admin:
+                return JsonResponse({
+                    "error": "Only administrators can create requests. Please contact your administrator to create a request."
+                }, status=403)
             
             request_data = JSONParser().parse(request)
             import os
@@ -902,33 +914,21 @@ def requestAPI(request, id=0):
             with open(log_file, 'a', encoding='utf-8') as f:
                 f.write(f"[CREATE_REQUEST] User: {request.user.username}, Staff: {request.user.is_staff}\n")
             
-            print(f"[DEBUG] Request data received: {request_data}")
-            
             request_serializer = RequestSerializer(data=request_data, context={'request': request})
             if request_serializer.is_valid():
                 new_request = request_serializer.save()
-                print(f"[DEBUG] Request created successfully:")
-                print(f"       - RequestID: {new_request.RequestID}")
-                print(f"       - created_by: {new_request.created_by.username if new_request.created_by else 'None'}")
-                print(f"       - requester: {new_request.requester.username if new_request.requester else 'None'}")
-                print(f"       - deadline: {new_request.deadline}")
-                print(f"       - products: {new_request.request_products.count()}")
                 
-                # Debug: show product quantities
-                for i, rp in enumerate(new_request.request_products.all()):
-                    print(f"       - product[{i}]: {rp.product.prodName if rp.product else 'Unknown'}, quantity: {rp.quantity}")
-                
-                # Create notification for the customer (requester)
-                if new_request.requester:
+                # Create notification for the customer (requester) - only if admin created for specific customer
+                if new_request.requester and new_request.created_by != new_request.requester:
                     create_notification(
                         user=new_request.requester,
                         notification_type='request_created',
                         title='New Request Assigned',
-                        message=f'A new request has been assigned to you with deadline {new_request.deadline}',
+                        message=f'Admin {request.user.username} has created a new request #{new_request.RequestID} for you with deadline {new_request.deadline}',
                         related_request=new_request
                     )
                 
-                # Create notification for the user who created the request
+                # Create notification for the user who created the request (admin)
                 if request.user:
                     create_notification(
                         user=request.user,
@@ -938,14 +938,14 @@ def requestAPI(request, id=0):
                         related_request=new_request
                     )
                 
-                # Create notification for all admin/manager users
+                # Create notification for all other admin/staff users
                 admin_users = User.objects.filter(Q(is_staff=True) | Q(is_superuser=True)).exclude(id=request.user.id)
                 for admin_user in admin_users:
                     create_notification(
                         user=admin_user,
                         notification_type='request_created',
                         title='New Request Created',
-                        message=f'A new request #{new_request.RequestID} has been created by {request.user.username}',
+                        message=f'Admin {request.user.username} created request #{new_request.RequestID} for customer {new_request.requester.username if new_request.requester else "Unknown"}',
                         related_request=new_request
                     )
                 
@@ -958,20 +958,16 @@ def requestAPI(request, id=0):
                         existing_templates = ProcessTemplate.objects.filter(product_name=product).exists()
                         
                         if not existing_templates:
-                            print(f"[DEBUG] Product {product.prodName} has no ProcessTemplate - checking for ProcessName records to link")
                             # If no templates exist, try to find any ProcessName records that match this product's processes
                             # This handles the case where products are created via the Add Product/Part modal
                             # For now, create templates for common processes if needed by other logic
+                            pass
                 
                 # Return the created request data instead of just a message
                 return JsonResponse(request_serializer.data, safe=False, status=201)
             else:
-                print(f"[DEBUG] Request creation failed with errors: {request_serializer.errors}")
                 return JsonResponse(request_serializer.errors, safe=False, status=400)
         except Exception as e:
-            print(f"[DEBUG] Exception during request creation: {type(e).__name__}: {str(e)}")
-            import traceback
-            traceback.print_exc()
             return JsonResponse({"error": f"Server error: {str(e)}"}, status=500)
     
     elif request.method == 'DELETE':
@@ -1161,32 +1157,36 @@ def _auto_start_project_tasks(req, requesting_user):
                         'quantity': request_product.quantity
                     })
             else:
-                # Product has no templates - create a generic "Assembly" task
+                # Product has no templates - create a generic fallback task
                 try:
-                    assembly_process = ProcessName.objects.get(name="Assembly")
+                    # Try to get the first available ProcessName as fallback
+                    fallback_process = ProcessName.objects.first()
                     
-                    # Extract process number and name from the combined ProcessName.name
-                    process_num, process_name_text = _extract_process_details(assembly_process.name)
-                    
-                    task = ProductProcess.objects.create(
-                        request_product=request_product,
-                        process=assembly_process,
-                        process_number=process_num,
-                        process_name=process_name_text,
-                        step_order=1,
-                        completed_quota=0,
-                        is_completed=False
-                    )
-                    created_tasks.append({
-                        'id': task.id,
-                        'request_id': req.RequestID,
-                        'product': product.prodName,
-                        'process': 'Assembly (Generic)',
-                        'quantity': request_product.quantity
-                    })
-                    print(f"[DEBUG] Created generic Assembly task for product {product.prodName}")
-                except ProcessName.DoesNotExist:
-                    print(f"[DEBUG] Warning: Assembly process not found for product {product.prodName}")
+                    if fallback_process:
+                        # Extract process number and name from the combined ProcessName.name
+                        process_num, process_name_text = _extract_process_details(fallback_process.name)
+                        
+                        task = ProductProcess.objects.create(
+                            request_product=request_product,
+                            process=fallback_process,
+                            process_number=process_num,
+                            process_name=process_name_text,
+                            step_order=1,
+                            completed_quota=0,
+                            is_completed=False
+                        )
+                        created_tasks.append({
+                            'id': task.id,
+                            'request_id': req.RequestID,
+                            'product': product.prodName,
+                            'process': f'{fallback_process.name} (Generated)',
+                            'quantity': request_product.quantity
+                        })
+                        print(f"[DEBUG] Created generic fallback task for product {product.prodName} using process: {fallback_process.name}")
+                    else:
+                        print(f"[DEBUG] Warning: No ProcessName found at all in database for fallback task for product {product.prodName}")
+                except Exception as e:
+                    print(f"[DEBUG] Warning: Failed to create fallback task for product {product.prodName}: {str(e)}")
         
         # Create notifications only if tasks were created
         if created_tasks:
@@ -1240,6 +1240,12 @@ def _auto_start_project_tasks(req, requesting_user):
                 )
             except Exception as audit_err:
                 print(f"[DEBUG] Warning: Failed to create audit log for project start: {audit_err}")
+        
+        # Update request status to "active" if tasks were successfully created
+        if created_tasks:
+            req.request_status = "active"
+            req.save()
+            print(f"[DEBUG] Updated request {req.RequestID} status to 'active'")
         
         print(f"[DEBUG] Auto-started project for request {req.RequestID}: tasks_created={len(created_tasks)}")
         return created_tasks
@@ -2073,6 +2079,8 @@ def productProcessAPI(request, id=0):
                 all_steps = ProductProcess.objects.filter(
                     request_product__isnull=False,
                     request_product__completed_at__isnull=False
+                ).exclude(
+                    request_product__status='cancelled'
                 ).order_by('request_product_id', 'step_order')
             else:
                 # Show only completed steps from non-archived requests
@@ -2080,6 +2088,8 @@ def productProcessAPI(request, id=0):
                     request_product__isnull=False,
                     request_product__completed_at__isnull=False,
                     request_product__archived_at__isnull=True
+                ).exclude(
+                    request_product__status='cancelled'
                 ).order_by('request_product_id', 'step_order')
         else:
             # Filter out steps whose request_product is completed
@@ -2090,6 +2100,8 @@ def productProcessAPI(request, id=0):
                     request_product__isnull=False,
                     archived_at__isnull=True,
                     request_product__completed_at__isnull=True
+                ).exclude(
+                    request_product__status='cancelled'
                 ).order_by('request_product_id', 'step_order')
             else:
                 # Show only in-progress steps from non-archived requests (DEFAULT)
@@ -2098,6 +2110,8 @@ def productProcessAPI(request, id=0):
                     archived_at__isnull=True,
                     request_product__completed_at__isnull=True,
                     request_product__archived_at__isnull=True
+                ).exclude(
+                    request_product__status='cancelled'
                 ).order_by('request_product_id', 'step_order')
 
         # Auto-mark request products as completed if all their steps are completed
@@ -2132,6 +2146,10 @@ def productProcessAPI(request, id=0):
                             print(f"[AUTO-COMPLETE] Marking request product {rp_id} as completed - all {rp_steps.count()} steps completed")
                             rp.completed_at = timezone.now()
                             rp.save(update_fields=['completed_at'])
+                            
+                            # Auto-update parent request status if all its products are now completed
+                            if rp.request:
+                                rp.request.check_and_update_status()
             except RequestProduct.DoesNotExist:
                 pass
             except Exception as e:
@@ -2140,21 +2158,12 @@ def productProcessAPI(request, id=0):
         serializer = ProductProcessSerializer(all_steps, many=True)
         response_data = serializer.data
         
-        # Log to verify overall_progress is included
-        if response_data:
-            print(f"[DEBUG GET Products] Returning {len(response_data)} steps")
-            print(f"[DEBUG GET Products] First step data keys: {list(response_data[0].keys())}")
-            print(f"[DEBUG GET Products] First step - is_completed: {response_data[0].get('is_completed')}, overall_progress: {response_data[0].get('overall_progress')}")
-        
         return JsonResponse(response_data, safe=False)
 
     elif request.method == 'PATCH':
         try:
-            print(f"\n[DEBUG PATCH START] URL id parameter: {id}, type: {type(id)}")
             data = JSONParser().parse(request)
-            print(f"[DEBUG PATCH] Received data: {data}")
             step = ProductProcess.objects.get(id=id)
-            print(f"[DEBUG PATCH] Retrieved ProductProcess: id={step.id}, step_order={step.step_order}, process={step.process.name}")
 
             # Check if this is a template record (no request_product assigned)
             if not step.request_product:
@@ -2185,49 +2194,90 @@ def productProcessAPI(request, id=0):
 
             # Handle completed_quota
             if 'completed_quota' in data:
-                print(f"[DEBUG PATCH] Setting completed_quota: {data['completed_quota']} on step id={step.id} (step_order={step.step_order})")
+                old_quota = step.completed_quota
                 step.completed_quota = data['completed_quota']
+                # Track quota update if changed
+                if old_quota != data['completed_quota']:
+                    from django.utils import timezone
+                    step.quota_updated_at = timezone.now()
+                    step.quota_updated_by = request.user
                 step.save()
-                print(f"[DEBUG PATCH] After save - DB now has: ProductProcess id={step.id}, completed_quota={step.completed_quota}")
-                print(f"[DEBUG PATCH] Updated ProductProcess {id}: completed_quota={step.completed_quota}, request_product={step.request_product.id}, request={step.request_product.request.RequestID}")
                 was_marked_complete = step.mark_completed_if_ready()
                 # Refresh from DB to get the latest is_completed value
                 step.refresh_from_db()
-                print(f"[DEBUG PATCH] After mark_completed_if_ready: step.is_completed={step.is_completed}, was_marked_complete={was_marked_complete}")
-                print(f"[DEBUG PATCH] Total quantity for request_product: {step.request_product.quantity}, completed_quota: {step.completed_quota}")
                 if was_marked_complete:
-                    print(f"[PROGRESS] ✅ Step {step.id} marked as COMPLETED! (quota {step.completed_quota}/{step.request_product.quantity})")
+                    pass  # Step marked as completed
 
-            # Handle defect_count
-            if 'defect_count' in data:
-                print(f"[DEBUG PATCH] Setting defect_count: {data['defect_count']} on step id={step.id} (step_order={step.step_order})")
-                step.defect_count = data['defect_count']
+            # Handle defect_logs - new array-based defect tracking
+            if 'defect_logs' in data:
+                defect_logs_data = data.get('defect_logs', [])
+                from django.utils import timezone
+                
+                # Delete all existing DefectLog entries for this ProductProcess
+                step.defect_logs.all().delete()
+                
+                # Create new DefectLog entries from the provided array
+                created_logs = []
+                for log_entry in defect_logs_data:
+                    # Skip entries without type (placeholder rows)
+                    if not log_entry.get('defect_type'):
+                        continue
+                    
+                    defect_log = DefectLog.objects.create(
+                        product_process=step,
+                        defect_type=log_entry.get('defect_type'),
+                        defect_count=log_entry.get('defect_count', 0)
+                    )
+                    created_logs.append(defect_log)
+                
+                # Track defect update
+                step.defect_updated_at = timezone.now()
+                step.defect_updated_by = request.user
+                # Also update quota_updated_at to track general "Last Update" timestamp
+                step.quota_updated_at = timezone.now()
+                step.quota_updated_by = request.user
                 step.save()
-                print(f"[DEBUG PATCH] After save - DB now has: ProductProcess id={step.id}, defect_count={step.defect_count}")
+
+            # Handle defect_count and defect tracking (legacy - fallback for single defect)
+            elif 'defect_count' in data or 'defect_type' in data or 'defect_description' in data:
+                old_defect_count = step.defect_count
+                if 'defect_count' in data:
+                    step.defect_count = data['defect_count']
+                if 'defect_type' in data:
+                    step.defect_type = data['defect_type']
+                if 'defect_description' in data:
+                    step.defect_description = data['defect_description']
+                
+                # Track defect update if defect_count changed or defect type/description was added
+                if ('defect_count' in data and old_defect_count != data['defect_count']) or 'defect_type' in data or 'defect_description' in data:
+                    from django.utils import timezone
+                    step.defect_updated_at = timezone.now()
+                    step.defect_updated_by = request.user
+                    # Also update quota_updated_at to track general "Last Update" timestamp
+                    step.quota_updated_at = timezone.now()
+                    step.quota_updated_by = request.user
+                
+                step.save()
 
             # Handle workers separately for M2M relationship
             if 'workers' in data:
                 workers_data = data.get('workers', [])
-                print(f"DEBUG: Updating workers for ProductProcess {id} with workers: {workers_data}")
                 try:
                     step.workers.set(workers_data)
-                    print(f"DEBUG: Workers set successfully. Current workers: {list(step.workers.all())}")
-                    # Verify workers are actually saved
-                    saved_workers = list(step.workers.values_list('WorkerID', flat=True))
-                    print(f"DEBUG: Verified workers in DB: {saved_workers}")
+                    # Update quota_updated_at to track that workers were updated
+                    from django.utils import timezone
+                    step.quota_updated_at = timezone.now()
+                    step.quota_updated_by = request.user
+                    step.save()
                 except Exception as e:
-                    print(f"ERROR setting workers: {str(e)}")
                     raise
 
-            # Update the remaining fields via serializer (excluding workers since we handled it)
-            data_for_serializer = {k: v for k, v in data.items() if k != 'workers'}
-            print(f"[DEBUG PATCH] Data for serializer: {data_for_serializer}")
-            print(f"[DEBUG PATCH] Is 'is_completed' in data? {'is_completed' in data_for_serializer}")
+            # Update the remaining fields via serializer (excluding workers and defect_logs since we handled them)
+            data_for_serializer = {k: v for k, v in data.items() if k not in ['workers', 'defect_logs']}
             
             serializer = ProductProcessSerializer(step, data=data_for_serializer, partial=True)
             if serializer.is_valid():
                 updated_step = serializer.save()
-                print(f"[DEBUG PATCH] Serializer save successful for id={updated_step.id}, is_completed={updated_step.is_completed}, completed_quota={updated_step.completed_quota}")
 
                 # Audit log entry
                 try:
@@ -2240,15 +2290,10 @@ def productProcessAPI(request, id=0):
                         performed_by=request.user
                     )
                 except Exception as audit_err:
-                    print(f"[DEBUG] Warning: Failed to create audit log: {audit_err}")
+                    pass
 
                 # Create notification for the customer (requester) about task status update
                 try:
-                    import os
-                    log_file = os.path.join(os.path.dirname(__file__), '../notification_debug.log')
-                    with open(log_file, 'a', encoding='utf-8') as f:
-                        f.write(f"[TASK_UPDATE] Creating notifications for task update\n")
-                    
                     if request_instance.requester:
                         task_status = request_product.task_status()
                         create_notification(
@@ -2258,13 +2303,8 @@ def productProcessAPI(request, id=0):
                             message=f'Task status for {request_product.product.prodName} has been updated to {task_status}',
                             related_request=request_instance
                         )
-                        with open(log_file, 'a', encoding='utf-8') as f:
-                            f.write(f"[TASK_UPDATE] Created notif for requester: {request_instance.requester.username}\n")
                 except Exception as notif_err:
-                    import os
-                    log_file = os.path.join(os.path.dirname(__file__), '../notification_debug.log')
-                    with open(log_file, 'a', encoding='utf-8') as f:
-                        f.write(f"[TASK_UPDATE] ERROR creating customer notification: {str(notif_err)}\n")
+                    pass
                 
                 # Create notification for the user who updated the task
                 try:
@@ -2276,15 +2316,8 @@ def productProcessAPI(request, id=0):
                         message=f'You updated task for {request_product.product.prodName} to {task_status}',
                         related_request=request_instance
                     )
-                    import os
-                    log_file = os.path.join(os.path.dirname(__file__), '../notification_debug.log')
-                    with open(log_file, 'a', encoding='utf-8') as f:
-                        f.write(f"[TASK_UPDATE] Created notif for updater: {request.user.username}\n")
                 except Exception as notif_err:
-                    import os
-                    log_file = os.path.join(os.path.dirname(__file__), '../notification_debug.log')
-                    with open(log_file, 'a', encoding='utf-8') as f:
-                        f.write(f"[TASK_UPDATE] ERROR creating updater notification: {str(notif_err)}\n")
+                    pass
                 
                 # Create notification for all admin/manager users about task update
                 try:
@@ -2298,22 +2331,13 @@ def productProcessAPI(request, id=0):
                             message=f'Task for {request_product.product.prodName} (Request #{request_instance.RequestID}) has been updated to {task_status}',
                             related_request=request_instance
                         )
-                    import os
-                    log_file = os.path.join(os.path.dirname(__file__), '../notification_debug.log')
-                    with open(log_file, 'a', encoding='utf-8') as f:
-                        f.write(f"[TASK_UPDATE] Created notifs for {admin_users.count()} admin users\n")
                 except Exception as notif_err:
-                    import os
-                    log_file = os.path.join(os.path.dirname(__file__), '../notification_debug.log')
-                    with open(log_file, 'a', encoding='utf-8') as f:
-                        f.write(f"[TASK_UPDATE] ERROR creating admin notifications: {str(notif_err)}\n")
+                    pass
 
-                print(f"[DEBUG PATCH END] Returning success response for step id={updated_step.id}")
                 return JsonResponse({
                     "message": "Step updated successfully!",
                     "updated_step": ProductProcessSerializer(updated_step).data
                 }, status=200)
-            print(f"[DEBUG PATCH ERROR] Serializer validation failed: {serializer.errors}")
             return JsonResponse(serializer.errors, status=400)
         
         except ProductProcess.DoesNotExist:
@@ -2322,9 +2346,6 @@ def productProcessAPI(request, id=0):
                 status=404
             )
         except Exception as e:
-            print(f"\n[ERROR] Unexpected error in PATCH handler: {type(e).__name__}: {str(e)}")
-            import traceback
-            traceback.print_exc()
             return JsonResponse(
                 {"error": f"Server error: {str(e)}"},
                 status=500
@@ -2875,12 +2896,13 @@ def pie_report(request):
     pct = lambda n: round((n / total) * 100, 2) if total else 0
 
     labels = ["In Progress", "Completed", "Rejected"]
-    data   = [pct(active_qty), pct(completed_qty), pct(rejected_qty)]
+    raw = [active_qty, completed_qty, rejected_qty]
+    percentages = [pct(active_qty), pct(completed_qty), pct(rejected_qty)]
 
     return JsonResponse({
         "labels": labels,
-        "data": data,
-        "raw": [active_qty, completed_qty, rejected_qty],
+        "data": raw,
+        "percentages": percentages,
         "total": total
     })
 
@@ -3059,10 +3081,36 @@ def get_pie_report_data(month, year, include_archived=False):
     }
 
 def get_donut_top_products(month, year, limit=5, include_archived=False):
-    final_processes = get_final_step_processes(month, year, include_archived)
+    from datetime import datetime, timedelta, time
+    from django.utils import timezone
+    
+    # Calculate date range for the month
+    first_day = datetime(year, month, 1)
+    last_day = (first_day + timedelta(days=32)).replace(day=1) - timedelta(days=1)
+    
+    # Convert to timezone-aware datetimes for comparison
+    start_datetime = timezone.make_aware(datetime.combine(first_day, time.min))
+    end_datetime = timezone.make_aware(datetime.combine(last_day, time.max))
+    
+    # Get all ProductProcess for this month (not just final steps) - same as bar chart
+    base_qs = ProductProcess.objects.filter(
+        updated_at__gte=start_datetime,
+        updated_at__lte=end_datetime,
+        request_product__isnull=False  # Only actual tasks, not templates
+    )
 
+    if not include_archived:
+        # Filter to show only non-completed tasks (in-progress work)
+        base_qs = base_qs.filter(
+            archived_at__isnull=True,
+            request_product__completed_at__isnull=True
+        )
+    # else: when include_archived=True, show ALL tasks (both in-progress and completed)
+    # No additional filter needed
+
+    # Aggregate by product and sum completed_quota
     product_totals = (
-        ProductProcess.objects.filter(id__in=[p.id for p in final_processes])
+        base_qs
         .values("request_product__product__prodName")
         .annotate(total_quota=Sum("completed_quota"))
         .filter(total_quota__gt=0)
@@ -3246,6 +3294,187 @@ def full_report_csv(request):
         return JsonResponse({"error": str(e)}, status=500)
 
 
+@require_http_methods(['GET'])
+@role_required('admin', 'production_manager')
+@csrf_exempt
+def generate_pdf_report(request):
+    try:
+        today = date.today()
+        month = int(request.GET.get("month", today.month))
+        year  = int(request.GET.get("year", today.year))
+        limit = int(request.GET.get("limit", 5))
+
+        include_archived = request.GET.get("include_archived", "false").lower() == "true"
+
+        print(f"[DEBUG] generate_pdf_report: month={month}, year={year}, limit={limit}, include_archived={include_archived}")
+
+        bar_data   = get_bar_report_data(month, year, include_archived)
+        pie_data   = get_pie_report_data(month, year, include_archived)
+        donut_data = get_donut_top_products(month, year, limit, include_archived)
+
+        # Create PDF in memory
+        pdf_buffer = BytesIO()
+        doc = SimpleDocTemplate(pdf_buffer, pagesize=letter, rightMargin=0.5*inch, leftMargin=0.5*inch, topMargin=0.75*inch, bottomMargin=0.75*inch)
+        elements = []
+
+        # Define styles
+        styles = getSampleStyleSheet()
+        title_style = ParagraphStyle(
+            'CustomTitle',
+            parent=styles['Heading1'],
+            fontSize=24,
+            textColor=colors.HexColor('#1D6AB7'),
+            spaceAfter=6,
+            alignment=1  # Center
+        )
+        heading_style = ParagraphStyle(
+            'CustomHeading',
+            parent=styles['Heading2'],
+            fontSize=14,
+            textColor=colors.HexColor('#1D6AB7'),
+            spaceAfter=12,
+            spaceBefore=12
+        )
+        normal_style = styles['Normal']
+
+        # Header Section with Logo on Left side (no interference with center)
+        logo_path = os.path.join(os.path.dirname(__file__), 'assets', 'Group 1.png')
+        
+        try:
+            if os.path.exists(logo_path):
+                logo = Image(logo_path, width=0.8*inch, height=0.8*inch)
+            else:
+                logo = Paragraph("", normal_style)  # Fallback if logo not found
+        except Exception as e:
+            print(f"[DEBUG] Error loading logo: {e}")
+            logo = Paragraph("", normal_style)  # Fallback if logo not found
+        
+        # Centered title and contact info - will not be affected by logo
+        title_text = Paragraph("<b>WB Technologies</b><br/>info@wbtechnologies.com | (02) 994 9971", title_style)
+        
+        # 2-column layout: Logo on LEFT | Centered contact info on RIGHT
+        # Logo has its own narrow column, contact info centered in wider column
+        header_table = Table(
+            [[logo, title_text]],  # Single row with logo and centered text
+            colWidths=[0.9*inch, 6.6*inch]  # Logo narrow column + wide text column
+        )
+        header_table.setStyle(TableStyle([
+            # Logo column: left aligned and top
+            ('ALIGN', (0, 0), (0, 0), 'LEFT'),
+            ('VALIGN', (0, 0), (0, 0), 'TOP'),
+            
+            # Text column: centered
+            ('ALIGN', (1, 0), (1, 0), 'CENTER'),
+            ('VALIGN', (1, 0), (1, 0), 'MIDDLE'),
+            
+            # Remove ALL padding
+            ('LEFTPADDING', (0, 0), (-1, -1), 0),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+            ('TOPPADDING', (0, 0), (-1, -1), 0),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
+        ]))
+        elements.append(header_table)
+        elements.append(Spacer(1, 0.3*inch))
+
+        # Report Title
+        report_title_style = ParagraphStyle(
+            'ReportTitle',
+            parent=styles['Heading2'],
+            fontSize=16,
+            textColor=colors.HexColor('#1D6AB7'),
+            spaceAfter=12,
+            alignment=1  # Center
+        )
+        month_name = calendar.month_name[month]
+        elements.append(Paragraph(f"Production Report - {month_name} {year}", report_title_style))
+        elements.append(Spacer(1, 0.2*inch))
+
+        # Metadata Table
+        generated_date = timezone.now().strftime('%Y-%m-%d %H:%M:%S')
+        username = request.user.username if request.user.is_authenticated else "Unknown"
+        
+        metadata_data = [
+            ["Generated By:", username],
+            ["Generated Date:", generated_date],
+            ["Report Period:", f"{month_name} {year}"],
+            ["Include Archived:", "Yes" if include_archived else "No"]
+        ]
+
+        metadata_table = Table(metadata_data, colWidths=[2*inch, 3.5*inch])
+        metadata_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (0, -1), colors.HexColor('#F0F0F0')),
+            ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 10),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+            ('TOPPADDING', (0, 0), (-1, -1), 8),
+            ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#CCCCCC'))
+        ]))
+        elements.append(metadata_table)
+        elements.append(Spacer(1, 0.3*inch))
+
+        # Production Summary
+        elements.append(Paragraph("Production Summary - Weekly Breakdown", heading_style))
+        summary_data = [["Week", "Defects", "Completed"]]
+        for week in sorted(bar_data.keys()):
+            summary_data.append([f"Week {week}", str(bar_data[week]["defects"]), str(bar_data[week]["completed"])])
+
+        summary_table = Table(summary_data, colWidths=[1.5*inch, 1.5*inch, 1.5*inch])
+        summary_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1D6AB7')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 10),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+            ('TOPPADDING', (0, 0), (-1, -1), 8),
+            ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#CCCCCC')),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#F5F5F5')])
+        ]))
+        elements.append(summary_table)
+        elements.append(Spacer(1, 0.3*inch))
+
+        # Production Percentages
+        elements.append(Paragraph("Production Percentages", heading_style))
+        pie_data_table = [["Category", "Percentage", "Quantity"]]
+        for label, pct, raw in zip(pie_data["labels"], pie_data["percentages"], pie_data["raw"]):
+            pie_data_table.append([label, f"{pct}%", str(raw)])
+
+        pie_table = Table(pie_data_table, colWidths=[2*inch, 1.5*inch, 1.5*inch])
+        pie_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#46E63E')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.black),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 10),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+            ('TOPPADDING', (0, 0), (-1, -1), 8),
+            ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#CCCCCC')),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#F5F5F5')])
+        ]))
+        elements.append(pie_table)
+
+        # Build PDF
+        doc.build(elements)
+        pdf_buffer.seek(0)
+
+        # Return PDF file
+        month_name = calendar.month_name[month]
+        filename = f"TechTrack_Report_{month_name}_{year}.pdf"
+        response = FileResponse(pdf_buffer, content_type='application/pdf')
+        response['Content-Disposition'] = f'attachment; filename="{filename}"'
+
+        print(f"[DEBUG] PDF report generated successfully: {filename}")
+        return response
+
+    except Exception as e:
+        print(f"[ERROR] generate_pdf_report failed: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return JsonResponse({"error": str(e)}, status=500)
+
+
 @require_http_methods(['POST', 'PATCH'])
 @role_required('admin', 'production_manager')
 @csrf_exempt
@@ -3257,13 +3486,26 @@ def archive_request(request, id):
 
     old_value = str(req.archived_at)
     now = timezone.now()
+    
+    # Get cancellation reason from request body
+    try:
+        body = json.loads(request.body) if request.body else {}
+        cancellation_reason = body.get('cancellation_reason', 'Cancelled')
+    except json.JSONDecodeError:
+        cancellation_reason = 'Cancelled'
 
     # Archive the Request itself
     req.archived_at = now
     req.save()
 
     # Archive all RequestProducts under this Request
-    RequestProduct.objects.filter(request=req).update(archived_at=now)
+    # Set cancelled_by, cancelled_at, and cancellation_reason
+    RequestProduct.objects.filter(request=req).update(
+        archived_at=now,
+        cancelled_at=now,
+        cancelled_by=request.user,
+        cancellation_reason=cancellation_reason
+    )
 
     # Archive all ProductProcesses linked to those RequestProducts
     ProductProcess.objects.filter(request_product__request=req).update(archived_at=now)
@@ -3280,7 +3522,9 @@ def archive_request(request, id):
 
     return JsonResponse({
         "message": f"Request {id} archived successfully!",
-        "archived_at": req.archived_at
+        "archived_at": req.archived_at,
+        "cancelled_by": request.user.get_full_name() or request.user.username,
+        "cancellation_reason": cancellation_reason
     }, status=200)
 
 @require_http_methods(['POST', 'PATCH'])
@@ -3775,6 +4019,15 @@ def requestProductAPI(request, id=0):
                 print(f"   ✅ RequestProduct {id} archived successfully")
                 print(f"   Verify: archived_at is now {request_product.archived_at}")
                 print(f"   Other products in same issuance AFTER: {request_product.request.request_products.filter(archived_at__isnull=True).count()}")
+
+            elif data.get('status') == 'cancelled':
+                from django.utils import timezone
+                request_product.status = 'cancelled'
+                request_product.cancelled_at = timezone.now()
+                request_product.cancelled_by = request.user
+                request_product.cancellation_reason = data.get('cancellation_reason', 'Cancelled by production manager')
+                request_product.save()
+                print(f"   ✅ RequestProduct {id} cancelled successfully")
                 
                 # Create notification for requester
                 try:
@@ -3813,7 +4066,13 @@ def requestProductAPI(request, id=0):
                     "product_name": request_product.product.prodName if request_product.product else None
                 }, status=200)
             
-            return JsonResponse({"error": "No archived_at provided"}, status=400)
+            return JsonResponse({
+                "message": "Request product updated successfully",
+                "id": request_product.id,
+                "status": request_product.status,
+                "request_id": request_product.request.RequestID if request_product.request else None,
+                "product_name": request_product.product.prodName if request_product.product else None
+            }, status=200)
         except RequestProduct.DoesNotExist:
             return JsonResponse({"error": "Request product not found"}, status=404)
         except Exception as e:
@@ -3825,7 +4084,7 @@ def requestProductAPI(request, id=0):
         response_data = []
 
         for req in requests.order_by('-created_at'):
-            products = req.request_products.all().order_by('-request__created_at')
+            products = req.request_products.exclude(status='cancelled').order_by('-request__created_at')
             
             # Apply archived filter
             if archived_only:
@@ -3893,6 +4152,7 @@ def customer_request_view(request):
     user = request.user
     include_archived = request.GET.get("include_archived", "false").lower() == "true"
     status_filter = request.GET.get("status", "").lower()
+    request_status_filter = request.GET.get("request_status", "").lower()  # NEW: Filter by new_request vs active
 
     # Map query params to normalized status strings
     status_map = {
@@ -3910,7 +4170,9 @@ def customer_request_view(request):
             ]
         return products
 
+    # Fetch ALL requests first (don't filter by status yet)
     requests_qs = Requests.objects.filter(requester=user)
+    
     if not include_archived:
         requests_qs = requests_qs.filter(archived_at__isnull=True)
 
@@ -3924,15 +4186,115 @@ def customer_request_view(request):
         if not products:
             continue
 
+        # Auto-update request status if all ACTIVE (non-archived) products are 100% complete
+        # Only count non-archived products for completion check
+        active_products = req.request_products.filter(archived_at__isnull=True)
+        total_requested = sum(rp.quantity for rp in active_products)
+        total_completed = sum(rp.get_completed_quota() for rp in active_products)
+        
+        if total_requested > 0 and total_completed >= total_requested:
+            if req.request_status != "completed":
+                req.request_status = "completed"
+                req.save(update_fields=['request_status'])
+        
+        # NOW filter by request_status after updating
+        if request_status_filter == "completed":
+            if req.request_status != "completed":
+                continue
+        elif request_status_filter == "active":
+            # Show both "new_request" and "active" status (all in-progress work)
+            if req.request_status not in ["new_request", "active"]:
+                continue
+
         serializer = CustomerProductDetailSerializer(products, many=True)
         response_data.append({
             "RequestID": req.RequestID,
-            "deadline": req.deadline,
-            "created_at": req.created_at,
+            "deadline": req.deadline.strftime("%m/%d/%Y") if req.deadline else "N/A",
+            "created_at": req.created_at.strftime("%m/%d/%Y") if req.created_at else "N/A",
+            "request_status": req.request_status,  # NEW: Include request_status in response
             "request_products": serializer.data
         })
 
     return JsonResponse(response_data, safe=False)
+
+
+@login_required
+def customer_cancelled_requests_view(request):
+    """
+    Returns a list of all cancelled request products for the logged-in customer.
+    """
+    try:
+        user = request.user
+        
+        # Get all cancelled request products for this customer
+        cancelled_products = RequestProduct.objects.filter(
+            request__requester=user,
+            archived_at__isnull=False
+        ).select_related(
+            'request', 
+            'product',
+            'cancelled_by'
+        ).order_by('-archived_at')
+        
+        # Build response data
+        cancelled_requests = []
+        for rp in cancelled_products:
+            try:
+                # Skip if request or product is None
+                if not rp.request or not rp.product:
+                    continue
+                
+                # Determine who cancelled the request
+                cancelled_by_user = rp.cancelled_by
+                
+                # If cancelled_by is not set, try to get it from audit log
+                if not cancelled_by_user and rp.request:
+                    try:
+                        audit_log = AuditLog.objects.filter(
+                            request=rp.request,
+                            action_type='archive'
+                        ).order_by('-timestamp').first()
+                        if audit_log and audit_log.performed_by:
+                            cancelled_by_user = audit_log.performed_by
+                    except Exception as audit_err:
+                        print(f"[WARN] Could not get audit log for request {rp.request.RequestID}: {str(audit_err)}")
+                
+                cancelled_by_name = (cancelled_by_user.get_full_name() or cancelled_by_user.username) if cancelled_by_user else 'System'
+                
+                # Format dates
+                cancelled_at_str = rp.archived_at.isoformat() if rp.archived_at else None
+                created_at_str = rp.request.created_at.strftime("%m/%d/%Y") if rp.request.created_at else "N/A"
+                
+                cancelled_requests.append({
+                    'id': rp.id,
+                    'request_id': rp.request.RequestID,
+                    'product_name': rp.product.prodName,
+                    'quantity': rp.quantity,
+                    'cancelled_at': cancelled_at_str,
+                    'cancelled_by_name': cancelled_by_name,
+                    'cancellation_reason': rp.cancellation_reason if rp.cancellation_reason else 'Cancelled',
+                    'created_at': created_at_str,
+                })
+            except Exception as item_err:
+                print(f"[ERROR] Processing cancelled product {rp.id}: {str(item_err)}")
+                import traceback
+                traceback.print_exc()
+                continue
+        
+        return JsonResponse({
+            'cancelled_requests': cancelled_requests,
+            'count': len(cancelled_requests)
+        })
+        
+    except Exception as e:
+        print(f"[ERROR] Customer cancelled requests error: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return JsonResponse({
+            'error': f"Error fetching cancelled requests: {str(e)}",
+            'cancelled_requests': [],
+            'count': 0
+        }, status=500)
 
 
 # @csrf_exempt
@@ -4411,10 +4773,13 @@ def dashboard_top_movers(request):
 
 
 @csrf_exempt
-@role_required('admin', 'manager')
 @require_http_methods(['GET'])
 def debug_dashboard_data(request):
     """Debug endpoint to see what data is available"""
+    # No role requirement - accessible to all authenticated users
+    if not request.user.is_authenticated:
+        return JsonResponse({"detail": "Unauthorized"}, status=401)
+    
     try:
         today = date.today()
         month = int(request.GET.get("month", today.month))
@@ -4615,7 +4980,162 @@ def approve_deadline_extension(request, id):
         return error_response("Request product not found", code=404)
     except Exception as e:
         print(f"[ERROR] Approve extension error: {str(e)}")
-        return error_response(f"Error approving extension: {str(e)}", code=500)
+
+
+@require_http_methods(["GET"])
+def cancelled_requests_view(request):
+    """
+    Returns a list of all cancelled product requests.
+    Available to admin and production_manager roles.
+    """
+    try:
+        # Get user role
+        user_role = request.user.userprofile.role if hasattr(request.user, 'userprofile') else None
+        
+        # Only allow admin and production_manager to view cancelled requests
+        if user_role not in ['admin', 'production_manager']:
+            return error_response("Unauthorized access", code=403)
+        
+        # Get all archived request products (cancelled/archived)
+        cancelled_products = RequestProduct.objects.filter(
+            archived_at__isnull=False
+        ).select_related(
+            'request', 
+            'product',
+            'cancelled_by'
+        ).order_by('-archived_at')
+        
+        # Build response data
+        cancelled_requests = []
+        for rp in cancelled_products:
+            try:
+                # Skip if request or product is None
+                if not rp.request or not rp.product:
+                    continue
+                
+                requester_user = rp.request.requester if rp.request else None
+                cancelled_by_user = rp.cancelled_by
+                
+                # If cancelled_by is not set, try to get it from audit log
+                if not cancelled_by_user and rp.request:
+                    try:
+                        audit_log = AuditLog.objects.filter(
+                            request=rp.request,
+                            action_type='archive'
+                        ).order_by('-timestamp').first()
+                        if audit_log and audit_log.performed_by:
+                            cancelled_by_user = audit_log.performed_by
+                    except Exception as audit_err:
+                        print(f"[WARN] Could not get audit log for request {rp.request.RequestID}: {str(audit_err)}")
+                
+                cancelled_by_name = (cancelled_by_user.get_full_name() or cancelled_by_user.username) if cancelled_by_user else 'System'
+                requester_name = (requester_user.get_full_name() or requester_user.username) if requester_user else None
+
+                cancelled_requests.append({
+                    'id': rp.id,
+                    'request_id': rp.request.RequestID,
+                    'requester_name': requester_name,
+                    'product_name': rp.product.prodName,
+                    'quantity': rp.quantity,
+                    'cancelled_at': rp.archived_at.isoformat() if rp.archived_at else None,
+                    'cancelled_by_name': cancelled_by_name,
+                    'cancellation_reason': rp.cancellation_reason if rp.cancellation_reason else 'Archived',
+                    'updated_at': rp.request.updated_at.isoformat() if rp.request.updated_at else None,
+                })
+            except Exception as item_err:
+                print(f"[ERROR] Processing cancelled product {rp.id}: {str(item_err)}")
+                import traceback
+                traceback.print_exc()
+                continue
+        
+        return success_response({
+            'cancelled_requests': cancelled_requests,
+            'count': len(cancelled_requests)
+        })
+        
+    except Exception as e:
+        print(f"[ERROR] Cancelled requests error: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return error_response(f"Error fetching cancelled requests: {str(e)}", code=500)
+
+
+@require_http_methods(["GET"])
+def task_history_view(request, request_product_id):
+    """
+    Fetch audit log history for a specific request product (task).
+    Shows all updates made to this product.
+    """
+    try:
+        # Get user role
+        user_role = request.user.userprofile.role if hasattr(request.user, 'userprofile') else None
+        
+        # Get the request product
+        try:
+            request_product = RequestProduct.objects.get(id=request_product_id)
+        except RequestProduct.DoesNotExist:
+            return error_response("Request product not found", code=404)
+        
+        # Get all audit logs for this request product
+        logs = AuditLog.objects.filter(
+            request_product=request_product
+        ).select_related(
+            'performed_by__userprofile'
+        ).order_by('-timestamp')
+        
+        # Build response data
+        history = []
+        for log in logs:
+            # Parse old and new values if they're JSON
+            old_data = None
+            new_data = None
+            changes = []
+            
+            try:
+                if log.old_value:
+                    old_data = json.loads(log.old_value)
+                if log.new_value:
+                    new_data = json.loads(log.new_value)
+                
+                # Track what changed
+                if old_data and new_data:
+                    if old_data.get('completed_quota') != new_data.get('completed_quota'):
+                        changes.append(f"Completed: {old_data.get('completed_quota', 0)} → {new_data.get('completed_quota', 0)}")
+                    if old_data.get('defect_count') != new_data.get('defect_count'):
+                        changes.append(f"Defects: {old_data.get('defect_count', 0)} → {new_data.get('defect_count', 0)}")
+                    if old_data.get('defect_type') != new_data.get('defect_type'):
+                        old_type = old_data.get('defect_type') or 'None'
+                        new_type = new_data.get('defect_type') or 'None'
+                        changes.append(f"Defect Type: {old_type} → {new_type}")
+                    if old_data.get('worker_names') != new_data.get('worker_names'):
+                        old_workers = ', '.join(old_data.get('worker_names', [])) or 'None'
+                        new_workers = ', '.join(new_data.get('worker_names', [])) or 'None'
+                        changes.append(f"Workers: {old_workers} → {new_workers}")
+            except:
+                pass
+            
+            history.append({
+                'id': log.id,
+                'action_type': log.action_type,
+                'action_display': log.get_action_type_display(),
+                'performed_by': log.performed_by.get_full_name() if log.performed_by else 'System',
+                'timestamp': log.timestamp,
+                'changes': changes,
+                'old_value': log.old_value,
+                'new_value': log.new_value,
+            })
+        
+        return success_response({
+            'history': history,
+            'count': len(history),
+            'product_name': request_product.product.prodName if request_product.product else 'Unknown'
+        })
+        
+    except Exception as e:
+        print(f"[ERROR] Task history error: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return error_response(f"Error fetching task history: {str(e)}", code=500)
 
 
 @csrf_exempt
@@ -4715,27 +5235,14 @@ def create_notification(user, notification_type, title, message, related_request
 
 @csrf_exempt
 @require_http_methods(['GET'])
-@csrf_exempt
-@require_http_methods(['GET'])
 def get_notifications(request):
     """Get all notifications for the current user"""
-    import os
-    log_file = os.path.join(os.path.dirname(__file__), '../notification_debug.log')
-    
-    with open(log_file, 'a', encoding='utf-8') as f:
-        f.write(f"[GET_NOTIF] Request user: {request.user}, Authenticated: {request.user.is_authenticated}\n")
-    
     if not request.user.is_authenticated:
-        with open(log_file, 'a', encoding='utf-8') as f:
-            f.write(f"[GET_NOTIF] ERROR User not authenticated!\n")
         return JsonResponse({"detail": "Unauthorized"}, status=401)
     
     try:
         notifications = Notification.objects.filter(user=request.user).order_by('-created_at')
         unread_count = notifications.filter(is_read=False).count()
-        
-        with open(log_file, 'a', encoding='utf-8') as f:
-            f.write(f"[GET_NOTIF] OK User: {request.user.username}, Found {notifications.count()} notifications, {unread_count} unread\n")
         
         serializer = NotificationSerializer(notifications, many=True)
         
@@ -4744,8 +5251,6 @@ def get_notifications(request):
             "unread_count": unread_count
         }, status=200)
     except Exception as e:
-        with open(log_file, 'a', encoding='utf-8') as f:
-            f.write(f"[GET_NOTIF] ERROR: {str(e)}\n")
         return JsonResponse({"detail": str(e)}, status=500)
 
 
@@ -4753,33 +5258,17 @@ def get_notifications(request):
 @require_http_methods(['POST'])
 def mark_notification_read(request, notification_id):
     """Mark a single notification as read"""
-    import os
-    log_file = os.path.join(os.path.dirname(__file__), '../notification_debug.log')
-    
-    with open(log_file, 'a', encoding='utf-8') as f:
-        f.write(f"[MARK_READ] User: {request.user.username}, Notification ID: {notification_id}\n")
-    
     if not request.user.is_authenticated:
-        with open(log_file, 'a', encoding='utf-8') as f:
-            f.write(f"[MARK_READ] ERROR User not authenticated!\n")
         return JsonResponse({"detail": "Unauthorized"}, status=401)
     
     try:
         notification = Notification.objects.get(id=notification_id, user=request.user)
-        
-        with open(log_file, 'a', encoding='utf-8') as f:
-            f.write(f"[MARK_READ] Found notification, currently is_read={notification.is_read}\n")
-        
         notification.is_read = True
         notification.save()
-        
-        with open(log_file, 'a', encoding='utf-8') as f:
-            f.write(f"[MARK_READ] Marked as read, new is_read={notification.is_read}\n")
+        notification.refresh_from_db()
         
         # Get updated unread count
         unread_count = Notification.objects.filter(user=request.user, is_read=False).count()
-        with open(log_file, 'a', encoding='utf-8') as f:
-            f.write(f"[MARK_READ] Updated unread count: {unread_count}\n")
         
         serializer = NotificationSerializer(notification)
         return JsonResponse({
@@ -4787,12 +5276,8 @@ def mark_notification_read(request, notification_id):
             "unread_count": unread_count
         }, status=200)
     except Notification.DoesNotExist:
-        with open(log_file, 'a', encoding='utf-8') as f:
-            f.write(f"[MARK_READ] ERROR Notification not found!\n")
         return JsonResponse({"detail": "Notification not found"}, status=404)
     except Exception as e:
-        with open(log_file, 'a', encoding='utf-8') as f:
-            f.write(f"[MARK_READ] ERROR {str(e)}\n")
         return JsonResponse({"detail": str(e)}, status=500)
 
 
@@ -4800,32 +5285,15 @@ def mark_notification_read(request, notification_id):
 @require_http_methods(['POST'])
 def delete_notification(request, notification_id):
     """Delete a notification"""
-    import os
-    log_file = os.path.join(os.path.dirname(__file__), '../notification_debug.log')
-    
-    with open(log_file, 'a', encoding='utf-8') as f:
-        f.write(f"[DELETE_NOTIF] User: {request.user.username}, Notification ID: {notification_id}\n")
-    
     if not request.user.is_authenticated:
-        with open(log_file, 'a', encoding='utf-8') as f:
-            f.write(f"[DELETE_NOTIF] ERROR User not authenticated!\n")
         return JsonResponse({"detail": "Unauthorized"}, status=401)
     
     try:
         notification = Notification.objects.get(id=notification_id, user=request.user)
-        
-        with open(log_file, 'a', encoding='utf-8') as f:
-            f.write(f"[DELETE_NOTIF] Found notification, deleting...\n")
-        
         notification.delete()
-        
-        with open(log_file, 'a', encoding='utf-8') as f:
-            f.write(f"[DELETE_NOTIF] Notification deleted successfully\n")
         
         # Get updated unread count
         unread_count = Notification.objects.filter(user=request.user, is_read=False).count()
-        with open(log_file, 'a', encoding='utf-8') as f:
-            f.write(f"[DELETE_NOTIF] Updated unread count: {unread_count}\n")
         
         return JsonResponse({
             "success": True,
@@ -4833,12 +5301,8 @@ def delete_notification(request, notification_id):
             "unread_count": unread_count
         }, status=200)
     except Notification.DoesNotExist:
-        with open(log_file, 'a', encoding='utf-8') as f:
-            f.write(f"[DELETE_NOTIF] ERROR Notification not found!\n")
         return JsonResponse({"detail": "Notification not found"}, status=404)
     except Exception as e:
-        with open(log_file, 'a', encoding='utf-8') as f:
-            f.write(f"[DELETE_NOTIF] ERROR {str(e)}\n")
         return JsonResponse({"detail": str(e)}, status=500)
 
 @require_http_methods(['GET'])

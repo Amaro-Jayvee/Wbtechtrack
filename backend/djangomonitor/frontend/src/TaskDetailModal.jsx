@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import "./Dashboard.css";
 import ExtensionRequestModal from "./ExtensionRequestModal";
+import TaskHistoryModal from "./TaskHistoryModal";
 
 function TaskDetailModal({ productProcessId, onClose, onSave }) {
   const [taskData, setTaskData] = useState(null);
@@ -9,7 +10,7 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
   const [completedProductData, setCompletedProductData] = useState(null);
   const [formData, setFormData] = useState({
     completed_quota: 0,
-    defect_count: 0,
+    defectLogs: [{ defect_type: '', defect_count: 0 }],
     workers: [],
   });
   const [workers, setWorkers] = useState([]);
@@ -27,6 +28,7 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
   const [showSuccessToast, setShowSuccessToast] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
   const [toastType, setToastType] = useState("success"); // 'success' | 'error'
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
   const workerDropdownRef = useRef(null);
 
   useEffect(() => {
@@ -35,30 +37,29 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
       const isObject = typeof productProcessId === 'object' && productProcessId !== null;
       
       if (isObject) {
-        console.log(`📋 Viewing completed task: ${productProcessId.product_name}`);
         setIsCompletedView(true);
         setCompletedProductData(productProcessId);
         setTaskData(null);
         setFormData({
           completed_quota: productProcessId.total_quota || 0,
-          defect_count: productProcessId.defect_count || 0,
+          defectLogs: (productProcessId.defect_logs && productProcessId.defect_logs.length > 0) 
+            ? productProcessId.defect_logs.map(log => ({ defect_type: log.defect_type, defect_count: log.defect_count }))
+            : [{ defect_type: '', defect_count: 0 }],
           workers: productProcessId.worker_names || [],
         });
         setNextStepInfo(null); // Clear next step info when viewing completed task
         setLoading(false);
       } else {
-        console.log(`⚡ Step changed to productProcessId: ${productProcessId}`);
         setIsCompletedView(false);
         setCompletedProductData(null);
         // Clear old data immediately to prevent stale data display
         setTaskData(null);
         setFormData({
           completed_quota: 0,
-          defect_count: 0,
+          defectLogs: [{ defect_type: '', defect_count: 0 }],
           workers: [],
         });
         setNextStepInfo(null); // Clear next step info when loading new step
-        console.log(`   Fetching new step data...`);
         setLoading(true);
         fetchTaskDetail();
       }
@@ -78,10 +79,7 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
   const fetchTaskDetail = async () => {
     const currentProductId = productProcessId; // Capture current ID for race condition check
     setLoading(true);
-    console.log(`🔄 fetchTaskDetail START for productProcessId: ${currentProductId}`);
     try {
-      console.log(`📥 Fetching task detail for ID: ${productProcessId}`);
-      
       const response = await fetch(
         `http://localhost:8000/app/product/${productProcessId}/`,
         {
@@ -92,11 +90,8 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
 
       // Abort if productProcessId has changed (race condition check)
       if (currentProductId !== productProcessId) {
-        console.log(`⚠️ Discarding response for deprecated product ID: ${currentProductId}`);
         return;
       }
-
-      console.log(`📡 API Response Status: ${response.status}`);
 
       if (!response.ok) {
         const errorText = await response.text();
@@ -105,18 +100,7 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
       }
 
       const data = await response.json();
-      console.log(`✅ Task data loaded:`, {
-        id: data.id,
-        request_product_id: data.request_product_id,
-        step_order: data.step_order,
-        process_name: data.process_name,
-        completed_quota: data.completed_quota,
-        defect_count: data.defect_count,
-        total_quota: data.total_quota,
-        workers: data.workers,
-        worker_names: data.worker_names,
-      });
-      
+
       // Validate essential fields exist
       if (!data.id) {
         console.warn("⚠️ Warning: API response missing 'id' field");
@@ -126,9 +110,6 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
       if (!Array.isArray(data.workers)) {
         console.warn("⚠️ Warning: API response missing or invalid 'workers' field. Got:", typeof data.workers, data.workers);
       }
-      
-      // Debug: Check PST-01 detection
-      console.log(`🔍 TaskData received - is_pst_01: ${data.is_pst_01}, process_number: ${data.process_number}, process_name: ${data.process_name}`);
       
       setTaskData(data);
       setRequestProductId(data.request_product_id);
@@ -141,15 +122,11 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
       }
       
       const workersArray = Array.isArray(data.workers) ? data.workers : [];
-      console.log(`📋 Setting formData to API values:`, {
-        completed_quota: data.completed_quota || 0,
-        defect_count: data.defect_count || 0,
-        workers: workersArray,
-        workers_count: workersArray.length
-      });
       setFormData({
         completed_quota: data.completed_quota || 0,
-        defect_count: data.defect_count || 0,
+        defectLogs: (data.defect_logs && data.defect_logs.length > 0) 
+          ? data.defect_logs.map(log => ({ defect_type: log.defect_type, defect_count: log.defect_count }))
+          : [{ defect_type: '', defect_count: 0 }],
         workers: workersArray,
       });
     } catch (err) {
@@ -157,7 +134,6 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
       setTaskData(null);
     } finally {
       setLoading(false);
-      console.log(`🔄 fetchTaskDetail END`);
     }
   };
 
@@ -186,7 +162,7 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
     const { name, value } = e.target;
     
     // For number inputs, handle leading zeros properly
-    if (name === "completed_quota" || name === "defect_count") {
+    if (name === "completed_quota") {
       let numValue;
       
       if (value === "" || value === "0") {
@@ -208,31 +184,22 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
   };
 
   const handleAddWorker = (workerID) => {
-    console.log(`➕ Adding worker ${workerID} to formData.workers`);
-    console.log(`   Before: ${formData.workers.length} workers:`, formData.workers);
-    
     if (!formData.workers.includes(workerID)) {
       const updatedWorkers = [...formData.workers, workerID];
       setFormData({
         ...formData,
         workers: updatedWorkers,
       });
-      console.log(`   After: ${updatedWorkers.length} workers:`, updatedWorkers);
       setShowWorkerDropdown(false);
-    } else {
-      console.log(`   ⚠️ Worker ${workerID} already in list`);
     }
   };
 
   const handleRemoveWorker = (workerID) => {
-    console.log(`➖ Removing worker ${workerID} from formData.workers`);
-    console.log(`   Before: ${formData.workers.length} workers:`, formData.workers);
     const updatedWorkers = formData.workers.filter((id) => id !== workerID);
     setFormData({
       ...formData,
       workers: updatedWorkers,
     });
-    console.log(`   After: ${updatedWorkers.length} workers:`, updatedWorkers);
   };
 
   // Get list of available workers (not yet assigned)
@@ -240,6 +207,38 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
     return workers
       .filter((w) => !formData.workers.includes(w.WorkerID))
       .filter((w) => w.is_active); // Only show active workers for new assignments
+  };
+
+  // Defect Log management functions
+  const addDefectLog = () => {
+    setFormData({
+      ...formData,
+      defectLogs: [...formData.defectLogs, { defect_type: '', defect_count: 0 }],
+    });
+  };
+
+  const removeDefectLog = (index) => {
+    // Always keep at least one row
+    if (formData.defectLogs.length > 1) {
+      const updated = formData.defectLogs.filter((_, i) => i !== index);
+      setFormData({
+        ...formData,
+        defectLogs: updated,
+      });
+    }
+  };
+
+  const updateDefectLog = (index, field, value) => {
+    const updated = [...formData.defectLogs];
+    if (field === 'defect_count') {
+      updated[index][field] = parseInt(value, 10) || 0;
+    } else {
+      updated[index][field] = value;
+    }
+    setFormData({
+      ...formData,
+      defectLogs: updated,
+    });
   };
 
   // Get assigned worker objects
@@ -268,16 +267,20 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
       return;
     }
     
+    // Validate that defect logs are consistent - if defect_count > 0, defect_type must be selected
+    const hasDefectsWithoutType = formData.defectLogs.some(log => log.defect_count > 0 && !log.defect_type);
+    if (hasDefectsWithoutType) {
+      setErrorMessage(
+        `❌ Please select a defect type!\n\nEach defect count must have a corresponding defect type selected.\n\nPlease select defect types before saving.`
+      );
+      setShowErrorModal(true);
+      return;
+    }
+    
     try {
-      console.log(`📤 PATCH: /app/product/${productProcessId}/`);
-      console.log(`   Sending formData:`, {
-        completed_quota: formData.completed_quota,
-        defect_count: formData.defect_count,
-        workers: formData.workers,
-        workers_count: formData.workers.length,
-        worker_ids: formData.workers
-      });
-      
+      // Filter out empty defect logs (no type selected) and prepare for sending
+      const validDefectLogs = formData.defectLogs.filter(log => log.defect_type);
+
       const response = await fetch(
         `http://localhost:8000/app/product/${productProcessId}/`,
         {
@@ -288,18 +291,15 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
           },
           body: JSON.stringify({
             completed_quota: formData.completed_quota,
-            defect_count: formData.defect_count,
+            defect_logs: validDefectLogs,
             workers: formData.workers  // Ensure workers is explicitly sent
           }),
         }
       );
 
       const responseData = await response.json();
-      console.log(`Response (${response.status}):`, responseData);
       
       if (response.ok) {
-        console.log("Save successful - showing toast");
-        
         // Show the success toast WHILE modal is still visible
         setToastMessage("Your progress has been saved successfully.");
         setShowSuccessToast(true);
@@ -313,7 +313,6 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
           
           // Wait slightly longer before refreshing to ensure DB has updated is_completed status
           setTimeout(() => {
-            console.log("🔄 Refreshing task list after save...");
             if (onSave) {
               onSave();
             }
@@ -350,30 +349,31 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
 
         // Workers are optional - production decided all workers are flexible
       }
-
-      console.log(`💾 Saving step ${taskData.step_order}/${taskData.total_steps}...`);
-      console.log(`   Current data:`, {
-        completed_quota: formData.completed_quota,
-        defect_count: formData.defect_count,
-        workers: formData.workers,
-        workers_count: formData.workers.length,
-        is_pst_01: taskData.is_pst_01
-      });
       
+      // Validate that defect logs are consistent - if defect_count > 0, defect_type must be selected
+      const hasDefectsWithoutType = formData.defectLogs.some(log => log.defect_count > 0 && !log.defect_type);
+      if (hasDefectsWithoutType) {
+        setErrorMessage(
+          `❌ Please select a defect type!\n\nEach defect count must have a corresponding defect type selected.\n\nPlease select defect types before proceeding.`
+        );
+        setShowErrorModal(true);
+        return;
+      }
+
+      // Filter out empty defect logs (no type selected) and prepare for sending
+      const validDefectLogs = formData.defectLogs.filter(log => log.defect_type);
+
       // Prepare save data
       const saveData = {
         completed_quota: formData.completed_quota,
-        defect_count: formData.defect_count,
+        defect_logs: validDefectLogs,
         workers: formData.workers
       };
       
       // For PST-01, mark as completed immediately since no quota tracking needed
       if (taskData.is_pst_01) {
         saveData.is_completed = true;
-        console.log(`   ✅ PST-01 detected - marking step as completed`);
       }
-      
-      console.log(`📤 Sending PATCH request with data:`, saveData);
       
       // Save current step with all data (quota, defects, workers)
       const saveResponse = await fetch(
@@ -395,18 +395,8 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
       }
 
       const savedData = await saveResponse.json();
-      console.log(`Step ${taskData.step_order} saved successfully`);
-      console.log(`   Saved data:`, {
-        completed_quota: savedData.completed_quota,
-        defect_count: savedData.defect_count,
-        workers: savedData.workers,
-        worker_names: savedData.worker_names,
-        is_completed: savedData.is_completed
-      });
 
       // Fetch all steps for this product to find the next one
-      console.log(`🔍 Finding next step for product (request_product_id: ${taskData.request_product_id})`);
-      
       const stepsResponse = await fetch(
         `http://localhost:8000/app/product/?include_archived=false`,
         {
@@ -429,24 +419,16 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
         )
         .sort((a, b) => a.step_order - b.step_order);
 
-      console.log(`📋 Total steps for this product: ${productSteps.length}`);
-      productSteps.forEach((s, idx) => {
-        console.log(`   [${idx}] Step ${s.step_order}: ${s.process_name} (ID: ${s.id}, Completed: ${s.is_completed})`);
-      });
-      
       // Find current step index
       const currentIndex = productSteps.findIndex(s => s.id === productProcessId);
-      console.log(`📍 Current step index: ${currentIndex} (ID: ${productProcessId})`);
       
       const nextStep = productSteps[currentIndex + 1];
 
       // Show success toast WHILE modal is still visible
       if (nextStep) {
-        console.log(`Next step found: Step ${nextStep.step_order}/${nextStep.total_steps} - ${nextStep.process_name}`);
         setToastMessage(`Step completed! Moving to: ${nextStep.process_name}`);
         setShowSuccessToast(true);
       } else {
-        console.log("All steps completed for this product!");
         setToastMessage("All production steps completed! This product is ready for delivery.");
         setShowSuccessToast(true);
       }
@@ -455,9 +437,7 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
       window.dispatchEvent(new Event('refreshNotifications'));
       
       // Call parent callback IMMEDIATELY to refresh table (don't wait)
-      console.log(`🔄 Calling onSave callback to refresh parent data immediately`);
       if (onSave) {
-        console.log(`✅ onSave callback invoked`);
         onSave();
       } else {
         console.warn(`⚠️ onSave callback not provided`);
@@ -480,7 +460,6 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
       setShowErrorModal(true);
       return;
     }
-    console.log("Opening extension request modal for request_product_id:", taskData.request_product_id);
     setShowExtensionModal(true);
   };
 
@@ -511,8 +490,6 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
     }
 
     try {
-      console.log(`📦 Archiving product #${requestProductId}...`);
-
       const response = await fetch(
         `/app/request-products/${requestProductId}/`,
         {
@@ -524,7 +501,6 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
       );
 
       const responseData = await response.json();
-      console.log(`📨 Archive Response (${response.status}):`, responseData);
 
       if (response.ok) {
         showToast("Product archived successfully!", "success");
@@ -543,58 +519,42 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
 
   const performDelete = async () => {
     const requestProductId = taskData?.request_product_id;
-    console.log(`🗑️ performDelete called - requestProductId: ${requestProductId}`);
     
     if (!requestProductId) {
-      console.error(`❌ Missing requestProductId:`, taskData);
       showToast("Cannot identify product to delete", "error");
       return;
     }
 
     try {
       const productName = taskData?.product_name || `Product #${requestProductId}`;
-      console.log(`📤 Sending DELETE request for: ${productName} (ID: ${requestProductId})`);
-      console.log(`   URL: /app/request-products/${requestProductId}/`);
-      console.log(`   Payload: { archived_at: "${new Date().toISOString()}" }`);
       
       const archiveRes = await fetch(`/app/request-products/${requestProductId}/`, {
         method: "PATCH",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ archived_at: new Date().toISOString() }),
+        body: JSON.stringify({ status: 'cancelled', cancellation_reason: 'Cancelled by production manager' }),
       });
-
-      console.log(`📨 Response received - Status: ${archiveRes.status}`);
-      console.log(`   Content-Type: ${archiveRes.headers.get('content-type')}`);
       
       let archiveData;
       try {
         archiveData = await archiveRes.json();
-        console.log(`   Response body:`, archiveData);
       } catch (parseErr) {
         console.error(`❌ Failed to parse response JSON:`, parseErr);
-        console.log(`   Raw response:`, await archiveRes.text());
         showToast("Server error: Invalid response format", "error");
         return;
       }
 
       if (!archiveRes.ok) {
         const errorMsg = archiveData?.error || archiveData?.detail || archiveData?.message || "Unknown error";
-        console.error(`❌ DELETE FAILED (${archiveRes.status}): ${errorMsg}`);
-        console.error(`   Full response:`, archiveData);
-        showToast(`❌ Error deleting product: ${errorMsg}`, "error");
+        showToast(`❌ Error cancelling product: ${errorMsg}`, "error");
         return;
       }
 
-      console.log(`✅ Product ${requestProductId} deleted successfully!`);
-      console.log(`   Archive data:`, archiveData);
-      
-      showToast("✅ Product deleted successfully! Check Archived Requests in Settings.", "success");
+      showToast("✅ Request cancelled successfully! Check Cancelled Requests in the sidebar.", "success");
       
       // Refresh parent table and close modal AFTER showing toast
       setTimeout(() => {
         if (onSave) {
-          console.log(`🔄 Refreshing table after deletion`);
           onSave();
         }
         onClose();
@@ -602,8 +562,6 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
 
     } catch (err) {
       console.error(`❌ Network/Exception error in performDelete:`, err);
-      console.error(`   Error message: ${err.message}`);
-      console.error(`   Error stack:`, err.stack);
       showToast(`❌ Network error: ${err.message}`, "error");
     }
   };
@@ -631,54 +589,38 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
             maxWidth: "420px",
             width: "90%",
             boxShadow: "0 8px 32px rgba(0,0,0,0.18)",
-            borderTop: "4px solid #dc3545",
+            borderTop: "4px solid #E01818",
           }}
         >
-          <h4 style={{ margin: "0 0 12px", color: "#dc3545", fontWeight: 700 }}>
-            Delete Product - Confirm
-          </h4>
-          <div style={{ 
-            backgroundColor: "#fff3cd", 
-            border: "1px solid #ffc107", 
-            borderRadius: "6px", 
-            padding: "12px", 
-            marginBottom: "16px",
-            fontSize: "14px"
-          }}>
-            <strong>Issuance #:</strong> {taskData?.request_id}<br/>
-            <strong>Product:</strong> {taskData?.product_name}<br/>
-            <strong>ProductID:</strong> {taskData?.request_product_id}
-          </div>
-          <p style={{ margin: "0 0 24px", color: "#444", fontSize: "15px" }}>
-            Are you sure you want to delete <strong>{taskData?.product_name}</strong> from <strong>Issuance #{taskData?.request_id}</strong>?
-            {taskData?.request_id && (
-              <>
-                <br/><span style={{ fontSize: "13px", color: "#666" }}>
-                  ⚠️ Only this product will be deleted. Other products in Issuance #{taskData?.request_id} will not be affected.
-                </span>
-              </>
-            )}
+          <p style={{ margin: "0 0 24px", color: "#333", fontSize: "16px", lineHeight: "1.6" }}>
+            Are you sure you want to cancel this product <strong>{taskData?.product_name}</strong>?
           </p>
           <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end" }}>
             <button
               onClick={() => setShowDeleteConfirmModal(false)}
               style={{
-                padding: "8px 20px", borderRadius: "6px",
-                border: "1px solid #ccc", background: "#f5f5f5",
-                cursor: "pointer", fontWeight: 500,
+                padding: "10px 24px", borderRadius: "6px",
+                border: "1px solid #ddd", background: "#f5f5f5",
+                cursor: "pointer", fontWeight: 500, fontSize: "14px",
+                transition: "all 0.2s ease"
               }}
+              onMouseEnter={(e) => { e.target.style.backgroundColor = "#e0e0e0"; }}
+              onMouseLeave={(e) => { e.target.style.backgroundColor = "#f5f5f5"; }}
             >
-              Cancel
+              No
             </button>
             <button
               onClick={confirmDelete}
               style={{
-                padding: "8px 20px", borderRadius: "6px",
-                border: "none", background: "#dc3545",
-                color: "#fff", cursor: "pointer", fontWeight: 600,
+                padding: "10px 24px", borderRadius: "6px",
+                border: "none", background: "#E01818",
+                color: "#fff", cursor: "pointer", fontWeight: 600, fontSize: "14px",
+                transition: "all 0.2s ease"
               }}
+              onMouseEnter={(e) => { e.target.style.backgroundColor = "#A01010"; }}
+              onMouseLeave={(e) => { e.target.style.backgroundColor = "#E01818"; }}
             >
-              Yes, Delete
+              Yes
             </button>
           </div>
         </div>
@@ -701,12 +643,59 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
     return (
       <div className="modal-overlay" onClick={onClose}>
         <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "1000px" }}>
-          <div className="modal-header" style={{ borderBottom: "1px solid #dee2e6", backgroundColor: "#d4edda" }}>
-            <h3 style={{ margin: 0, color: "#155724" }}>Task Summary</h3>
+          <div className="modal-header" style={{ 
+            borderBottom: "2px solid #155724", 
+            backgroundColor: "#d4edda",
+            padding: "1.5rem",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            position: "sticky",
+            top: 0,
+            zIndex: 100,
+            transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)"
+          }}>
+            <h3 style={{ 
+              margin: 0, 
+              color: "#155724",
+              fontSize: "1.25rem",
+              fontWeight: "600",
+              transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+              cursor: "default"
+            }} 
+            onMouseEnter={(e) => {
+              e.target.style.color = "#0d3f1a";
+              e.target.style.transform = "translateX(2px)";
+            }}
+            onMouseLeave={(e) => {
+              e.target.style.color = "#155724";
+              e.target.style.transform = "translateX(0)";
+            }}>
+              Task Summary
+            </h3>
             <button 
               className="btn-close" 
               onClick={onClose}
-              style={{ position: "absolute", right: "15px", top: "15px" }}
+              style={{ 
+                position: "relative", 
+                right: "0",
+                top: "0",
+                background: "none",
+                border: "none",
+                fontSize: "24px",
+                color: "#155724",
+                cursor: "pointer",
+                padding: "4px 8px",
+                transition: "all 0.2s ease"
+              }}
+              onMouseEnter={(e) => {
+                e.target.style.color = "#0d3f1a";
+                e.target.style.transform = "scale(1.2)";
+              }}
+              onMouseLeave={(e) => {
+                e.target.style.color = "#155724";
+                e.target.style.transform = "scale(1)";
+              }}
             >✕</button>
           </div>
 
@@ -727,7 +716,22 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
                 
                 <div>
                   <label style={{ fontWeight: "600", color: "#333" }}>Total Defects</label>
-                  <p style={{ fontSize: "14px", color: "#666" }}>{completedProductData.defect_count || 0}</p>
+                  <div style={{ fontSize: "14px", color: "#666" }}>
+                    <div style={{ fontWeight: "600" }}>{completedProductData.defect_count || 0}</div>
+                    {completedProductData.defect_types && completedProductData.defect_types.length > 0 && (
+                      <div style={{ fontSize: "12px", color: "#999", marginTop: "4px" }}>
+                        Types: {completedProductData.defect_types.map(type => {
+                          const typeLabels = {
+                            'dimension': 'Dimension',
+                            'thickness': 'Thickness',
+                            'rush': 'Rush',
+                            'other': 'Other'
+                          };
+                          return typeLabels[type] || type;
+                        }).join(', ')}
+                      </div>
+                    )}
+                  </div>
                 </div>
                 
                 <div>
@@ -741,52 +745,103 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
                 <div>
                   <h5 style={{ color: "#1D6AB7", marginBottom: "15px", fontSize: "15px" }}>Steps Completed</h5>
                   <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-                    {completedProductData.steps.map((step, idx) => (
-                      <div 
-                        key={idx}
-                        style={{
-                          border: "1px solid #ddd",
-                          borderRadius: "8px",
-                          padding: "15px",
-                          backgroundColor: "#f9f9f9"
-                        }}
-                      >
-                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: "15px", marginBottom: "10px" }}>
-                          <div>
-                            <label style={{ fontWeight: "600", color: "#333", fontSize: "13px" }}>Step {step.step_order}/{completedProductData.total_steps}</label>
-                            <p style={{ fontSize: "14px", color: "#666", margin: "5px 0 0 0" }}>{step.process_name}</p>
-                          </div>
-                          <div>
-                            <label style={{ fontWeight: "600", color: "#333", fontSize: "13px" }}>Quota</label>
-                            <p style={{ fontSize: "14px", color: "#1D6AB7", fontWeight: "600", margin: "5px 0 0 0" }}>{step.completed_quota}/{step.total_quota} units</p>
-                          </div>
-                          <div>
-                            <label style={{ fontWeight: "600", color: "#333", fontSize: "13px" }}>Defects</label>
-                            <p style={{ fontSize: "14px", color: "#666", margin: "5px 0 0 0" }}>{step.defect_count || 0}</p>
-                          </div>
-                          <div>
-                            <label style={{ fontWeight: "600", color: "#333", fontSize: "13px" }}>Workers</label>
-                            {step.workers && step.workers.length > 0 ? (
-                              <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginTop: "5px" }}>
-                                {step.workers.map((worker, widx) => (
-                                  <span key={widx} style={{
-                                    backgroundColor: "#1D6AB7",
-                                    color: "white",
-                                    padding: "3px 8px",
-                                    borderRadius: "12px",
-                                    fontSize: "11px"
-                                  }}>
-                                    {worker}
-                                  </span>
-                                ))}
+                    {completedProductData.steps.map((step, idx) => {
+                      // Check if this is a PST-01 (Withdrawal) step
+                      // Use is_pst_01 from API if available, or check process_name for "WITHDRAWAL"
+                      const isPST01 = step.is_pst_01 || (step.process_name && step.process_name.toUpperCase().includes("WITHDRAWAL"));
+                      
+                      return (
+                        <div 
+                          key={idx}
+                          style={{
+                            border: "1px solid #ddd",
+                            borderRadius: "8px",
+                            padding: "15px",
+                            backgroundColor: isPST01 ? "#e3f2fd" : "#f9f9f9"
+                          }}
+                        >
+                          {isPST01 ? (
+                            // PST-01 Layout: Only show step name and completed status (no quota, no defects)
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "15px", marginBottom: "10px" }}>
+                              <div>
+                                <label style={{ fontWeight: "600", color: "#333", fontSize: "13px" }}>Step {step.step_order}/{completedProductData.total_steps}</label>
+                                <p style={{ fontSize: "14px", color: "#666", margin: "5px 0 0 0" }}>{step.process_name}</p>
                               </div>
-                            ) : (
-                              <p style={{ fontSize: "12px", color: "#999", margin: "5px 0 0 0" }}>—</p>
-                            )}
-                          </div>
+                              <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                                <label style={{ fontWeight: "600", color: "#333", fontSize: "13px" }}>Status</label>
+                                <span style={{ 
+                                  display: "inline-block",
+                                  backgroundColor: "#4CAF50", 
+                                  color: "white", 
+                                  padding: "4px 12px", 
+                                  borderRadius: "12px", 
+                                  fontSize: "13px",
+                                  fontWeight: "600",
+                                  width: "fit-content"
+                                }}>
+                                  ✓ Completed
+                                </span>
+                              </div>
+                            </div>
+                          ) : (
+                            // Regular step layout: Show quota and defects
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "15px", marginBottom: "10px" }}>
+                              <div>
+                                <label style={{ fontWeight: "600", color: "#333", fontSize: "13px" }}>Step {step.step_order}/{completedProductData.total_steps}</label>
+                                <p style={{ fontSize: "14px", color: "#666", margin: "5px 0 0 0" }}>{step.process_name}</p>
+                              </div>
+                              <div>
+                                <label style={{ fontWeight: "600", color: "#333", fontSize: "13px" }}>Quota</label>
+                                <p style={{ fontSize: "14px", color: "#1D6AB7", fontWeight: "600", margin: "5px 0 0 0" }}>{step.completed_quota}/{step.total_quota} units</p>
+                              </div>
+                              <div>
+                                <label style={{ fontWeight: "600", color: "#333", fontSize: "13px" }}>Defects</label>
+                                <div style={{ fontSize: "14px", color: "#666", margin: "5px 0 0 0" }}>
+                                  <div>
+                                    {step.defect_logs && step.defect_logs.length > 0 
+                                      ? step.defect_logs.reduce((sum, log) => sum + log.defect_count, 0)
+                                      : (step.defect_count || 0)
+                                    }
+                                  </div>
+                                  {step.defect_logs && step.defect_logs.length > 0 ? (
+                                    <div style={{ fontSize: "11px", color: "#999", marginTop: "2px" }}>
+                                      {step.defect_logs.map((log, idx) => {
+                                        const typeLabels = {
+                                          'dimension': 'Dimension',
+                                          'thickness': 'Thickness',
+                                          'rush': 'Rush',
+                                          'other': 'Other'
+                                        };
+                                        return (
+                                          <div key={idx}>
+                                            {typeLabels[log.defect_type] || log.defect_type}: {log.defect_count}
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  ) : step.defect_type && (
+                                    <div style={{ fontSize: "11px", color: "#999", marginTop: "2px" }}>
+                                      {(() => {
+                                        const typeLabels = {
+                                          'dimension': 'Dimension',
+                                          'thickness': 'Thickness',
+                                          'rush': 'Rush',
+                                          'other': 'Other'
+                                        };
+                                        return typeLabels[step.defect_type] || step.defect_type;
+                                      })()}
+                                      {step.defect_description && step.defect_type === 'other' && (
+                                        <span>: {step.defect_description}</span>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          )}
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -865,29 +920,11 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
       <div className="modal-overlay" onClick={onClose}>
       <div className="modal-content modal-large" onClick={(e) => e.stopPropagation()}>
         {/* Header */}
-        <div className="modal-header" style={{ backgroundColor: "#9BC284", color: "white", padding: "1.5rem", display: "flex", justifyContent: "space-between", alignItems: "center", position: "sticky", top: 0, zIndex: 100 }}>
+        <div className="modal-header" style={{ backgroundColor: "#46E63E", color: "white", padding: "1.5rem", display: "flex", justifyContent: "space-between", alignItems: "center", position: "sticky", top: 0, zIndex: 100 }}>
           <h2 style={{ margin: 0, color: "white", fontSize: "1.25rem", fontWeight: "600" }}>Task Information</h2>
-          <div className="modal-actions" style={{ display: "flex", gap: "10px" }}>
-            <button 
-              className="btn-icon" 
-              title="Delete this product and all its steps"
-              onClick={handleDelete}
-              style={{ color: "white", backgroundColor: "#dc3545", border: "1px solid #c82333", padding: "0.4rem 0.8rem", borderRadius: "4px", cursor: "pointer", fontSize: "0.95rem", fontWeight: "500", transition: "all 0.2s ease" }}
-              onMouseEnter={(e) => {
-                e.target.style.backgroundColor = "#c82333";
-                e.target.style.borderColor = "#bd2130";
-              }}
-              onMouseLeave={(e) => {
-                e.target.style.backgroundColor = "#dc3545";
-                e.target.style.borderColor = "#c82333";
-              }}
-            >
-              Delete
-            </button>
-            <button className="btn-close" onClick={onClose} style={{ color: "white", fontSize: "2rem", background: "none", border: "none", cursor: "pointer" }}>
-              ✕
-            </button>
-          </div>
+          <button className="btn-close" onClick={onClose} style={{ color: "#ffffff", fontSize: "2.5rem", background: "none", border: "none", cursor: "pointer", padding: "0", lineHeight: "1", textShadow: "0 0 2px rgba(0,0,0,0.1)", transition: "all 0.2s ease" }} onMouseEnter={(e) => { e.target.style.color = "#f0f0f0"; e.target.style.textShadow = "0 0 4px rgba(0,0,0,0.2)"; }} onMouseLeave={(e) => { e.target.style.color = "#ffffff"; e.target.style.textShadow = "0 0 2px rgba(0,0,0,0.1)"; }}>
+            ×
+          </button>
         </div>
 
         {/* Body */}
@@ -977,7 +1014,7 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
                 style={{ fontWeight: "600", fontSize: "14px", backgroundColor: "#f0f8ff" }}
               />
             </div>
-            <div className="task-section" style={{ flex: "1" }}>
+            <div className="task-section" style={{ flex: "0.5" }}>
               <label className="section-label" style={{ fontSize: "12px" }}>
                 Process Name/Operation Description
               </label>
@@ -989,7 +1026,7 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
                 style={{ fontWeight: "500", fontSize: "14px" }}
               />
             </div>
-            <div className="task-section" style={{ flex: "0 0 18%" }}>
+            <div className="task-section" style={{ flex: "1" }}>
               <label className="section-label" style={{ fontSize: "12px", whiteSpace: "nowrap" }}>Start Date</label>
               <input
                 type="text"
@@ -1030,59 +1067,200 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
             </div>
           ) : (
             // Other processes: Show quota/defect fields
-            <div className="task-row">
-              <div className="task-section flex-1">
-                <label className="section-label">Completed Outputs</label>
-                <div className="input-group">
+            <>
+              {/* Row: Completed Outputs + Last Update */}
+              <div className="task-row">
+                <div className="task-section" style={{ flex: "0 0 45%" }}>
+                  <label className="section-label">Completed Outputs (Add to Current)</label>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "0.9rem" }}>
+                      <span style={{ color: "#666" }}>Previous:</span>
+                      <span style={{ fontWeight: "600", color: "#1D6AB7" }}>{taskData.completed_quota || 0}</span>
+                      <span style={{ color: "#666" }}>+</span>
+                      <div className="input-group" style={{ flex: 1, minWidth: "80px" }}>
+                        <input
+                          type="number"
+                          name="completed_quota"
+                          value={formData.completed_quota > (taskData.completed_quota || 0) ? formData.completed_quota - (taskData.completed_quota || 0) : ""}
+                          onChange={(e) => {
+                            const addAmount = parseInt(e.target.value, 10) || 0;
+                            const previousQuota = taskData.completed_quota || 0;
+                            const newTotal = previousQuota + addAmount;
+                            setFormData({...formData, completed_quota: Math.min(newTotal, taskData.total_quota)});
+                          }}
+                          className="input-text"
+                          min="0"
+                          max={taskData.total_quota - (taskData.completed_quota || 0)}
+                          placeholder="0"
+                          style={{ textAlign: "center" }}
+                        />
+                      </div>
+                      <span style={{ color: "#666" }}>=</span>
+                      <span style={{ fontWeight: "700", color: formData.completed_quota >= taskData.total_quota ? "#28a745" : "#333" }}>
+                        {formData.completed_quota || 0}
+                      </span>
+                      <span style={{ color: "#999" }}>/ {taskData.total_quota || 0}</span>
+                    </div>
+                  </div>
+                </div>
+                <div className="task-section" style={{ flex: "0 0 50%" }}>
+                  <label className="section-label">Last Update</label>
                   <input
-                    type="number"
-                    name="completed_quota"
-                    value={formData.completed_quota || ""}
-                    onChange={handleInputChange}
+                    type="text"
+                    value={
+                      taskData.quota_updated_at 
+                        ? `${new Date(taskData.quota_updated_at).toLocaleString()} by ${taskData.quota_updated_by_name || 'Unknown'} - ${taskData.completed_quota}/${taskData.total_quota}`
+                        : 'No updates yet'
+                    }
+                    disabled
                     className="input-text"
-                    min="0"
-                    max={taskData.total_quota}
-                    onBlur={(e) => {
-                      const num = parseInt(e.target.value, 10) || 0;
-                      setFormData({...formData, completed_quota: num});
-                    }}
+                    style={{ fontSize: "0.85rem", color: "#666" }}
                   />
-                  <span className="input-suffix">/ {taskData.total_quota || 0}</span>
                 </div>
               </div>
-              <div className="task-section flex-1">
-                <label className="section-label">Defect Count</label>
-                <input
-                  type="number"
-                  name="defect_count"
-                  value={formData.defect_count || ""}
-                  onChange={handleInputChange}
-                  className="input-text"
-                  min="0"
-                  onBlur={(e) => {
-                    const num = parseInt(e.target.value, 10) || 0;
-                    setFormData({...formData, defect_count: num});
-                  }}
-                />
+
+              {/* Row: Defect Logs - Multiple Defects */}
+              <div className="task-section">
+                <label className="section-label">Add type of defect</label>
+                
+                {/* Defect entries */}
+                {formData.defectLogs.map((log, index) => (
+                  <div key={index} className="task-row" style={{ marginBottom: '10px', paddingBottom: '10px', borderBottom: index < formData.defectLogs.length - 1 ? '1px solid #e0e0e0' : 'none' }}>
+                    <div className="task-section flex-1">
+                      <select
+                        value={log.defect_type || ""}
+                        onChange={(e) => updateDefectLog(index, 'defect_type', e.target.value)}
+                        className="input-text"
+                        style={{ cursor: "pointer" }}
+                      >
+                        <option value="">Select defect type</option>
+                        <option value="dimension">Dimension problem</option>
+                        <option value="thickness">Thickness problem</option>
+                        <option value="rush">Rush problem</option>
+                        <option value="other">Other</option>
+                      </select>
+                    </div>
+                    
+                    {log.defect_type && (
+                      <div className="task-section flex-1">
+                        <input
+                          type="number"
+                          value={log.defect_count || ""}
+                          onChange={(e) => updateDefectLog(index, 'defect_count', e.target.value)}
+                          className="input-text"
+                          min="0"
+                          placeholder="Count"
+                        />
+                      </div>
+                    )}
+                    
+                    {formData.defectLogs.length > 1 && (
+                      <button
+                        onClick={() => removeDefectLog(index)}
+                        style={{
+                          background: 'transparent',
+                          color: '#E01818',
+                          border: 'none',
+                          padding: '8px 10px',
+                          borderRadius: '4px',
+                          cursor: 'pointer',
+                          marginLeft: '8px',
+                          minWidth: 'auto',
+                          height: '38px',
+                          fontSize: '24px',
+                          fontWeight: 'bold',
+                          transition: 'all 0.2s ease',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          lineHeight: '1',
+                          alignSelf: 'flex-end'
+                        }}
+                        onMouseEnter={(e) => {
+                          e.target.style.backgroundColor = 'rgba(224, 24, 24, 0.1)';
+                          e.target.style.color = '#A01010';
+                          e.target.style.transform = 'scale(1.15)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.target.style.backgroundColor = 'transparent';
+                          e.target.style.color = '#E01818';
+                          e.target.style.transform = 'scale(1)';
+                        }}
+                        title="Remove defect"
+                      >
+                        ×
+                      </button>
+                    )}
+                  </div>
+                ))}
+                
+                {/* Add defect button - only shown if first defect type is selected */}
+                {formData.defectLogs[0]?.defect_type && (
+                  <button
+                    onClick={addDefectLog}
+                    style={{
+                      background: '#007bff',
+                      color: 'white',
+                      border: 'none',
+                      padding: '8px 16px',
+                      borderRadius: '4px',
+                      cursor: 'pointer',
+                      marginTop: '10px',
+                      fontSize: '14px'
+                    }}
+                  >
+                    + Add Defect Type
+                  </button>
+                )}
               </div>
-              <div className="task-section flex-1 flex-center">
+
+              {/* Row: Defect Last Update */}
+              {taskData.defect_updated_at && (
+                <div className="task-row">
+                  <div className="task-section flex-1">
+                    <label className="section-label">Defect Last Update</label>
+                    <input
+                      type="text"
+                      value={`${new Date(taskData.defect_updated_at).toLocaleString()} by ${taskData.defect_updated_by_name || 'Unknown'}`}
+                      disabled
+                      className="input-text"
+                      style={{ fontSize: "0.85rem", color: "#666" }}
+                    />
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+
+          {/* Row 4: Due Date and Request Extension */}
+          <div className="task-row">
+            <div className="task-section flex-1">
+              <label className="section-label">Due Date</label>
+              <input
+                type="text"
+                value={taskData.due_date || "—"}
+                disabled
+                className="input-text"
+              />
+            </div>
+            <div className="task-section flex-1" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
               <button 
                 className="btn-orange"
                 onClick={handleRequestExtension}
                 disabled={extensionRequestMade}
                 style={{ 
-                  marginTop: "24px",
-                  padding: "0.5rem 1rem",
-                  width: "140px",
+                  padding: "0.65rem 1.5rem",
+                  width: "100%",
                   opacity: extensionRequestMade ? 0.6 : 1,
                   cursor: extensionRequestMade ? 'not-allowed' : 'pointer',
                   backgroundColor: extensionRequestMade ? '#ccc' : '#ff9800',
                   border: extensionRequestMade ? 'none' : '2px solid #ff9800',
                   color: extensionRequestMade ? '#999' : 'white',
-                  fontWeight: '500',
+                  fontWeight: '600',
                   transition: 'all 0.2s ease',
-                  fontSize: '13px',
-                  whiteSpace: 'nowrap'
+                  fontSize: '14px',
+                  whiteSpace: 'nowrap',
+                  borderRadius: '4px'
                 }}
                 title={extensionRequestMade ? "Extension request already submitted" : "Request a deadline extension"}
                 onMouseEnter={(e) => {
@@ -1104,35 +1282,61 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
                     Extension Requested
                   </>
                 ) : (
-                  "Request Extension"
+                  <>
+                    <i className="bi bi-calendar-event me-1"></i>
+                    Request Extension
+                  </>
                 )}
               </button>
+            </div>
+          </div>
+
+          {/* Row 5: Extended Deadline (only if approved) */}
+          {taskData.deadline_extension && (
+            <div className="task-row">
+              <div className="task-section flex-1">
+                <label className="section-label">Extended Deadline</label>
+                <input
+                  type="text"
+                  value={taskData.deadline_extension || "—"}
+                  disabled
+                  className="input-text"
+                  style={{ backgroundColor: "#fff3cd" }}
+                />
               </div>
             </div>
           )}
-
-          {/* Row 4: Due Date */}
-          <div className="task-row">
-            <div className="task-section flex-1">
-              <label className="section-label">Due Date</label>
-              <input
-                type="text"
-                value={taskData.due_date || "—"}
-                disabled
-                className="input-text"
-              />
-            </div>
-          </div>
         </div>
 
         {/* Footer */}
-        <div className="modal-footer">
+        <div style={{ display: 'flex', padding: '12px 20px', borderTop: '1px solid #e0e0e0', alignItems: 'center', flexShrink: 0, justifyContent: 'space-between' }}>
+          {/* Left Side: Log History */}
+          <button 
+            className="btn-icon" 
+            title="View update history"
+            onClick={() => setShowHistoryModal(true)}
+            style={{ color: "white", backgroundColor: "#1D6AB7", border: "1px solid #155a9c", padding: "0.4rem 0.8rem", borderRadius: "4px", cursor: "pointer", fontSize: "0.95rem", fontWeight: "500", transition: "all 0.2s ease" }}
+            onMouseEnter={(e) => {
+              e.target.style.backgroundColor = "#155a9c";
+              e.target.style.borderColor = "#104a82";
+            }}
+            onMouseLeave={(e) => {
+              e.target.style.backgroundColor = "#1D6AB7";
+              e.target.style.borderColor = "#155a9c";
+            }}
+          >
+            <i className="bi bi-clock-history" style={{ marginRight: "6px" }}></i>
+            Log History
+          </button>
+          
+          {/* Right Side: Action Buttons */}
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
           {taskData?.is_pst_01 ? (
             // PST-01: Simple Next button without validation
             <button 
               className="btn-primary" 
               onClick={handleNext}
-              style={{ padding: '0.5rem 1.5rem', fontSize: '15px', fontWeight: '600' }}
+              style={{ padding: '0.5rem 1.5rem', fontSize: '15px', fontWeight: '600', margin: 0 }}
               title="This is PST-01 (Withdrawal). Click Next to proceed to the next process."
             >
               <i className="bi bi-arrow-right me-2"></i>
@@ -1146,6 +1350,7 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
               disabled={
                 formData.completed_quota < (taskData.total_quota || 0)
               }
+              style={{ margin: 0 }}
               title={
                 formData.completed_quota < (taskData.total_quota || 0)
                   ? `Complete this step first: ${formData.completed_quota}/${taskData.total_quota}`
@@ -1155,8 +1360,21 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
               Next ({formData.completed_quota}/{taskData.total_quota || 0})
             </button>
           )}
-          <button className="btn-secondary" onClick={onClose} style={{ backgroundColor: "#dc3545", borderColor: "#c82333", color: "white" }}>
-            Cancel
+          <button 
+            className="btn-icon" 
+            title="Cancel this product request"
+            onClick={handleDelete}
+            style={{ color: "white", backgroundColor: "#E01818", border: "1px solid #C01515", padding: "0.4rem 0.8rem", borderRadius: "4px", cursor: "pointer", fontSize: "0.95rem", fontWeight: "500", transition: "all 0.2s ease" }}
+            onMouseEnter={(e) => {
+              e.target.style.backgroundColor = "#C01515";
+              e.target.style.borderColor = "#A01010";
+            }}
+            onMouseLeave={(e) => {
+              e.target.style.backgroundColor = "#E01818";
+              e.target.style.borderColor = "#C01515";
+            }}
+          >
+            Cancel Request
           </button>
           <button 
             className="btn-primary" 
@@ -1167,6 +1385,7 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
               formData.defect_count < taskData.defect_count
             }
             style={{
+              margin: 0,
               opacity: (!taskData || formData.completed_quota < taskData.completed_quota || formData.defect_count < taskData.defect_count) ? 0.5 : 1,
               cursor: (!taskData || formData.completed_quota < taskData.completed_quota || formData.defect_count < taskData.defect_count) ? 'not-allowed' : 'pointer'
             }}
@@ -1180,6 +1399,7 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
           >
             Save
           </button>
+          </div>
         </div>
       </div>
     </div>
@@ -1339,6 +1559,15 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
           // Refresh task data after extension request
           window.dispatchEvent(new Event('refreshNotifications'));
         }}
+      />
+    )}
+
+    {/* Task History Modal */}
+    {showHistoryModal && requestProductId && (
+      <TaskHistoryModal
+        requestProductId={requestProductId}
+        productName={taskData?.product_name || completedProductData?.product_name}
+        onClose={() => setShowHistoryModal(false)}
       />
     )}
     </>

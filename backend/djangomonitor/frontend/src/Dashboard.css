@@ -12,32 +12,139 @@ html, body {
 
 /* Sidebar Styles */
 .sidebar {
-  width: 80px;
+  width: 60px;
   background: #1D6AB7;
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 20px 0;
+  padding: 15px 0;
   position: fixed;
   left: 0;
   top: 0;
   height: 100vh;
   box-shadow: 2px 0 10px rgba(0, 0, 0, 0.1);
   z-index: 1000;
+  transition: width 0.3s ease;
+  overflow-y: auto;
 }
 
-.sidebar-logo {
-  width: 50px;
-  height: 50px;
+/* Expanded sidebar */
+.sidebar.expanded {
+  width: 250px;
+  align-items: stretch;
+  padding: 15px 0;
+}
+
+/* Collapsed sidebar */
+.sidebar.collapsed {
+  width: 60px;
+}
+
+.sidebar-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 35px 10px 20px 10px;
+  margin-bottom: 20px;
+  min-height: auto;
+  width: 100%;
+  transition: all 0.3s ease;
+  position: relative;
+}
+
+.sidebar-toggle-btn {
   background: transparent;
-  border-radius: 8px;
+  border: none;
+  color: white;
+  font-size: 18px;
+  cursor: pointer;
+  padding: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-bottom: 30px;
+  transition: all 0.3s ease;
+  border-radius: 6px;
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+}
+
+.sidebar.collapsed .sidebar-header {
+  flex-direction: column;
+  padding: 12px 5px;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+}
+
+.sidebar.collapsed .sidebar-toggle-btn {
+  position: absolute;
+  top: -12px;
+  right: 2px;
+}
+
+.sidebar.expanded .sidebar-toggle-btn {
+  position: absolute;
+  top: -12px;
+  right: 8px;
+}
+
+.sidebar.expanded .sidebar-header {
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  padding: 12px 15px;
+  gap: 12px;
+}
+
+.sidebar-toggle-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.sidebar-title {
+  color: white;
+  font-size: 14px;
+  font-weight: 600;
+  padding: 10px 15px;
+  margin-bottom: 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sidebar-logo {
+  width: 70px;
+  height: 70px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   font-weight: bold;
   color: #3388DD;
   font-size: 20px;
+  transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1), height 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  cursor: pointer;
+  flex-shrink: 0;
+  background: transparent;
+  backdrop-filter: none;
+}
+
+.sidebar.expanded .sidebar-logo {
+  width: 100px;
+  height: 100px;
+  border-radius: 16px;
+  box-shadow: none;
+  background: transparent;
+}
+
+.sidebar-logo:hover {
+  transform: scale(1.08);
+  filter: drop-shadow(0 6px 12px rgba(51, 136, 221, 0.4));
+  background: rgba(255, 255, 255, 0.2);
 }
 
 .sidebar-logo-img {
@@ -45,35 +152,74 @@ html, body {
   height: 100%;
   object-fit: contain;
   padding: 4px;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.sidebar-logo:hover .sidebar-logo-img {
+  filter: brightness(1.15);
 }
 
 .sidebar-items {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 15px;
   flex: 1;
+  padding: 0;
+  width: 100%;
 }
 
 .sidebar-item {
-  width: 50px;
-  height: 50px;
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: 12px;
+  padding: 10px;
+  margin: 0 10px;
   background: transparent;
   border-radius: 8px;
   cursor: pointer;
   color: white;
-  font-size: 24px;
+  font-size: 18px;
   transition: all 0.3s ease;
   border: 2px solid transparent;
   text-decoration: none;
+  min-height: 40px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.sidebar.collapsed .sidebar-item {
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  margin: 0 auto;
+  justify-content: center;
+}
+
+.sidebar.expanded .sidebar-item {
+  justify-content: flex-start;
 }
 
 .sidebar-icon {
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
   object-fit: contain;
+  flex-shrink: 0;
+}
+
+/* Larger size for Cancel-removebg icon to match other icons */
+.sidebar-item img[src*="cancel-removebg"] {
+  width: 40px;
+  height: 40px;
+}
+
+.sidebar-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: white;
+  flex: 1;
+  text-overflow: ellipsis;
+  overflow: hidden;
 }
 
 .sidebar-item:hover {
@@ -84,11 +230,12 @@ html, body {
 .sidebar-item.active {
   background: #57A8F9;
   border-radius: 8px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
 }
 
 .sidebar-logout {
-  width: 50px;
-  height: 50px;
+  width: 38px;
+  height: 38px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -96,7 +243,7 @@ html, body {
   border-radius: 8px;
   cursor: pointer;
   color: white;
-  font-size: 24px;
+  font-size: 18px;
   transition: all 0.3s ease;
   border: none;
 }
@@ -107,16 +254,25 @@ html, body {
 
 /* Main Content Area */
 .main-content {
-  margin-left: 80px;
+  margin-left: 60px;
   flex: 1;
   display: flex;
   flex-direction: column;
+  transition: margin-left 0.3s ease;
+}
+
+.main-content.sidebar-collapsed {
+  margin-left: 60px;
+}
+
+.main-content.sidebar-expanded {
+  margin-left: 250px;
 }
 
 /* Header */
 .header {
   background: white;
-  padding: 20px 30px;
+  padding: 6px 30px 2px 30px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
   display: flex;
   justify-content: space-between;
@@ -125,11 +281,21 @@ html, body {
 }
 
 .header-title {
-  font-size: 32px;
+  font-size: 12px;
   font-weight: 700;
   color: #333;
   white-space: nowrap;
   min-width: 150px;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  cursor: default;
+  position: relative;
+  display: inline-block;
+}
+
+.header-title:hover {
+  color: #1D6AB7;
+  transform: translateX(4px);
+  text-shadow: 0 2px 4px rgba(29, 106, 183, 0.2);
 }
 
 .header-center {
@@ -280,7 +446,7 @@ html, body {
   background: transparent;
   border: none;
   border-radius: 8px;
-  padding: 6px 12px;
+  padding: 8px 12px;  /* Increased top padding to move profile button higher */
   cursor: pointer;
   transition: all 0.3s ease;
   font-size: 14px;
@@ -298,6 +464,7 @@ html, body {
 .profile-chevron {
   font-size: 12px;
   transition: transform 0.3s ease;
+  margin-top: -8px;  /* Move chevron higher to avoid overlap with logo */
 }
 
 .profile-chevron.open {
@@ -463,7 +630,7 @@ html, body {
 /* Content Area */
 .page-content {
   flex: 1;
-  padding: 20px 30px;
+  padding: 8px 30px;
   overflow: auto;
 }
 
@@ -473,6 +640,14 @@ html, body {
   font-size: 28px;
   font-weight: 600;
   color: #333;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  cursor: default;
+}
+
+.page-title:hover {
+  color: #1D6AB7;
+  transform: translateX(3px);
+  text-shadow: 0 2px 4px rgba(29, 106, 183, 0.2);
 }
 
 /* Table Styles */
@@ -688,8 +863,10 @@ tbody tr:hover {
   border-radius: 8px;
   max-width: 500px;
   width: 90%;
-  max-height: none !important;
-  overflow: visible !important;
+  max-height: 90vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
   box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
   pointer-events: auto;
 }
@@ -734,6 +911,9 @@ tbody tr:hover {
 
 .modal-body {
   padding: 25px;
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
 }
 
 .modal-section {
@@ -1348,6 +1528,10 @@ tbody tr:hover {
     padding: 10px 0;
   }
 
+  .sidebar.expanded {
+    width: 200px;
+  }
+
   .sidebar-logo {
     width: 40px;
     height: 40px;
@@ -1361,13 +1545,21 @@ tbody tr:hover {
     font-size: 18px;
   }
 
+  .sidebar.expanded .sidebar-item {
+    font-size: 14px;
+  }
+
   .main-content {
     margin-left: 60px;
   }
 
+  .main-content.sidebar-expanded {
+    margin-left: 200px;
+  }
+
   .header {
     flex-wrap: wrap;
-    padding: 15px 20px;
+    padding: 6px 20px 2px 20px;
   }
 
   .search-box {
@@ -1375,7 +1567,7 @@ tbody tr:hover {
   }
 
   .page-content {
-    padding: 20px;
+    padding: 8px 20px;
   }
 
   table {
@@ -1396,13 +1588,13 @@ tbody tr:hover {
   padding: 0;
   background: transparent;
   border-radius: 0;
-  margin-bottom: 20px;
-  gap: 20px;
+  margin-bottom: 12px;
+  gap: 12px;
 }
 
 .filters-group {
   display: flex;
-  gap: 15px;
+  gap: 10px;
   align-items: center;
   flex-wrap: wrap;
 }
@@ -1410,23 +1602,24 @@ tbody tr:hover {
 .filter-item {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 3px;
+  align-items: flex-start;
 }
 
 .filter-item label {
-  font-size: 12px;
+  font-size: 11px;
   color: #666;
   font-weight: 500;
   text-transform: uppercase;
-  letter-spacing: 0.3px;
+  letter-spacing: 0.2px;
 }
 
 .filter-dropdown {
-  min-width: 180px;
-  padding: 10px 12px;
+  min-width: 130px;
+  padding: 6px 10px;
   border: 1px solid #e0e0e0;
-  border-radius: 6px;
-  font-size: 14px;
+  border-radius: 4px;
+  font-size: 12px;
   background: white;
   cursor: pointer;
   color: #333;
@@ -1444,16 +1637,16 @@ tbody tr:hover {
 }
 
 .filter-btn-date {
-  padding: 10px 16px;
+  padding: 6px 12px;
   border: 1px solid #e0e0e0;
-  border-radius: 6px;
+  border-radius: 4px;
   background: white;
   cursor: pointer;
-  font-size: 14px;
+  font-size: 12px;
   color: #333;
   transition: all 0.3s ease;
   white-space: nowrap;
-  margin-top: 25px;
+  margin-top: 0;
 }
 
 .filter-btn-date:hover {
@@ -1537,11 +1730,13 @@ tbody tr:hover {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
   border-collapse: collapse;
   border-spacing: 0;
-  margin-top: 20px;
+  margin: 30px auto 0;
   border: 1px solid #dee2e6;
   table-layout: auto;
   word-wrap: break-word;
   overflow-wrap: break-word;
+  max-width: 100%;
+  display: table;
 }
 
 .data-table thead {
@@ -1687,9 +1882,26 @@ tbody tr:hover {
 
 /* Task Detail Modal Styles */
 .modal-large {
-  max-width: 700px;
+  max-width: 900px;
   width: 95%;
   max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Responsive Modal for Smaller Screens */
+@media (max-width: 1024px) {
+  .modal-large {
+    max-width: 95vw;
+    max-height: 95vh;
+  }
+}
+
+@media (max-width: 768px) {
+  .modal-large {
+    max-width: 98vw;
+    max-height: 98vh;
+  }
 }
 
 .modal-actions {
@@ -1701,7 +1913,7 @@ tbody tr:hover {
 .btn-icon {
   background: none;
   border: none;
-  padding: 8px 12px;
+  padding: 4px 8px;
   cursor: pointer;
   font-size: 16px;
   color: white;
@@ -2025,6 +2237,12 @@ tbody tr:hover {
   padding: 10px 20px;
   margin: 0;
   letter-spacing: 0.5px;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  cursor: default;
+}
+
+.settings-category-title:hover {
+  color: #1D6AB7;
 }
 
 .settings-menu-item {
@@ -2556,6 +2774,14 @@ tbody tr:hover {
   color: #333;
   padding-bottom: 15px;
   border-bottom: 1px solid #f0f0f0;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  cursor: default;
+}
+
+.report-card h3:hover {
+  color: #1D6AB7;
+  border-bottom-color: #1D6AB7;
+  transform: translateX(2px);
 }
 
 .report-card-large {
@@ -2871,6 +3097,13 @@ tbody tr:hover {
   margin: 0;
   text-align: center;
   letter-spacing: -0.5px;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  cursor: default;
+}
+
+.modal-title-wireframe:hover {
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  transform: scale(1.02);
 }
 
 .modal-body-wireframe {
@@ -2899,6 +3132,14 @@ tbody tr:hover {
   margin-bottom: 14px;
   padding-bottom: 10px;
   border-bottom: 2px solid #9BC284;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  cursor: default;
+}
+
+.details-section-title:hover {
+  color: #5a8a50;
+  border-bottom-color: #7aa56b;
+  transform: translateX(2px);
 }
 
 .details-row {
@@ -3106,12 +3347,12 @@ tbody tr:hover {
 
   .header {
     flex-wrap: wrap;
-    padding: 15px;
+    padding: 6px 15px 2px 15px;
     gap: 10px;
   }
 
   .header-title {
-    font-size: 24px;
+    font-size: 11px;
     min-width: 100%;
     order: -1;
   }
@@ -3127,7 +3368,7 @@ tbody tr:hover {
   }
 
   .page-content {
-    padding: 15px;
+    padding: 8px 15px;
   }
 
   .page-title {
@@ -3140,6 +3381,7 @@ tbody tr:hover {
     display: block;
     overflow-x: auto;
     white-space: nowrap;
+    margin: 20px auto 0;
   }
 
   .data-table thead,
@@ -3237,12 +3479,14 @@ tbody tr:hover {
   /* Filters */
   .filters-actions-bar {
     flex-direction: column;
-    gap: 10px;
+    gap: 8px;
+    margin-bottom: 12px;
   }
 
   .filters-group {
     width: 100%;
     flex-direction: column;
+    gap: 8px;
   }
 
   .filter-item {
@@ -3252,6 +3496,8 @@ tbody tr:hover {
   .filter-item select,
   .filter-dropdown {
     width: 100%;
+    padding: 6px 10px;
+    font-size: 12px;
   }
 }
 
@@ -3285,13 +3531,13 @@ tbody tr:hover {
   }
 
   .header {
-    padding: 10px;
+    padding: 4px 10px 2px 10px;
     flex-direction: column;
     gap: 8px;
   }
 
   .header-title {
-    font-size: 18px;
+    font-size: 10px;
     min-width: 100%;
   }
 
@@ -3310,7 +3556,7 @@ tbody tr:hover {
   }
 
   .page-content {
-    padding: 10px;
+    padding: 8px 10px;
   }
 
   .page-title {
@@ -3323,6 +3569,7 @@ tbody tr:hover {
     font-size: 11px;
     width: 100%;
     border-collapse: collapse;
+    margin: 16px auto 0;
   }
 
   .data-table thead {

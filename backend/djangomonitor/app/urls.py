@@ -6,7 +6,9 @@ from .admin_approval_views import (
     approve_customer_request,
     decline_customer_request,
     get_customer_request_details,
-    diagnose_request
+    diagnose_request,
+    get_available_customers,
+    create_admin_request
 )
 from django.contrib.auth import views as auth_views
 # from .views import (
@@ -71,6 +73,7 @@ urlpatterns = [
     path('users/<int:id>/', delete_user, name='delete_user'),
 
     path('full_report_csv/', full_report_csv, name='full_report_csv'),
+    path('full_report_pdf/', generate_pdf_report, name='generate_pdf_report'),
 
     path('request/<int:id>/archive/', archive_request, name='archive-request'),
     path('request/<int:id>/unarchive/', unarchive_request, name='unarchive-request'),
@@ -93,6 +96,7 @@ urlpatterns = [
     
     # Customer endpoint to view their assigned requests
     path('customer/my-requests/', customer_request_view, name='customer-my-requests'),
+    path('customer/cancelled-requests/', customer_cancelled_requests_view, name='customer-cancelled-requests'),
 
     # Notification endpoints
     path('notifications/', get_notifications, name='get-notifications'),
@@ -105,6 +109,8 @@ urlpatterns = [
     path('admin/decline-request/', decline_customer_request, name='admin-decline-request'),
     path('admin/request-details/<int:request_id>/', get_customer_request_details, name='admin-request-details'),
     path('admin/diagnose-request/<int:request_id>/', diagnose_request, name='admin-diagnose-request'),
+    path('admin/available-customers/', get_available_customers, name='admin-available-customers'),
+    path('admin/create-request/', create_admin_request, name='admin-create-request'),
 
     # Extension Request endpoints
     path('request-products/<int:id>/request-extension/', request_deadline_extension, name='request-extension'),
@@ -120,6 +126,12 @@ urlpatterns = [
     path('reports/pie-chart/', dashboard_pie_chart, name='dashboard-pie-chart'),
     path('reports/top-movers/', dashboard_top_movers, name='dashboard-top-movers'),
     path('reports/debug/', debug_dashboard_data, name='debug-dashboard-data'),
+
+    # Cancelled Requests endpoint
+    path('cancelled-requests/', cancelled_requests_view, name='cancelled-requests'),
+    
+    # Task History endpoint
+    path('task-history/<int:request_product_id>/', task_history_view, name='task-history'),
 
     # path("progress/", processProgressAPI, name="progress_list_create"), 
     # path("progress/<int:id>/", processProgressAPI, name="progress_detail"),

@@ -6,6 +6,7 @@ name = "pypi"
 [packages]
 djangorestframework = "*"
 django = "*"
+reportlab = "*"
 
 [dev-packages]
 

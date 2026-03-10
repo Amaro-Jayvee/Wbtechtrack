@@ -16,7 +16,6 @@ export function UserProvider({ children }) {
   // Function to fetch user data
   const fetchUserData = async () => {
     try {
-      console.log("[UserContext] Fetching user data from /app/whoami/");
       setIsLoadingUser(true);
       
       const response = await fetch("/app/whoami/", {
@@ -28,11 +27,8 @@ export function UserProvider({ children }) {
         },
       });
 
-      console.log("[UserContext] Response status:", response.status);
-
       if (response.ok) {
         const data = await response.json();
-        console.log("[UserContext] User data received:", data);
         
         const newUserData = {
           username: data.username || "Unknown",
@@ -41,12 +37,9 @@ export function UserProvider({ children }) {
           terms_accepted: data.terms_accepted,
         };
         
-        console.log("[UserContext] Setting user data:", newUserData);
         setUserData(newUserData);
       } else {
-        console.warn("[UserContext] Failed to fetch user data with status:", response.status);
-        const errorText = await response.text();
-        console.warn("[UserContext] Error response:", errorText);
+        console.warn("Failed to fetch user data");
         // Don't set Guest here - keep waiting for user to login
       }
     } catch (err) {

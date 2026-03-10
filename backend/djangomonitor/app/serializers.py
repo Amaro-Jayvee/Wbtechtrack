@@ -8,9 +8,16 @@ class WorkerSerializer(serializers.ModelSerializer):
         model = Worker
         fields = '__all__'
 
+class DefectLogSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = DefectLog
+        fields = ['id', 'product_process', 'defect_type', 'defect_count', 'created_at', 'updated_at']
+        read_only_fields = ['created_at', 'updated_at']
+
 class RequestProductReadSerializer(serializers.ModelSerializer):
     product_name = serializers.CharField(source='product.prodName', read_only=True)
     request_id = serializers.IntegerField(source='request.RequestID', read_only=True)
+    deadline = serializers.SerializerMethodField()
     completed_summary = serializers.SerializerMethodField()
     defect_count = serializers.SerializerMethodField()
     progress = serializers.SerializerMethodField()
@@ -18,6 +25,12 @@ class RequestProductReadSerializer(serializers.ModelSerializer):
     deadline_extension = serializers.SerializerMethodField()
     requested_at = serializers.SerializerMethodField()
     archived_at = serializers.SerializerMethodField()
+
+    def get_deadline(self, obj):
+        """Get deadline from parent request"""
+        if obj.request and obj.request.deadline:
+            return obj.request.deadline.strftime("%m/%d/%Y")
+        return None
 
     def get_completed_summary(self, obj):
         return f"{obj.get_completed_quota()}/{obj.quantity}"
@@ -78,7 +91,10 @@ class RequestProductReadSerializer(serializers.ModelSerializer):
         return obj.task_status()   # ✅ reuse model method
 
     def get_deadline_extension(self, obj):
-        return obj.deadline_extension.strftime("%Y-%m-%d") if obj.deadline_extension else None
+        # Only return deadline_extension if it's set AND extension_status is "approved"
+        if obj.deadline_extension and obj.extension_status == "approved":
+            return obj.deadline_extension.strftime("%Y-%m-%d")
+        return None
 
     def get_requested_at(self, obj):
         return localtime(obj.requested_at).strftime("%Y-%m-%d %H:%M:%S") if obj.requested_at else None
@@ -95,6 +111,7 @@ class RequestProductReadSerializer(serializers.ModelSerializer):
             "quantity",
             "completed_summary",
             "defect_count",
+            "deadline",
             "deadline_extension",
             "extension_status",
             "requested_at",
@@ -181,7 +198,7 @@ class RequestReadSerializer(serializers.ModelSerializer):
         return obj.deadline.strftime("%Y-%m-%d") if obj.deadline else None
 
     def get_request_products(self, obj):
-        products = obj.request_products.all()
+        products = obj.request_products.exclude(status='cancelled')
         return RequestProductReadSerializer(products, many=True).data
 
     class Meta:
@@ -198,6 +215,7 @@ class RequestReadSerializer(serializers.ModelSerializer):
             "updated_at",
             "archived_at",
             "restored_at",
+            "request_status",
             "request_products",
         ]
         read_only_fields = ["created_by"]
@@ -235,7 +253,12 @@ class RequestProductSerializer(serializers.ModelSerializer):
 
 
 class RequestSerializer(serializers.ModelSerializer):
-    products = RequestProductSerializer(many=True, source='request_products')
+    products = RequestProductSerializer(many=True, source='request_products', read_only=True)
+    request_products = serializers.ListField(
+        child=serializers.DictField(),
+        write_only=True,
+        required=False
+    )
     badge = serializers.SerializerMethodField()
     created_at = serializers.SerializerMethodField()
     archived_at = serializers.SerializerMethodField()
@@ -261,23 +284,71 @@ class RequestSerializer(serializers.ModelSerializer):
         return None
 
     def create(self, validated_data):
-        products_data = validated_data.pop('request_products')
-        print(f"[SERIALIZER] Creating request with {len(products_data)} products")
-        for i, item in enumerate(products_data):
-            print(f"[SERIALIZER] Product[{i}]: {item}")
-        # Remove requester from validated_data if present (for security - always use current user)
-        validated_data.pop('requester', None)
-        # For customer-created requests, set requester to the current user
+        products_data = validated_data.pop('request_products', None)
+        request_user = self.context['request'].user
+        
+        print(f"[CREATE_REQUEST] Starting request creation...")
+        print(f"[CREATE_REQUEST] products_data type: {type(products_data)}")
+        print(f"[CREATE_REQUEST] products_data value: {products_data}")
+        
+        # Check if user is admin
+        try:
+            user_profile = UserProfile.objects.get(user=request_user)
+            is_admin = user_profile.role in [Roles.ADMIN, 'admin']
+        except:
+            is_admin = request_user.is_staff or request_user.is_superuser
+        
+        # For admin-created requests, allow specifying customer/requester
+        # For customer-created requests, set requester to current user
+        if is_admin and 'requester' in validated_data and validated_data['requester']:
+            # Admin is creating request for a specific customer
+            requester = validated_data.pop('requester')
+            request_status = 'new_request'  # Mark as new request created by admin
+        else:
+            # Customer creating their own request
+            requester = request_user
+            request_status = 'active'  # Customer-created requests start as active
+            validated_data.pop('requester', None)  # Remove if present, use current user
+        
+        # Create the request
         request = Requests.objects.create(
-            created_by=self.context['request'].user,
-            requester=self.context['request'].user,
+            created_by=request_user,
+            requester=requester,
+            request_status=request_status,
             **validated_data
         )
-        for item in products_data:
-            # Simply create RequestProduct without process handling
-            # ProcessTemplates will be used when starting the project via start_project endpoint
-            print(f"[SERIALIZER] Creating RequestProduct with: {item}")
-            RequestProduct.objects.create(request=request, **item)
+        
+        print(f"[CREATE_REQUEST] Created Requests object RequestID={request.RequestID}")
+        
+        # Create RequestProducts with better error handling
+        if products_data:
+            print(f"[CREATE_REQUEST] Processing {len(products_data)} products...")
+            for index, item in enumerate(products_data):
+                try:
+                    print(f"[CREATE_REQUEST] Product {index}: raw item = {item}")
+                    # Only include valid fields for RequestProduct
+                    # NOTE: Use 'product_id' (not 'product') to pass the FK ID directly
+                    product_fields = {
+                        'product_id': item.get('product'),
+                        'quantity': item.get('quantity'),
+                        'deadline_extension': item.get('deadline_extension'),
+                        'extension_status': item.get('extension_status', 'pending'),
+                    }
+                    print(f"[CREATE_REQUEST] Product {index}: extracted fields = {product_fields}")
+                    # Filter out None product_ids
+                    if not product_fields['product_id']:
+                        print(f"[CREATE_REQUEST] Skipping product {index} - no product ID provided")
+                        continue
+                    
+                    rp = RequestProduct.objects.create(request=request, **product_fields)
+                    print(f"[CREATE_REQUEST] Successfully created RequestProduct {rp.id} for index {index}: product_id={product_fields['product_id']}, qty={product_fields['quantity']}")
+                except Exception as e:
+                    print(f"[CREATE_REQUEST] ERROR creating RequestProduct {index}: {str(e)}")
+                    import traceback
+                    traceback.print_exc()
+        else:
+            print(f"[CREATE_REQUEST] No products_data provided or empty!")
+        
         return request
 
     def update(self, instance, validated_data):
@@ -305,11 +376,21 @@ class RequestSerializer(serializers.ModelSerializer):
                 if product_id in existing_products:
                     product = existing_products[product_id]
                     for attr, value in item.items():
-                        if attr != 'product':
+                        if attr != 'product' and attr in ['quantity', 'deadline_extension', 'extension_status']:
                             setattr(product, attr, value)
                     product.save()
                 else:
-                    RequestProduct.objects.create(request=instance, **item)
+                    # Only include valid fields
+                    product_fields = {
+                        'product': item.get('product'),
+                        'quantity': item.get('quantity'),
+                        'deadline_extension': item.get('deadline_extension'),
+                        'extension_status': item.get('extension_status', 'pending'),
+                    }
+                    try:
+                        RequestProduct.objects.create(request=instance, **product_fields)
+                    except Exception as e:
+                        print(f"[UPDATE_REQUEST] ERROR creating RequestProduct: {str(e)}")
 
             for product_id, product in existing_products.items():
                 if product_id not in incoming_ids:
@@ -357,6 +438,9 @@ class ProductProcessSerializer(serializers.ModelSerializer):
     request_product_completed_at = serializers.SerializerMethodField()
     is_pst_01 = serializers.SerializerMethodField()
     overall_progress = serializers.SerializerMethodField()
+    quota_updated_by_name = serializers.SerializerMethodField()
+    defect_updated_by_name = serializers.SerializerMethodField()
+    defect_logs = DefectLogSerializer(many=True, read_only=True)
 
     def get_progress(self, obj):
         return obj.progress_summary()
@@ -427,7 +511,21 @@ class ProductProcessSerializer(serializers.ModelSerializer):
         return obj.process_name if obj.process_name else (obj.process.name if obj.process else None)
     
     def get_product_name(self, obj):
-        return obj.request_product.product.prodName if obj.request_product else None
+        """Get product name from request_product. Handle null gracefully."""
+        try:
+            if obj.request_product and obj.request_product.product:
+                return obj.request_product.product.prodName
+            elif obj.request_product:
+                # RequestProduct exists but product might be deleted/null
+                print(f"[PRODUCT_NAME] RequestProduct {obj.request_product.id} has no product assigned")
+                return f"(Deleted Product #{obj.request_product.id})"
+            else:
+                # No request_product assigned to this ProductProcess
+                print(f"[PRODUCT_NAME] ProductProcess {obj.id} has no request_product assigned")
+                return None
+        except Exception as e:
+            print(f"[PRODUCT_NAME ERROR] ProductProcess {obj.id}: {str(e)}")
+            return None
     
     def get_worker_names(self, obj):
         return [f"{worker.FirstName} {worker.LastName}" for worker in obj.workers.all()]
@@ -440,7 +538,8 @@ class ProductProcessSerializer(serializers.ModelSerializer):
         return None
     
     def get_deadline_extension(self, obj):
-        if obj.request_product and obj.request_product.deadline_extension:
+        # Only return deadline_extension if it's set AND extension_status is "approved"
+        if obj.request_product and obj.request_product.deadline_extension and obj.request_product.extension_status == "approved":
             return obj.request_product.deadline_extension.strftime("%Y-%m-%d")
         return None
     
@@ -458,7 +557,7 @@ class ProductProcessSerializer(serializers.ModelSerializer):
     
     def get_updated_at(self, obj):
         from django.utils.timezone import localtime
-        return localtime(obj.updated_at).strftime("%Y-%m-%d") if obj.updated_at else None
+        return localtime(obj.updated_at).strftime("%Y-%m-%d %H:%M:%S") if obj.updated_at else None
     
     def get_is_pst_01(self, obj):
         """Check if this is PST-01 (withdrawal process) - ONLY the main PST-01 step"""
@@ -524,10 +623,6 @@ class ProductProcessSerializer(serializers.ModelSerializer):
             else:
                 other_steps.append(s)
         
-        # DEBUG: Show detailed breakdown
-        product_name = obj.request_product.product.prodName if obj.request_product.product else "N/A"
-        print(f"\n[PROGRESS CALC] Product: {product_name} | Total Qty: {total_quantity} | Total Steps: {total_steps}")
-        
         progress = 0
         
         # Calculate PST-01 progress (10% weight)
@@ -537,9 +632,6 @@ class ProductProcessSerializer(serializers.ModelSerializer):
             pst_01_weight = 10
             pst_01_progress = (pst_01_completed / len(pst_01_steps)) * pst_01_weight
             progress += pst_01_progress
-            print(f"  PST-01 Steps: {pst_01_completed}/{len(pst_01_steps)} completed → {pst_01_progress:.1f}%")
-            for i, s in enumerate(pst_01_steps, 1):
-                print(f"    [{i}] {s.process_name} - {'✓' if s.is_completed else '✗'}")
         
         # Calculate Other steps progress (90% weight)
         # Progress = (total work done across other steps) / (total work needed)
@@ -556,24 +648,36 @@ class ProductProcessSerializer(serializers.ModelSerializer):
             # Weight it at 90%
             other_progress = (work_progress / 100) * 90
             progress += other_progress
-            
-            print(f"  Other Steps: {len(other_steps)} steps")
-            print(f"    Total work needed: {total_work_needed} units ({total_quantity} qty × {len(other_steps)} steps)")
-            print(f"    Total work done: {total_work_done} units")
-            print(f"    Work progress: {work_progress:.1f}% → {other_progress:.1f}%")
-            for i, s in enumerate(other_steps, 1):
-                print(f"    [{i}] {s.process_name} - {s.completed_quota}/{total_quantity} {'✓' if s.is_completed else '✗'}")
         
         final_progress = int(min(progress, 100))  # Cap at 100%
-        print(f"  ✅ FINAL PROGRESS: {final_progress}%\n")
         return final_progress
+    
+    def get_quota_updated_by_name(self, obj):
+        """Get the name of the user who last updated the quota"""
+        if obj.quota_updated_by:
+            if hasattr(obj.quota_updated_by, 'userprofile'):
+                full_name = obj.quota_updated_by.userprofile.full_name
+                if full_name and full_name.strip():
+                    return full_name
+            return obj.quota_updated_by.username
+        return None
+    
+    def get_defect_updated_by_name(self, obj):
+        """Get the name of the user who last updated the defect"""
+        if obj.defect_updated_by:
+            if hasattr(obj.defect_updated_by, 'userprofile'):
+                full_name = obj.defect_updated_by.userprofile.full_name
+                if full_name and full_name.strip():
+                    return full_name
+            return obj.defect_updated_by.username
+        return None
 
     # Workers are optional - all workers are flexible (production requirement)
     # validate_workers function removed per production decision
 
     class Meta:
         model = ProductProcess
-        fields = ['id', 'request_product', 'workers', 'process', 'process_number', 'step_order', 'completed_quota', 'defect_count', 'is_completed', 'production_date', 'created_at', 'updated_at', 'archived_at', 'progress', 'completed_summary', 'request_id', 'requester_name', 'request_product_id', 'request_product_archived_at', 'request_product_completed_at', 'total_quota', 'total_steps', 'process_name', 'product_name', 'worker_names', 'due_date', 'deadline_extension', 'production_date_formatted', 'is_pst_01', 'overall_progress']
+        fields = ['id', 'request_product', 'workers', 'process', 'process_number', 'step_order', 'completed_quota', 'defect_count', 'is_completed', 'production_date', 'created_at', 'updated_at', 'archived_at', 'progress', 'completed_summary', 'request_id', 'requester_name', 'request_product_id', 'request_product_archived_at', 'request_product_completed_at', 'total_quota', 'total_steps', 'process_name', 'product_name', 'worker_names', 'due_date', 'deadline_extension', 'production_date_formatted', 'is_pst_01', 'overall_progress', 'quota_updated_at', 'quota_updated_by', 'quota_updated_by_name', 'defect_type', 'defect_description', 'defect_updated_at', 'defect_updated_by', 'defect_updated_by_name', 'defect_logs']
 
 class ProcessTemplateSerializer(serializers.ModelSerializer):
     process_name = serializers.CharField(source='process.name', read_only=True)
@@ -604,6 +708,7 @@ class RequestProgressSerializer(serializers.ModelSerializer):
 class CustomerProductDetailSerializer(serializers.ModelSerializer):
     progress = serializers.SerializerMethodField()
     task_status = serializers.SerializerMethodField()
+    deadline = serializers.SerializerMethodField()
     deadline_extension = serializers.SerializerMethodField()
     workers = serializers.SerializerMethodField()
     completed_quota = serializers.SerializerMethodField()
@@ -617,6 +722,7 @@ class CustomerProductDetailSerializer(serializers.ModelSerializer):
             "quantity",
             "progress",
             "task_status",
+            "deadline",
             "deadline_extension",
             "workers",
             "completed_quota",
@@ -696,8 +802,17 @@ class CustomerProductDetailSerializer(serializers.ModelSerializer):
     def get_task_status(self, obj):
         return obj.task_status()
 
+    def get_deadline(self, obj):
+        """Get deadline from parent request"""
+        if obj.request and obj.request.deadline:
+            return obj.request.deadline.strftime("%m/%d/%Y")
+        return None
+
     def get_deadline_extension(self, obj):
-        return obj.deadline_extension.strftime("%Y-%m-%d") if obj.deadline_extension else None
+        # Only return deadline_extension if it's set AND extension_status is "approved"
+        if obj.deadline_extension and obj.extension_status == "approved":
+            return obj.deadline_extension.strftime("%Y-%m-%d")
+        return None
     
     def get_completed_quota(self, obj):
         """Get total completed quota across all steps"""

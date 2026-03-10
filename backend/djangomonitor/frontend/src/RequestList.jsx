@@ -13,6 +13,8 @@ function RequestList() {
   const [loading, setLoading] = useState(true);
   const [sortBy, setSortBy] = useState("date"); // "date", "name", "number"
   const [sortOrder, setSortOrder] = useState("desc"); // "asc", "desc"
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState("");
   const [isTableAnimating, setIsTableAnimating] = useState(false);
@@ -41,7 +43,6 @@ function RequestList() {
 
     // Listen for restore events from Settings.jsx
     const handleRestoreEvent = () => {
-      console.log('[RequestList] Received requestsUpdated event, refreshing...');
       fetchRequests();
     };
     window.addEventListener('requestsUpdated', handleRestoreEvent);
@@ -76,6 +77,7 @@ function RequestList() {
     const newSort = e.target.value;
     setLoadingMessage(`Sorting by ${newSort === "date" ? "Date" : newSort === "number" ? "Number" : "Name"}...`);
     setIsRefreshing(true);
+    setCurrentPage(1); // Reset to first page when sort changes
     
     // Delay the actual sort update so table updates while popup is visible
     setTimeout(() => {
@@ -94,6 +96,7 @@ function RequestList() {
     const newOrder = e.target.value;
     setLoadingMessage(`Sorting ${newOrder === "asc" ? "Ascending" : "Descending"}...`);
     setIsRefreshing(true);
+    setCurrentPage(1); // Reset to first page when sort order changes
     
     // Delay the actual sort update so table updates while popup is visible
     setTimeout(() => {
@@ -122,13 +125,11 @@ function RequestList() {
           // Sort by requester name
           const nameA = (a.requester_name || "").toLowerCase().trim();
           const nameB = (b.requester_name || "").toLowerCase().trim();
-          console.log(`[SORT] Comparing names: "${nameA}" vs "${nameB}"`);
           compareResult = nameA.localeCompare(nameB);
           break;
         
         case "number":
           // Sort by RequestID (numeric)
-          console.log(`[SORT] Comparing numbers: ${a.RequestID} vs ${b.RequestID}`);
           compareResult = parseInt(a.RequestID) - parseInt(b.RequestID);
           break;
         
@@ -137,7 +138,6 @@ function RequestList() {
           // Sort by created_at date
           const dateA = new Date(a.created_at || 0).getTime();
           const dateB = new Date(b.created_at || 0).getTime();
-          console.log(`[SORT] Comparing dates: ${a.created_at} vs ${b.created_at}`);
           compareResult = dateA - dateB;
           break;
       }
@@ -147,7 +147,6 @@ function RequestList() {
       return result;
     });
     
-    console.log(`[SORT] Final sorted order (${sortBy}, ${sortOrder}):`, sorted.map(r => r.RequestID));
     return sorted;
   }, [requests, sortBy, sortOrder]);
 
@@ -270,8 +269,54 @@ function RequestList() {
     }
   };
 
+  const handleCancelRequest = async () => {
+    if (!selectedRequest) {
+      showToast("No request selected", "error");
+      return;
+    }
+
+    try {
+      const response = await fetch(
+        `/app/request/${selectedRequest.RequestID}/archive/`,
+        {
+          method: "PATCH",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ cancellation_reason: 'Cancelled by admin/manager' }),
+        }
+      );
+
+      let responseData;
+      try {
+        responseData = await response.json();
+      } catch (parseErr) {
+        console.error("Failed to parse response JSON:", parseErr);
+        showToast("Server error: Invalid response format", "error");
+        return;
+      }
+
+      if (!response.ok) {
+        const errorMsg = responseData?.error || responseData?.detail || responseData?.message || "Unknown error";
+        showToast(`Error cancelling request: ${errorMsg}`, "error");
+        return;
+      }
+
+      showToast("✅ Purchase order cancelled successfully!", "success");
+      
+      // Dispatch event to notify CancelledRequests component to refresh
+      window.dispatchEvent(new Event('requestCancelled'));
+      
+      // Remove request from list and close modal
+      setRequests(requests.filter(r => r.RequestID !== selectedRequest.RequestID));
+      setShowDetailsModal(false);
+      setSelectedRequest(null);
+    } catch (err) {
+      console.error("Error cancelling request:", err);
+      showToast("Network error: " + err.message, "error");
+    }
+  };
+
   const deleteRequest = async (requestId) => {
-    console.log(`[DeleteRequest] Starting delete for request ${requestId}`);
     try {
       const response = await fetch(
         `/app/request/${requestId}/`,
@@ -284,21 +329,16 @@ function RequestList() {
         }
       );
 
-      console.log(`[DeleteRequest] Response status: ${response.status}`);
       const data = await response.json();
-      console.log(`[DeleteRequest] Response data:`, data);
 
       if (response.ok) {
         showToast("Request archived successfully!", "success");
-        console.log(`[DeleteRequest] Refreshing requests list after archive`);
         fetchRequests();
       } else {
         const errorMsg = data.error || data.detail || "Error archiving request";
         showToast(`Failed to archive: ${errorMsg}`, "error");
-        console.error("Archive error:", data);
       }
     } catch (err) {
-      console.error("Error archiving request:", err);
       showToast(`Network error: ${err.message}`, "error");
     }
   };
@@ -453,36 +493,37 @@ function RequestList() {
         )}
 
         {/* Header with Filters and Create Button - Aligned at same level */}
-        <div className="d-flex justify-content-between align-items-center mb-4 gap-3">
-          {/* Filter and Controls Bar */}
-          <div className="filters-actions-bar flex-grow-1">
-            <div className="filters-group" style={{ display: "flex", gap: "12px", alignItems: "center", padding: "10px 0" }}>
-              <label style={{ fontWeight: "600", marginBottom: "0px", whiteSpace: "nowrap" }}>Sort By:</label>
+        <div className="d-flex justify-content-between align-items-flex-start mb-4 gap-3" style={{ marginTop: "30px" }}>
+          {/* Filter Controls Container - Left Side */}
+          <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+            {/* Filters & Sort Row */}
+            <div style={{ display: "flex", gap: "12px", alignItems: "flex-end", padding: "0", border: "none", borderRadius: "6px", backgroundColor: "transparent" }}>
+              {/* Sort By Controls */}
               <select
                 value={sortBy}
                 onChange={handleSortChange}
                 className="filter-dropdown"
-                style={{ padding: "8px 12px", borderRadius: "6px", border: "1px solid #ddd", background: "#fff" }}
+                style={{ padding: "0.375rem 0.75rem", borderRadius: "4px", border: "1px solid #ddd", background: "#fff", minWidth: "130px", fontSize: "12px" }}
               >
-                <option value="date">Date</option>
-                <option value="number">Number</option>
-                <option value="name">Name</option>
+                <option value="date">Sort By: Date</option>
+                <option value="number">Sort By: Number</option>
+                <option value="name">Sort By: Name</option>
               </select>
               
               <select
                 value={sortOrder}
                 onChange={handleSortOrderChange}
                 className="filter-dropdown"
-                style={{ padding: "8px 12px", borderRadius: "6px", border: "1px solid #ddd", background: "#fff" }}
+                style={{ padding: "0.375rem 0.75rem", borderRadius: "4px", border: "1px solid #ddd", background: "#fff", minWidth: "165px", fontSize: "12px" }}
               >
-                <option value="desc">Descending</option>
-                <option value="asc">Ascending</option>
+                <option value="desc">Order: Descending</option>
+                <option value="asc">Order: Ascending</option>
               </select>
             </div>
           </div>
 
-          {/* Right-side Actions: Search and Create */}
-          <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+          {/* Right-side Actions: Search and Create Button */}
+          <div style={{ display: "flex", gap: "12px", alignItems: "flex-end" }}>
             {/* Search Input */}
             <input
               type="text"
@@ -490,10 +531,10 @@ function RequestList() {
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               style={{
-                padding: "8px 12px",
-                borderRadius: "6px",
+                padding: "0.375rem 0.75rem",
+                borderRadius: "4px",
                 border: "1px solid #ddd",
-                fontSize: "14px",
+                fontSize: "12px",
                 minWidth: "200px",
                 outline: "none",
                 transition: "border-color 0.2s"
@@ -520,52 +561,173 @@ function RequestList() {
         {loading ? (
           <div className="loading">Loading requests...</div>
         ) : (
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>Requester</th>
-                <th>Company Name</th>
-                <th>Date Created</th>
-                <th>Action</th>
-                <th style={{ textAlign: "center", width: "50px" }}>Delete</th>
-              </tr>
-            </thead>
-            <tbody>
-              {sortedRequests
-                .filter((request) =>
-                  searchTerm === "" ||
-                  request.RequestID.toString().includes(searchTerm) ||
-                  (request.requester_name && request.requester_name.toLowerCase().includes(searchTerm.toLowerCase())) ||
-                  (request.requester_company && request.requester_company.toLowerCase().includes(searchTerm.toLowerCase()))
-                )
-                .map((request) => (
-                <tr key={request.RequestID} style={isTableAnimating ? { animation: "tableRowFadeIn 0.5s ease-out" } : {}}>
-                  <td>{request.RequestID}</td>
-                  <td>{request.requester_name || "N/A"}</td>
-                  <td>{request.requester_company || "N/A"}</td>
-                  <td>{request.created_at}</td>
-                  <td>
-                    <button
-                      className="link-btn"
-                      onClick={() => handleViewDetails(request.RequestID)}
-                    >
-                      View Full Details
-                    </button>
-                  </td>
-                  <td style={{ textAlign: "center" }}>
-                    <button
-                      className="btn-delete-action"
-                      onClick={() => handleDeleteRequest(request.RequestID)}
-                      title="Archive request"
-                    >
-                      🗑️
-                    </button>
-                  </td>
+          <>
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Issuance ID No.</th>
+                  <th>Requester</th>
+                  <th>Company Name</th>
+                  <th>Date Created</th>
+                  <th>Action</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {sortedRequests
+                  .filter((request) =>
+                    searchTerm === "" ||
+                    request.RequestID.toString().includes(searchTerm) ||
+                    (request.requester_name && request.requester_name.toLowerCase().includes(searchTerm.toLowerCase())) ||
+                    (request.requester_company && request.requester_company.toLowerCase().includes(searchTerm.toLowerCase()))
+                  )
+                  .slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
+                  .map((request) => (
+                  <tr key={request.RequestID} style={isTableAnimating ? { animation: "tableRowFadeIn 0.5s ease-out" } : {}}>
+                    <td>{request.RequestID}</td>
+                    <td>{request.requester_name || "N/A"}</td>
+                    <td>{request.requester_company || "N/A"}</td>
+                    <td>{request.created_at}</td>
+                    <td>
+                      <button
+                        className="link-btn"
+                        onClick={() => handleViewDetails(request.RequestID)}
+                        style={{ whiteSpace: "nowrap" }}
+                      >
+                        View Full Details
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+
+            {/* Pagination Controls */}
+            {(() => {
+              const filteredData = sortedRequests.filter((request) =>
+                searchTerm === "" ||
+                request.RequestID.toString().includes(searchTerm) ||
+                (request.requester_name && request.requester_name.toLowerCase().includes(searchTerm.toLowerCase())) ||
+                (request.requester_company && request.requester_company.toLowerCase().includes(searchTerm.toLowerCase()))
+              );
+              const maxPage = Math.ceil(filteredData.length / itemsPerPage);
+              
+              return filteredData.length > itemsPerPage ? (
+                <div style={{
+                  display: "flex",
+                  justifyContent: "center",
+                  alignItems: "center",
+                  gap: "8px",
+                  marginTop: "20px",
+                  padding: "15px",
+                  borderTop: "1px solid #e0e0e0",
+                  flexWrap: "wrap"
+                }}>
+                  <button
+                    onClick={() => setCurrentPage(1)}
+                    disabled={currentPage === 1}
+                    style={{
+                      padding: "6px 10px",
+                      border: currentPage === 1 ? "1px solid #ddd" : "1px solid #1D6AB7",
+                      backgroundColor: currentPage === 1 ? "#f0f0f0" : "#fff",
+                      color: currentPage === 1 ? "#999" : "#1D6AB7",
+                      borderRadius: "4px",
+                      cursor: currentPage === 1 ? "not-allowed" : "pointer",
+                      fontWeight: "500",
+                      fontSize: "12px"
+                    }}
+                  >
+                    ◀◀ First
+                  </button>
+
+                  <button
+                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                    disabled={currentPage === 1}
+                    style={{
+                      padding: "6px 10px",
+                      border: currentPage === 1 ? "1px solid #ddd" : "1px solid #1D6AB7",
+                      backgroundColor: currentPage === 1 ? "#f0f0f0" : "#fff",
+                      color: currentPage === 1 ? "#999" : "#1D6AB7",
+                      borderRadius: "4px",
+                      cursor: currentPage === 1 ? "not-allowed" : "pointer",
+                      fontWeight: "500",
+                      fontSize: "12px"
+                    }}
+                  >
+                    ◀ Previous
+                  </button>
+
+                  <div style={{ display: "flex", gap: "4px", alignItems: "center" }}>
+                    {Array.from({ length: maxPage }, (_, i) => i + 1)
+                      .filter(page => {
+                        if (maxPage <= 5) return true;
+                        if (page === 1 || page === maxPage) return true;
+                        if (Math.abs(page - currentPage) <= 1) return true;
+                        return false;
+                      })
+                      .map((page, idx, arr) => (
+                        <div key={page}>
+                          {idx > 0 && arr[idx - 1] !== page - 1 && <span style={{ color: "#999", padding: "0 4px" }}>...</span>}
+                          <button
+                            onClick={() => setCurrentPage(page)}
+                            style={{
+                              padding: "6px 10px",
+                              border: currentPage === page ? "1px solid #1D6AB7" : "1px solid #ddd",
+                              backgroundColor: currentPage === page ? "#1D6AB7" : "#fff",
+                              color: currentPage === page ? "#fff" : "#333",
+                              borderRadius: "4px",
+                              cursor: "pointer",
+                              fontWeight: currentPage === page ? "600" : "500",
+                              fontSize: "12px",
+                              minWidth: "32px"
+                            }}
+                          >
+                            {page}
+                          </button>
+                        </div>
+                      ))}
+                  </div>
+
+                  <button
+                    onClick={() => setCurrentPage(p => Math.min(maxPage, p + 1))}
+                    disabled={currentPage === maxPage}
+                    style={{
+                      padding: "6px 10px",
+                      border: currentPage === maxPage ? "1px solid #ddd" : "1px solid #1D6AB7",
+                      backgroundColor: currentPage === maxPage ? "#f0f0f0" : "#fff",
+                      color: currentPage === maxPage ? "#999" : "#1D6AB7",
+                      borderRadius: "4px",
+                      cursor: currentPage === maxPage ? "not-allowed" : "pointer",
+                      fontWeight: "500",
+                      fontSize: "12px"
+                    }}
+                  >
+                    Next ▶
+                  </button>
+
+                  <button
+                    onClick={() => setCurrentPage(maxPage)}
+                    disabled={currentPage === maxPage}
+                    style={{
+                      padding: "6px 10px",
+                      border: currentPage === maxPage ? "1px solid #ddd" : "1px solid #1D6AB7",
+                      backgroundColor: currentPage === maxPage ? "#f0f0f0" : "#fff",
+                      color: currentPage === maxPage ? "#999" : "#1D6AB7",
+                      borderRadius: "4px",
+                      cursor: currentPage === maxPage ? "not-allowed" : "pointer",
+                      fontWeight: "500",
+                      fontSize: "12px"
+                    }}
+                  >
+                    Last ▶▶
+                  </button>
+
+                  <span style={{ color: "#666", fontSize: "12px", marginLeft: "10px" }}>
+                    Page {currentPage} of {maxPage}
+                  </span>
+                </div>
+              ) : null;
+            })()}
+          </>
         )}
 
         {!loading && requests.length === 0 && (
@@ -579,27 +741,49 @@ function RequestList() {
               {/* Header */}
               <div className="modal-header" style={{ backgroundColor: "#9BC284", padding: "1.5rem", borderBottom: "2px solid #fff", color: "white", display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0, gap: "1rem" }}>
                 <h5 className="modal-title" style={{ color: "white", marginBottom: 0, flex: 1, fontSize: "1.25rem", fontWeight: "600" }}>ISSUANCE #{selectedRequest.RequestID}</h5>
-                <button
-                  type="button"
-                  onClick={() => setShowDetailsModal(false)}
-                  style={{
-                    background: "transparent",
-                    border: "none",
-                    color: "white",
-                    fontSize: "2rem",
-                    cursor: "pointer",
-                    padding: "0",
-                    width: "2rem",
-                    height: "2rem",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    flexShrink: 0
-                  }}
-                  aria-label="Close modal"
-                >
-                  ×
-                </button>
+                <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+                  <button
+                    type="button"
+                    onClick={handleCancelRequest}
+                    style={{
+                      background: "#EF4444",
+                      border: "none",
+                      color: "white",
+                      padding: "0.5rem 1rem",
+                      borderRadius: "4px",
+                      cursor: "pointer",
+                      fontSize: "0.9rem",
+                      fontWeight: "500",
+                      transition: "background 0.2s"
+                    }}
+                    onMouseOver={(e) => e.target.style.background = "#DC2626"}
+                    onMouseOut={(e) => e.target.style.background = "#EF4444"}
+                    aria-label="Cancel request"
+                  >
+                    Cancel Request
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowDetailsModal(false)}
+                    style={{
+                      background: "transparent",
+                      border: "none",
+                      color: "white",
+                      fontSize: "2rem",
+                      cursor: "pointer",
+                      padding: "0",
+                      width: "2rem",
+                      height: "2rem",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      flexShrink: 0
+                    }}
+                    aria-label="Close modal"
+                  >
+                    ×
+                  </button>
+                </div>
               </div>
 
               {/* Body */}
@@ -639,7 +823,7 @@ function RequestList() {
                             <span style={{ fontSize: "0.9rem", color: "#666", fontWeight: "600" }}>Qty: {product.quantity || 0}</span>
                           </div>
                           <div style={{ marginTop: "0.5rem", fontSize: "0.85rem", color: "#666" }}>
-                            <strong>Deadline:</strong> {product.deadline_extension || "N/A"}
+                            <strong>Deadline:</strong> {product.deadline || "N/A"}
                           </div>
                         </div>
                       ))}

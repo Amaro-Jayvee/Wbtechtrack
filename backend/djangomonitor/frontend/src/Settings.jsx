@@ -50,7 +50,6 @@ function Settings() {
   // Listen for archive updates from TaskDetailModal
   useEffect(() => {
     const handleArchivedUpdate = () => {
-      console.log("[Settings] Received archivedRequestsUpdated event, refreshing...");
       fetchArchivedRequests();
     };
 
@@ -189,37 +188,23 @@ function Settings() {
 
   const fetchArchivedRequests = async () => {
     try {
-      console.log("[Archived Requests] Fetching archived requests...");
       const response = await fetch("/app/archived-requests/", {
         method: "GET",
         credentials: "include",
       });
       
-      console.log("[Archived Requests] Response status:", response.status);
-      
       if (response.ok) {
         const data = await response.json();
-        console.log("[Archived Requests] Full response:", data);
         
         // Extract archived request products from the response
         let archivedProducts = [];
         if (Array.isArray(data)) {
-          console.log(`[Archived Requests] Response is array with ${data.length} items`);
           data.forEach((item, idx) => {
-            console.log(`[Archived Requests] Item ${idx}:`, item);
             if (item.products && Array.isArray(item.products)) {
-              console.log(`[Archived Requests] Found ${item.products.length} products for request ${item.request_id}`);
               // Each product already has request_id, id (RequestProduct ID), and archived_at from serializer
               archivedProducts = archivedProducts.concat(item.products);
             }
           });
-        } else {
-          console.warn("[Archived Requests] Response is not an array:", typeof data);
-        }
-        
-        console.log("[Archived Requests] Final products array count:", archivedProducts.length);
-        if (archivedProducts.length > 0) {
-          console.log("[Archived Requests] Sample product:", archivedProducts[0]);
         }
         setArchivedRequests(archivedProducts);
       } else {
@@ -288,9 +273,6 @@ function Settings() {
     setRestoreTargetId(null);
 
     try {
-      console.log(`[RestoreProduct] Restoring RequestProduct ${requestProductId}...`);
-      console.log(`[RestoreProduct] Sending payload:`, { request_product_id: requestProductId });
-      
       const response = await fetch("/app/restore-request-product/", {
         method: "POST",
         credentials: "include",
@@ -301,16 +283,9 @@ function Settings() {
         body: JSON.stringify({ request_product_id: requestProductId }),
       });
 
-      console.log(`[RestoreProduct] Response status: ${response.status}`);
-      console.log(`[RestoreProduct] Response headers:`, {
-        contentType: response.headers.get('content-type'),
-        contentLength: response.headers.get('content-length'),
-      });
-
       let data;
       try {
         data = await response.json();
-        console.log(`[RestoreProduct] Response data:`, data);
       } catch (parseErr) {
         console.error(`[RestoreProduct] Failed to parse JSON response:`, parseErr);
         const textData = await response.text();
@@ -320,7 +295,6 @@ function Settings() {
       }
 
       if (response.ok) {
-        console.log(`✅ Product ${requestProductId} restored successfully!`);
         setMessage(data.message || `✅ Product restored successfully!`);
         
         // Dispatch event for request list to refresh

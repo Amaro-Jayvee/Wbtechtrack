@@ -151,6 +151,12 @@ class Requests(models.Model):
         ("declined", "Declined"),
     ]
     
+    REQUEST_STATUS_CHOICES = [
+        ("new_request", "New Request"),
+        ("active", "Active"),
+        ("completed", "Completed"),
+    ]
+    
     RequestID = models.AutoField(primary_key=True)
     created_by = models.ForeignKey(User, on_delete=models.CASCADE, null=True, blank=True, related_name='encode_requests') #New field
     requester = models.ForeignKey(User, on_delete=models.CASCADE, null=True, blank=True, related_name='customer_requests') #New field
@@ -161,6 +167,7 @@ class Requests(models.Model):
     archived_at = models.DateTimeField("Archived At", null=True, blank=True)
     restored_at = models.DateTimeField("Restored At", null=True, blank=True)
     approval_status = models.CharField("Approval Status", max_length=20, choices=APPROVAL_STATUS_CHOICES, default="pending")
+    request_status = models.CharField("Request Status", max_length=20, choices=REQUEST_STATUS_CHOICES, default="new_request")
     approved_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='approved_requests')
     approval_notes = models.TextField("Approval Notes", blank=True, null=True)
 
@@ -245,7 +252,31 @@ class Requests(models.Model):
 
         return "Done" if total_completed >= total_requested else "In Progress"
 
+    def check_and_update_status(self):
+        """Check if all request products are completed and update request_status accordingly."""
+        if not self.request_products.exists():
+            return
+        
+        total_requested = self.total_requested_quantity()
+        total_completed = self.total_completed_quantity()
+        
+        # If all products are completed, update request_status to "completed"
+        if total_requested > 0 and total_completed >= total_requested:
+            if self.request_status != "completed":
+                self.request_status = "completed"
+                # Mark the time when request was completed
+                if not self.request_products.filter(completed_at__isnull=True).exists():
+                    # All products have completed_at set, so update it if needed
+                    pass
+                self.save()
+
 class RequestProduct(models.Model):
+    STATUS_CHOICES = [
+        ('active', 'Active'),
+        ('cancelled', 'Cancelled'),
+        ('completed', 'Completed'),
+    ]
+    
     request = models.ForeignKey(Requests, on_delete=models.CASCADE, related_name='request_products')
     product = models.ForeignKey('ProductName', on_delete=models.CASCADE, related_name='product_requests')
     quantity = models.PositiveIntegerField()
@@ -259,6 +290,10 @@ class RequestProduct(models.Model):
     completed_at = models.DateTimeField("Completed At", null=True, blank=True)
     archived_at = models.DateTimeField("Archived At", null=True, blank=True)
     restored_at = models.DateTimeField("Restored At", null=True, blank=True)
+    status = models.CharField("Status", max_length=20, choices=STATUS_CHOICES, default='active')
+    cancelled_at = models.DateTimeField("Cancelled At", null=True, blank=True)
+    cancelled_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='cancelled_requests')
+    cancellation_reason = models.TextField("Cancellation Reason", null=True, blank=True)
 
     def __str__(self):
         return f"{self.product.name} x{self.quantity} for Request #{self.request.RequestID}"
@@ -364,6 +399,13 @@ class ProcessName(models.Model):
         return self.name
 
 class ProductProcess(models.Model):
+    DEFECT_TYPE_CHOICES = [
+        ('dimension', 'Dimension problem'),
+        ('thickness', 'Thickness problem'),
+        ('rush', 'Rush problem'),
+        ('other', 'Other'),
+    ]
+    
     request_product = models.ForeignKey(RequestProduct, on_delete=models.CASCADE, null=True, blank=True, related_name='process_steps')
     product = models.ForeignKey(ProductName, on_delete=models.CASCADE, null=True, blank=True, related_name='configured_processes')
     workers = models.ManyToManyField(Worker, related_name="products", blank=True)
@@ -378,6 +420,16 @@ class ProductProcess(models.Model):
     created_at = models.DateTimeField("Created At", auto_now_add=True)
     updated_at = models.DateTimeField("Updated At", auto_now=True)
     archived_at = models.DateTimeField("Archived At", null=True, blank=True)
+    
+    # Quota tracking fields
+    quota_updated_at = models.DateTimeField("Quota Last Updated", null=True, blank=True)
+    quota_updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='quota_updates')
+    
+    # Defect tracking fields
+    defect_type = models.CharField("Defect Type", max_length=20, choices=DEFECT_TYPE_CHOICES, null=True, blank=True)
+    defect_description = models.TextField("Defect Description", null=True, blank=True)
+    defect_updated_at = models.DateTimeField("Defect Last Updated", null=True, blank=True)
+    defect_updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='defect_updates')
 
     # deadline_extension = models.DateField("Deadline Extension", null=True, blank=True)
     # extension_status = models.CharField(
@@ -488,6 +540,31 @@ class ProcessProgress(models.Model):
     completed_quota = models.PositiveIntegerField(default=0)
     defect_count = models.PositiveIntegerField(default=0)
     logged_at = models.DateField(auto_now_add=True)
+
+
+class DefectLog(models.Model):
+    """
+    Log individual defects for each ProductProcess.
+    Allows tracking multiple defect types with separate counts.
+    """
+    DEFECT_TYPE_CHOICES = [
+        ('dimension', 'Dimension problem'),
+        ('thickness', 'Thickness problem'),
+        ('rush', 'Rush problem'),
+        ('other', 'Other'),
+    ]
+    
+    product_process = models.ForeignKey(ProductProcess, on_delete=models.CASCADE, related_name='defect_logs')
+    defect_type = models.CharField("Defect Type", max_length=20, choices=DEFECT_TYPE_CHOICES)
+    defect_count = models.PositiveIntegerField("Defect Count", default=0)
+    created_at = models.DateTimeField("Created At", auto_now_add=True)
+    updated_at = models.DateTimeField("Updated At", auto_now=True)
+    
+    class Meta:
+        ordering = ['-updated_at']
+    
+    def __str__(self):
+        return f"{self.get_defect_type_display()} - {self.defect_count} defect(s)"
 
 
 class SystemSettings(models.Model):

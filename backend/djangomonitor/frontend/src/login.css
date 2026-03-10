@@ -1,4 +1,6 @@
-/* ===== ROLE SELECTION SCREEN ===== */
+@import url('https://fonts.googleapis.com/css2?family=Roboto+Slab:wght@700;900&display=swap');
+
+/* Left Side - Branding Section */
 .login-container.role-select {
   width: 99%;
   max-width: none;
@@ -47,6 +49,13 @@
   margin-bottom: clamp(15px, 3vw, 25px);
   color: #333;
   letter-spacing: 0.5px;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  cursor: default;
+}
+
+.role-title:hover {
+  color: #1D6AB7;
+  transform: translateY(-2px);
 }
 
 .role-tagline {
@@ -211,37 +220,50 @@ body {
   background: #ffffff;
 }
 
-/* Login Page Wrapper - Gradient Background */
+/* Login Page Wrapper - Scroll Container */
 .login-page-wrapper {
-  background: linear-gradient(180deg, #f5f5f5 0%, #87ceeb 50%, #4a90e2 100%);
+  display: flex;
+  flex-direction: column;
+  overflow-x: hidden;
   min-height: 100vh;
+}
+
+/* Login Hero - Full Viewport with SVG Background */
+.login-hero {
+  height: 100vh;
+  min-height: 100vh;
+  background: url('/WB - LOGIN_BG.svg') center / cover no-repeat;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 10px;
+  flex-shrink: 0;
+  overflow: hidden;
 }
 
 /* Login Container - Centered Card */
 .login-container {
   display: flex;
-  width: 95%;
-  max-width: 1000px;
-  height: 500px;
+  width: 90%;
+  max-width: 780px;
+  height: auto;
+  aspect-ratio: 2 / 1;
   background: transparent;
   border-radius: 0;
   box-shadow: none;
   overflow: hidden;
+  align-items: stretch;
+  justify-content: center;
+  flex-shrink: 0;
 }
 
 /* Left Side - Branding Section */
 .login-left {
   flex: 1;
-  background: #3388DD;
+  background: #043a83;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 40px;
-  min-height: auto;
+  padding: clamp(20px, 3vw, 35px);
   box-sizing: border-box;
 }
 
@@ -252,9 +274,9 @@ body {
 }
 
 .brand-logo {
-  width: clamp(120px, 25vw, 280px);
+  width: clamp(160px, 28vw, 300px);
   height: auto;
-  margin-bottom: clamp(20px, 8vw, 45px);
+  margin-bottom: clamp(12px, 4vw, 25px);
   filter: drop-shadow(0 8px 24px rgba(0, 0, 0, 0.3));
   transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
   transform: translateZ(0);
@@ -266,22 +288,29 @@ body {
 }
 
 .brand-title {
-  font-size: clamp(18px, 3.5vw, 28px);
-  font-weight: 800;
-  letter-spacing: 1.5px;
-  margin-bottom: clamp(12px, 4vw, 20px);
+  font-size: clamp(18px, 3.5vw, 24px);
+  font-weight: 900;
+  letter-spacing: 1px;
+  margin-bottom: clamp(8px, 2vw, 12px);
   color: white;
   text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.15);
-  font-family: 'Segoe UI', 'Trebuchet MS', sans-serif;
+  font-family: 'Roboto Slab', serif;
   white-space: nowrap;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  cursor: default;
+}
+
+.brand-title:hover {
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.3), 0 4px 12px rgba(29, 106, 183, 0.2);
+  transform: translateY(-2px);
 }
 
 .brand-tagline {
-  font-size: clamp(12px, 2.5vw, 16px);
+  font-size: clamp(11px, 2vw, 14px);
   font-weight: 400;
-  letter-spacing: 0.8px;
+  letter-spacing: 0.5px;
   opacity: 0.95;
-  line-height: 1.6;
+  line-height: 1.5;
   color: white;
   font-family: 'Segoe UI', 'Trebuchet MS', sans-serif;
   white-space: nowrap;
@@ -292,71 +321,113 @@ body {
   flex: 1;
   background-color: #ffffff;
   display: flex;
-  align-items: flex-start;
-  justify-content: flex-start;
+  align-items: center;
+  justify-content: center;
   padding: 0;
-  min-height: auto;
   box-sizing: border-box;
+  overflow: hidden;
   width: 100%;
-  overflow-y: auto;
 }
 
 .login-right > form {
   width: 100%;
-  max-width: 450px;
+  max-width: 380px;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: clamp(5px, 1.3vw, 9px);
   align-items: stretch;
   margin: 0;
-  padding: clamp(40px, 6vw, 80px);
-  padding-top: clamp(40px, 6vw, 80px);
+  padding: clamp(14px, 2.2vw, 32px);
+  padding-top: clamp(12px, 1.8vw, 25px);
+}
+
+/* Login Form Title */
+.login-form-title {
+  font-size: clamp(22px, 3vw, 26px);
+  font-weight: 700;
+  color: #222;
+  margin: 0 0 clamp(6px, 0.8vw, 8px) 0;
+  font-family: 'Segoe UI', 'Trebuchet MS', sans-serif;
+  letter-spacing: 0.3px;
 }
 
 /* Form Styling */
+.login-label {
+  font-weight: 400;
+  color: #222;
+  margin-bottom: clamp(2px, 0.2vw, 3px);
+  font-size: clamp(11px, 1.4vw, 13px);
+  display: block;
+  font-family: 'Segoe UI', 'Trebuchet MS', sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Bootstrap compatibility - don't override */
 .form-label {
   font-weight: 700;
   color: #222;
-  margin-bottom: 8px;
-  font-size: clamp(14px, 2.5vw, 16px);
+  margin-bottom: 0.5rem;
+  font-size: inherit;
   display: block;
-  font-family: 'Segoe UI', 'Trebuchet MS', sans-serif;
+  font-family: inherit;
 }
 
-.form-control {
+.login-input {
   border: 2px solid #e0e0e0;
-  border-radius: 8px;
-  padding: clamp(14px, 3vw, 18px) clamp(14px, 3vw, 18px);
-  font-size: clamp(14px, 2.5vw, 16px);
+  border-radius: clamp(5px, 0.8vw, 7px);
+  padding: clamp(7px, 1.1vw, 10px) clamp(10px, 1.2vw, 12px);
+  font-size: clamp(13px, 1.6vw, 15px);
   transition: all 0.3s ease;
   width: 100%;
   box-sizing: border-box;
   font-family: 'Segoe UI', 'Trebuchet MS', sans-serif;
   height: auto;
-  min-height: 50px;
+  min-height: clamp(32px, 3.8vw, 36px);
 }
 
-.form-control:focus {
+.login-input:focus {
   border-color: #3388DD;
   box-shadow: 0 0 0 0.2rem rgba(51, 136, 221, 0.25);
   outline: none;
+}
+
+/* Bootstrap compatibility - don't override */
+.form-control {
+  border: 1px solid #dee2e6;
+  border-radius: 0.375rem;
+  padding: 0.375rem 0.75rem;
+  font-size: 1rem;
+  transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.form-control:focus {
+  border-color: #86b7fe;
+  box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
+  outline: 0;
 }
 
 /* Button Styling */
 .btn-primary {
   background-color: #3388DD;
   border-color: #3388DD;
-  border-radius: 8px;
+  border-radius: clamp(5px, 0.8vw, 7px);
   font-weight: 700;
-  font-size: clamp(15px, 2.5vw, 17px);
-  padding: clamp(14px, 3vw, 18px) clamp(24px, 3vw, 32px);
+  font-size: clamp(10px, 1.2vw, 11px);
+  padding: clamp(7px, 1vw, 9px) clamp(14px, 1.5vw, 18px);
   transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
   cursor: pointer;
-  min-width: 140px;
-  width: 100%;
+  min-width: clamp(60px, 10vw, 100px);
+  width: auto;
+  max-width: 90%;
   white-space: nowrap;
   font-family: 'Segoe UI', 'Trebuchet MS', sans-serif;
-  box-shadow: 0 4px 12px rgba(51, 136, 221, 0.3);
+  box-shadow: 0 clamp(1.5px, 0.4vw, 3px) clamp(6px, 1.2vw, 10px) rgba(51, 136, 221, 0.3);
+  min-height: clamp(32px, 4vw, 38px);
+  margin: 0 auto;
+  display: block;
 }
 
 .btn-primary:hover {
@@ -364,6 +435,12 @@ body {
   border-color: #2563eb;
   transform: translateY(-2px);
   box-shadow: 0 8px 20px rgba(51, 136, 221, 0.4);
+}
+
+/* Sign In Button - Full Width */
+.sign-in-btn {
+  width: 100% !important;
+  max-width: 100% !important;
 }
 
 .btn-outline-primary {
@@ -390,12 +467,13 @@ body {
 .forgot-password {
   text-decoration: none;
   color: #666;
-  font-size: clamp(12px, 2vw, 14px);
+  font-size: 13px !important;
   transition: all 0.3s ease;
   display: block;
   text-align: center;
   font-weight: 500;
   font-family: 'Segoe UI', 'Trebuchet MS', sans-serif;
+  margin-top: clamp(1px, 0.2vw, 2px);
 }
 
 .forgot-password:hover {
@@ -409,7 +487,7 @@ body {
   border: none;
   color: #3388DD;
   cursor: pointer;
-  font-size: clamp(10px, 1.5vw, 12px);
+  font-size: clamp(18px, 2.2vw, 20px);
   padding: 0;
   text-decoration: none;
   transition: color 0.3s ease;
@@ -421,12 +499,139 @@ body {
   text-decoration: underline;
 }
 
+/* Text Center Utility */
+.text-center {
+  text-align: center;
+}
+
+.text-center p {
+  margin: 0;
+  font-size: 12px !important;
+  color: #555;
+  line-height: 1.3;
+}
+
+.text-center p.mb-0 {
+  margin-bottom: 0;
+}
+
+.text-center .btn-link-simple {
+  background: none;
+  border: none;
+  color: #3388DD;
+  cursor: pointer;
+  text-decoration: none;
+  font-weight: 600;
+  padding: clamp(6px, 1vw, 10px) clamp(12px, 1.5vw, 18px);
+  font-size: 13px !important;
+  transition: all 0.3s ease;
+  display: inline-block;
+}
+
+.text-center .btn-link-simple:hover {
+  color: #2563eb;
+  text-decoration: underline;
+}
+
+/* Margin Utilities */
+.mt-3 {
+  margin-top: clamp(6px, 1vw, 10px) !important;
+}
+
+/* Separator Line */
+.my-separator {
+  border: none;
+  border-top: 2px solid #ddd;
+  margin: clamp(2px, 0.3vw, 3px) 0;
+  padding: 0;
+}
+
 /* Alert Messages */
 .alert {
   border-radius: 4px;
-  font-size: clamp(10px, 1.5vw, 12px);
-  margin-bottom: 12px;
-  padding: clamp(6px, 1vw, 10px) clamp(8px, 1.5vw, 12px);
+  font-size: clamp(10px, 1.3vw, 12px);
+  margin-bottom: clamp(6px, 1vw, 10px);
+  padding: clamp(5px, 1vw, 8px) clamp(6px, 1vw, 10px);
+}
+
+/* ===== FOOTER ===== */
+.login-footer {
+  width: 100%;
+  background: white;
+  padding: clamp(24px, 4vw, 40px) clamp(20px, 3vw, 60px);
+  border-top: 3px solid #043a83;
+  box-shadow: 0 -4px 16px rgba(4, 58, 131, 0.1);
+  flex-shrink: 0;
+  margin-top: 0;
+}
+
+.footer-content {
+  max-width: 1400px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.footer-title {
+  font-size: clamp(16px, 2.2vw, 22px);
+  font-weight: 700;
+  color: #043a83;
+  margin-bottom: clamp(16px, 2.5vw, 20px);
+  letter-spacing: 0.5px;
+  font-family: 'Roboto Slab', serif;
+}
+
+.footer-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: clamp(16px, 2.5vw, 28px);
+  margin-bottom: clamp(24px, 3.5vw, 32px);
+  padding-bottom: clamp(24px, 3.5vw, 32px);
+  border-bottom: 2px solid rgba(4, 58, 131, 0.1);
+}
+
+.footer-item {
+  display: flex;
+  flex-direction: column;
+  gap: clamp(4px, 0.8vw, 6px);
+}
+
+.footer-label {
+  font-size: clamp(12px, 1.4vw, 14px);
+  font-weight: 700;
+  color: #043a83;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  font-family: 'Segoe UI', 'Trebuchet MS', sans-serif;
+}
+
+.footer-text {
+  font-size: clamp(12px, 1.5vw, 14px);
+  color: #333;
+  font-family: 'Segoe UI', 'Trebuchet MS', sans-serif;
+  line-height: 1.5;
+}
+
+.footer-vision {
+  background: rgba(4, 58, 131, 0.04);
+  padding: clamp(20px, 3vw, 32px);
+  border-left: 4px solid #043a83;
+  border-radius: 4px;
+}
+
+.footer-vision-title {
+  font-size: clamp(14px, 1.8vw, 18px);
+  font-weight: 700;
+  color: #043a83;
+  margin-bottom: clamp(12px, 2vw, 16px);
+  font-family: 'Roboto Slab', serif;
+}
+
+.footer-vision-text {
+  font-size: clamp(12px, 1.5vw, 14px);
+  color: #333;
+  line-height: 1.8;
+  font-family: 'Segoe UI', 'Trebuchet MS', sans-serif;
+  white-space: pre-wrap;
 }
 
 /* ===== RESPONSIVE DESIGN ===== */
@@ -434,20 +639,13 @@ body {
 /* Large Screens - 1200px and above */
 @media (min-width: 1200px) {
   .login-container {
-    width: 95%;
-    height: 500px;
-  }
-}
-
-/* Medium Screens - 768px to 1199px (Tablets) */
-@media (max-width: 1199px) {
-  .login-container {
-    width: 95%;
-    height: 500px;
+    width: 85%;
+    max-width: 800px;
+    aspect-ratio: 2 / 1;
   }
 
   .login-left {
-    padding: 1.5rem;
+    padding: clamp(15px, 2.5vw, 28px);
   }
 
   .login-right {
@@ -455,33 +653,130 @@ body {
   }
 
   .login-right > form {
-    max-width: 380px;
-    padding: clamp(30px, 5vw, 50px);
+    max-width: 100%;
+    padding: clamp(16px, 2.2vw, 28px);
+    gap: clamp(8px, 1.1vw, 12px);
   }
 
-  .form-control {
-    padding: clamp(11px, 2.5vw, 13px) clamp(12px, 2.5vw, 14px);
-    min-height: 48px;
+  .login-form-title {
+    font-size: clamp(16px, 2vw, 20px);
+    margin-bottom: clamp(8px, 1.3vw, 10px);
+  }
+
+  .brand-logo {
+    width: clamp(130px, 22vw, 240px);
+    margin-bottom: clamp(10px, 3vw, 20px);
+  }
+
+  .brand-title {
+    font-size: clamp(15px, 2.8vw, 21px);
+    margin-bottom: clamp(6px, 1.5vw, 10px);
+  }
+
+  .brand-tagline {
+    font-size: clamp(10px, 1.8vw, 13px);
+  }
+
+  .login-label {
+    font-size: clamp(10px, 1.3vw, 12px);
+    margin-bottom: clamp(3px, 0.4vw, 4px);
+    font-weight: 400;
+  }
+
+  .login-input {
+    padding: clamp(5px, 1.1vw, 7px) clamp(8px, 1vw, 10px);
+    min-height: clamp(42px, 5vw, 48px);
+    font-size: clamp(12px, 1.5vw, 14px);
   }
 
   .btn-primary {
-    padding: clamp(11px, 2.5vw, 13px) clamp(14px, 2vw, 16px);
+    padding: clamp(7px, 1.3vw, 10px) clamp(12px, 1.3vw, 18px);
+    min-height: clamp(28px, 4vw, 36px);
+    font-size: clamp(10px, 1.2vw, 11px);
+  }
+
+  .forgot-password {
+    font-size: clamp(9px, 1.2vw, 10px);
+    margin-top: clamp(2px, 0.3vw, 3px);
+  }
+
+  .text-center p {
+    font-size: clamp(8px, 1.1vw, 9px);
+  }
+}
+
+/* Medium Screens - 768px to 1199px (Tablets) */
+@media (max-width: 1199px) {
+  .login-container {
+    width: 88%;
+    max-width: 750px;
+    aspect-ratio: 2 / 1;
+  }
+
+  .login-left {
+    padding: clamp(18px, 3vw, 32px);
+  }
+
+  .login-right {
+    padding: 0;
+  }
+
+  .login-right > form {
+    max-width: 100%;
+    padding: clamp(15px, 2.5vw, 32px);
+    gap: clamp(7px, 1.3vw, 10px);
+  }
+
+  .login-form-title {
+    font-size: clamp(15px, 2.3vw, 19px);
+    margin-bottom: clamp(8px, 1.3vw, 12px);
+  }
+
+  .brand-logo {
+    width: clamp(125px, 21vw, 230px);
+    margin-bottom: clamp(10px, 3.5vw, 22px);
+  }
+
+  .brand-title {
+    font-size: clamp(16px, 2.8vw, 20px);
+    margin-bottom: clamp(7px, 1.8vw, 11px);
+  }
+
+  .brand-tagline {
+    font-size: clamp(10px, 1.8vw, 13px);
+  }
+
+  .btn-primary {
+    padding: clamp(8px, 1.8vw, 12px) clamp(12px, 1.5vw, 20px);
+    min-height: clamp(33px, 4.2vw, 40px);
+    font-size: clamp(10px, 1.5vw, 12px);
+  }
+
+  .forgot-password {
+    font-size: clamp(16px, 2vw, 18px);
+    margin-top: clamp(2px, 0.4vw, 3px);
+  }
+
+  .text-center p {
+    font-size: clamp(13px, 1.8vw, 16px);
   }
 }
 
 /* Small Tablets - 600px to 767px */
 @media (max-width: 767px) {
   .login-container {
-    width: 100%;
+    width: 95%;
+    max-width: 100%;
     flex-direction: column;
     aspect-ratio: auto;
     height: auto;
+    min-height: auto;
   }
 
   .login-container.role-select {
     width: 100%;
     max-width: 100%;
-    padding: clamp(20px, 3vw, 30px);
+    padding: clamp(15px, 3vw, 25px);
   }
 
   .role-selection-content {
@@ -489,17 +784,17 @@ body {
   }
 
   .role-header {
-    margin-bottom: clamp(30px, 5vw, 40px);
+    margin-bottom: clamp(20px, 4vw, 30px);
   }
 
   .role-cards-wrapper {
     flex-direction: column;
-    gap: clamp(20px, 4vw, 30px);
+    gap: clamp(15px, 3vw, 25px);
     width: 100%;
   }
 
   .role-question {
-    font-size: clamp(14px, 3vw, 18px);
+    font-size: clamp(12px, 3vw, 16px);
     text-align: center;
     min-width: auto;
     margin-bottom: 0;
@@ -508,125 +803,125 @@ body {
   .role-buttons-group {
     flex-direction: row;
     flex-wrap: nowrap;
-    gap: clamp(12px, 2vw, 20px);
-    padding: 0 clamp(15px, 2vw, 20px);
+    gap: clamp(10px, 2vw, 15px);
+    padding: 0 clamp(10px, 2vw, 15px);
     width: 100%;
   }
 
   .role-btn {
-    min-height: 160px;
+    min-height: 140px;
     flex: 1;
     min-width: 100px;
-    padding: clamp(18px, 3vw, 28px);
+    padding: clamp(15px, 2.5vw, 20px);
   }
 
   .login-left {
     flex: 0;
-    min-height: 240px;
-    padding: 2rem 1.5rem;
+    min-height: 180px;
+    padding: clamp(15px, 3vw, 25px);
+    width: 100%;
   }
 
   .login-right {
     flex: 0;
     padding: 0;
     min-height: auto;
+    width: 100%;
   }
 
   .login-right > form {
-    max-width: 400px;
-    padding: clamp(30px, 5vw, 60px);
+    max-width: 100%;
+    width: 100%;
+    padding: clamp(14px, 2vw, 28px);
+    gap: clamp(7px, 1.3vw, 10px);
+  }
+
+  .login-form-title {
+    font-size: clamp(14px, 2vw, 18px);
+    margin-bottom: clamp(8px, 1.2vw, 12px);
   }
 
   .brand-logo {
-    width: clamp(90px, 18vw, 150px);
+    width: clamp(110px, 20vw, 180px);
   }
 
   .brand-title {
-    font-size: clamp(20px, 5.5vw, 28px);
+    font-size: clamp(16px, 3.2vw, 22px);
   }
 
   .brand-tagline {
-    font-size: clamp(12px, 3.5vw, 16px);
-  }
-
-  .form-label {
-    font-size: clamp(13px, 2.8vw, 15px);
-    margin-bottom: 6px;
-  }
-
-  .form-control {
-    font-size: clamp(13px, 2.8vw, 15px);
-    padding: clamp(11px, 2.5vw, 13px) clamp(12px, 2.5vw, 14px);
-    min-height: 48px;
+    font-size: clamp(11px, 2.2vw, 14px);
   }
 
   .btn-primary {
-    font-size: clamp(13px, 2.8vw, 15px);
-    padding: clamp(11px, 2.5vw, 13px) clamp(14px, 2vw, 16px);
+    font-size: clamp(11px, 1.8vw, 13px);
+    padding: clamp(8px, 1.5vw, 11px) clamp(10px, 1.5vw, 12px);
+    min-height: clamp(34px, 4.5vw, 42px);
   }
 }
 
 /* Mobile Phones - 480px to 599px */
 @media (max-width: 599px) {
   body {
-    padding: 8px;
+    padding: 4px;
   }
 
   .login-container {
-    width: 100%;
-    border-radius: 6px;
+    width: 98%;
+    max-width: 100%;
+    border-radius: 4px;
   }
 
   .login-left {
-    min-height: 180px;
-    padding: 1rem;
+    min-height: 140px;
+    padding: clamp(12px, 2vw, 16px);
+    width: 100%;
   }
 
   .login-right {
     padding: 0;
+    width: 100%;
   }
 
   .login-right > form {
-    max-width: 350px;
-    padding: clamp(20px, 3vw, 40px);
+    max-width: 100%;
+    width: 100%;
+    padding: clamp(12px, 2vw, 20px);
+    gap: clamp(7px, 1.5vw, 10px);
+  }
+
+  .login-form-title {
+    font-size: clamp(12px, 2vw, 16px);
+    margin-bottom: clamp(6px, 1vw, 10px);
   }
 
   .brand-logo {
-    width: clamp(60px, 20vw, 100px);
-    margin-bottom: clamp(8px, 4vw, 15px);
+    width: clamp(48px, 11vw, 75px);
+    margin-bottom: clamp(5px, 1.5vw, 9px);
   }
 
   .brand-title {
-    font-size: clamp(14px, 5vw, 18px);
-    margin-bottom: clamp(6px, 2vw, 10px);
+    font-size: clamp(11px, 3vw, 15px);
+    margin-bottom: clamp(3px, 1vw, 6px);
   }
 
   .brand-tagline {
-    font-size: clamp(10px, 3vw, 11px);
+    font-size: clamp(8px, 1.8vw, 10px);
   }
 
-  .form-label {
-    font-size: clamp(11px, 2.5vw, 12px);
-    margin-bottom: 4px;
+  .forgot-password {
+    font-size: clamp(8px, 1.3vw, 9px);
+    margin-top: clamp(2px, 0.3vw, 3px);
   }
 
-  .form-control {
-    padding: clamp(11px, 2.5vw, 13px) clamp(12px, 2.5vw, 14px);
-    font-size: clamp(12px, 2.5vw, 13px);
-    min-height: 48px;
-  }
-
-  .btn-primary,
-  .btn-outline-primary {
-    min-width: 70px;
-    font-size: clamp(11px, 2vw, 12px);
-    padding: clamp(11px, 2.5vw, 13px) clamp(12px, 2vw, 14px);
+  .text-center p {
+    font-size: clamp(7px, 1.2vw, 9px);
   }
 
   .login-container.role-select {
-    width: 100%;
+    width: 98%;
     max-width: 100%;
-    padding: clamp(15px, 2.5vw, 25px);
+    padding: clamp(10px, 2vw, 15px);
   }
 
   .role-selection-content {
@@ -634,11 +929,11 @@ body {
   }
 
   .role-header {
-    margin-bottom: clamp(25px, 4vw, 35px);
+    margin-bottom: clamp(15px, 3vw, 20px);
   }
 
   .role-question {
-    font-size: clamp(12px, 3vw, 15px);
+    font-size: clamp(11px, 2.5vw, 14px);
     margin-bottom: 0;
     text-align: center;
     min-width: auto;
@@ -655,40 +950,42 @@ body {
   .role-btn {
     min-height: 130px;
     width: 100%;
-    padding: clamp(15px, 2.5vw, 20px);
+    padding: clamp(14px, 2vw, 18px);
   }
 
   .role-icon {
-    font-size: clamp(28px, 7vw, 40px);
+    font-size: clamp(26px, 6vw, 36px);
   }
 
   .role-name {
-    font-size: clamp(14px, 2.5vw, 17px);
+    font-size: clamp(12px, 2vw, 15px);
   }
 
   .role-desc {
-    font-size: clamp(11px, 1.8vw, 12px);
+    font-size: clamp(10px, 1.5vw, 11px);
   }
 
   .forgot-password,
   .btn-link-text {
-    font-size: clamp(9px, 1.5vw, 10px);
+    font-size: clamp(8px, 1.3vw, 9px);
   }
 }
 
 /* Extra Small Phones - Below 480px */
 @media (max-width: 479px) {
   body {
-    padding: 5px;
+    padding: 2px;
   }
 
   .login-container {
-    border-radius: 4px;
+    width: 99%;
+    max-width: 100%;
+    border-radius: 3px;
   }
 
   .login-left {
-    min-height: 160px;
-    padding: 0.75rem;
+    min-height: 120px;
+    padding: clamp(8px, 2vw, 12px);
   }
 
   .login-right {
@@ -696,67 +993,45 @@ body {
   }
 
   .login-right > form {
-    padding: 0.75rem;
+    padding: clamp(10px, 2vw, 15px);
+    gap: clamp(8px, 1.5vw, 10px);
   }
 
   .brand-logo {
-    width: clamp(50px, 18vw, 80px);
-    margin-bottom: clamp(6px, 3vw, 12px);
+    width: clamp(85px, 18vw, 140px);
+    margin-bottom: clamp(4px, 2vw, 8px);
   }
 
   .brand-title {
-    font-size: clamp(12px, 4vw, 14px);
+    font-size: clamp(13px, 3.5vw, 16px);
   }
 
   .brand-tagline {
-    font-size: clamp(9px, 2.5vw, 10px);
+    font-size: clamp(9px, 2vw, 11px);
   }
 
-  .form-label {
-    font-size: clamp(10px, 2vw, 11px);
-    margin-bottom: 3px;
+  .login-label {
+    font-size: clamp(11px, 1.6vw, 13px);
+    margin-bottom: clamp(4px, 0.7vw, 5px);
+    font-weight: 400;
   }
 
-  .form-control {
-    padding: clamp(10px, 2vw, 12px) clamp(10px, 2vw, 12px);
-    font-size: clamp(11px, 2vw, 12px);
-    min-height: 45px;
+  .login-input {
+    padding: clamp(7px, 1.3vw, 9px) clamp(9px, 1.6vw, 11px);
+    font-size: clamp(13px, 1.6vw, 15px);
+    min-height: clamp(40px, 4.8vw, 44px);
   }
 
   .btn-primary,
   .btn-outline-primary {
-    font-size: clamp(10px, 1.5vw, 11px);
-    padding: clamp(5px, 1vw, 6px) clamp(8px, 1.5vw, 10px);
+    min-width: 50px;
+    font-size: clamp(9px, 1.2vw, 10px);
+    padding: clamp(7px, 1.2vw, 9px) clamp(8px, 1.5vw, 10px);
   }
 
   .forgot-password,
   .btn-link-text {
-    font-size: clamp(9px, 1.5vw, 10px);
-  }
-
-  .login-container.role-select {
-    width: 100%;
-    max-width: 100%;
-    padding: clamp(12px, 2.5vw, 20px);
-  }
-
-  .role-selection-content {
-    padding: 0;
-  }
-
-  .role-header {
-    margin-bottom: clamp(15px, 2.5vw, 20px);
-  }
-
-  .role-question {
-    font-size: clamp(12px, 3vw, 15px);
-    margin-bottom: clamp(15px, 2.5vw, 20px);
-  }
-
-  .role-buttons-group {
-    grid-template-columns: 1fr;
-    gap: clamp(12px, 2vw, 15px);
-    padding: 0;
+    font-size: clamp(8px, 1.2vw, 9px);
   }
 
   .role-logo {
@@ -849,6 +1124,14 @@ body {
   font-size: 20px;
   font-weight: 600;
   color: #333;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  cursor: default;
+}
+
+.modal-title-custom:hover {
+  color: #1D6AB7;
+  transform: translateX(2px);
+  text-shadow: 0 1px 3px rgba(29, 106, 183, 0.15);
 }
 
 .modal-body-custom {

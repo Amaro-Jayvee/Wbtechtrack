@@ -58,7 +58,6 @@ function ExtensionRequestModal({ taskData, requestProductId, onClose, onSuccess 
 
       if (response.ok) {
         const data = await response.json();
-        console.log("Extension request submitted:", data);
         
         // Show success toast FIRST (while modals are still visible)
         setShowSuccessMessage(true);

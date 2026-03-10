@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import Calendar from "react-calendar";
 import "react-calendar/dist/Calendar.css";
@@ -24,40 +24,28 @@ function CustomerViewRequests() {
   const navigate = useNavigate();
   const { userData } = useUser();
   const [requests, setRequests] = useState([]);
+  const [cancelledRequests, setCancelledRequests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
+  const [requestStatusFilter, setRequestStatusFilter] = useState("active");
   const [statusFilter, setStatusFilter] = useState("all");
   const [searchTerm, setSearchTerm] = useState("");
+  const [sortBy, setSortBy] = useState("number");
+  const [sortOrder, setSortOrder] = useState("desc");
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [showProfileDropdown, setShowProfileDropdown] = useState(false);
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [showNotificationDropdown, setShowNotificationDropdown] = useState(false);
+  const [notificationFilter, setNotificationFilter] = useState("all");
   const [notificationActionMenu, setNotificationActionMenu] = useState(null);
   const [showDeleteConfirmation, setShowDeleteConfirmation] = useState(false);
   const [notificationToDelete, setNotificationToDelete] = useState(null);
   const [deleteToastMessage, setDeleteToastMessage] = useState("");
 
-  // Create Request Modal state
-  const [showCreateRequestModal, setShowCreateRequestModal] = useState(false);
-  const [createRequestLoading, setCreateRequestLoading] = useState(false);
-  const [createRequestMessage, setCreateRequestMessage] = useState("");
-  const [showSuccessModal, setShowSuccessModal] = useState(false);
-  const [formData, setFormData] = useState({
-    product: "",
-    quantity: "",
-    deadline: "",
-  });
-  const [products, setProducts] = useState([]);
-  const [configuredProducts, setConfiguredProducts] = useState([]);
-  const [newProductIds, setNewProductIds] = useState(new Set());
-  const [addedProducts, setAddedProducts] = useState([]);
-  const [showProductDropdown, setShowProductDropdown] = useState(false);
-  const [showDeadlineCalendar, setShowDeadlineCalendar] = useState(false);
-  const [showProductCalendars, setShowProductCalendars] = useState({});
-
-  const pollIntervalRef = useRef(null);
   const dropdownButtonRef = useRef(null);
   const dropdownMenuRef = useRef(null);
   const calendarRef = useRef(null);
@@ -65,21 +53,30 @@ function CustomerViewRequests() {
   const getInitial = (username) => username.charAt(0).toUpperCase();
 
   useEffect(() => {
-    fetchRequests();
+    if (requestStatusFilter === "cancelled") {
+      fetchCancelledRequests();
+    } else {
+      fetchRequests();
+    }
     fetchNotifications();
 
-    // Poll for new requests every 2 seconds (more frequent updates)
-    pollIntervalRef.current = setInterval(() => {
-      fetchRequests();
-      fetchNotifications();
-    }, 2000);
-
-    return () => {
-      if (pollIntervalRef.current) {
-        clearInterval(pollIntervalRef.current);
+    // Listen for request cancellation events to refresh cancelled requests
+    const handleRequestCancelled = () => {
+      console.log("Request cancelled event received, refreshing...");
+      if (requestStatusFilter === "cancelled") {
+        fetchCancelledRequests();
+      } else {
+        // Also refetch active/completed to remove the cancelled request
+        fetchRequests();
       }
     };
-  }, []);
+
+    window.addEventListener('requestCancelled', handleRequestCancelled);
+
+    return () => {
+      window.removeEventListener('requestCancelled', handleRequestCancelled);
+    };
+  }, [requestStatusFilter]);
 
   const fetchNotifications = async () => {
     try {
@@ -99,11 +96,19 @@ function CustomerViewRequests() {
 
   const markNotificationRead = async (notificationId) => {
     try {
-      await fetch(`http://localhost:8000/app/notifications/${notificationId}/read/`, {
+      // Update local state immediately (optimistic update)
+      const updatedNotifications = notifications.map(n =>
+        n.id === notificationId ? { ...n, is_read: true } : n
+      );
+      setNotifications(updatedNotifications);
+      const newUnreadCount = updatedNotifications.filter(n => !n.is_read).length;
+      setUnreadCount(newUnreadCount);
+      
+      // Mark as read on server (fire and forget, don't refetch)
+      const response = await fetch(`http://localhost:8000/app/notifications/${notificationId}/read/`, {
         method: "POST",
         credentials: "include",
       });
-      fetchNotifications();
     } catch (err) {
       console.error("Error marking notification read:", err);
     }
@@ -111,16 +116,21 @@ function CustomerViewRequests() {
 
   const deleteNotification = async (notificationId) => {
     try {
+      // Update local state immediately (optimistic update)
+      const updatedNotifications = notifications.filter(n => n.id !== notificationId);
+      setNotifications(updatedNotifications);
+      const newUnreadCount = updatedNotifications.filter(n => !n.is_read).length;
+      setUnreadCount(newUnreadCount);
+      
+      setShowDeleteConfirmation(false);
+      setNotificationToDelete(null);
+      setDeleteToastMessage("Notification deleted successfully");
+      
+      // Delete on server (fire and forget, don't refetch)
       const response = await fetch(`http://localhost:8000/app/notifications/${notificationId}/delete/`, {
         method: "POST",
         credentials: "include",
       });
-      if (response.ok) {
-        fetchNotifications();
-        setShowDeleteConfirmation(false);
-        setNotificationToDelete(null);
-        setDeleteToastMessage("Notification deleted successfully");
-      }
     } catch (err) {
       console.error("Error deleting notification:", err);
     }
@@ -140,28 +150,76 @@ function CustomerViewRequests() {
         return;
       }
 
-      // Fetch customer's assigned requests with cache busting
-      const requestsResponse = await fetch(
-        `http://localhost:8000/app/customer/my-requests/?t=${Date.now()}`,
-        {
-          method: "GET",
-          credentials: "include",
-          cache: "no-store", // Force fresh data
-        }
-      );
+      setLoading(true);
 
-      if (!requestsResponse.ok) {
-        setMessage("❌ Failed to load your requests");
-        setTimeout(() => setMessage(""), 3000);
-        setRequests([]);
-        return;
+      // For completed tab, fetch both active and completed to show 100% items from active requests
+      const statusesToFetch = requestStatusFilter === "completed" 
+        ? ["active", "completed"]
+        : [requestStatusFilter];
+
+      const allRequests = [];
+
+      for (const status of statusesToFetch) {
+        const requestsResponse = await fetch(
+          `http://localhost:8000/app/customer/my-requests/?request_status=${status}&t=${Date.now()}`,
+          {
+            method: "GET",
+            credentials: "include",
+            cache: "no-store", // Force fresh data
+          }
+        );
+
+        if (requestsResponse.ok) {
+          const requestsData = await requestsResponse.json();
+          allRequests.push(...(Array.isArray(requestsData) ? requestsData : []));
+        }
       }
 
-      const requestsData = await requestsResponse.json();
-      setRequests(Array.isArray(requestsData) ? [...requestsData] : []);
+      if (allRequests.length === 0 && statusesToFetch.length > 0 && !allRequests[0]) {
+        setMessage("❌ Failed to load your requests");
+        setTimeout(() => setMessage(""), 3000);
+      }
+
+      setRequests(allRequests);
     } catch (err) {
       console.error("Error:", err);
       setMessage("❌ Unable to load requests");
+      setTimeout(() => setMessage(""), 3000);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchCancelledRequests = async () => {
+    try {
+      // If not a customer, redirect appropriately
+      if (userData && userData.role !== "customer") {
+        navigate("/request");
+        return;
+      }
+
+      setLoading(true);
+      const response = await fetch(
+        `http://localhost:8000/app/customer/cancelled-requests/`,
+        {
+          method: "GET",
+          credentials: "include",
+          cache: "no-store",
+        }
+      );
+
+      if (!response.ok) {
+        setMessage("❌ Failed to load cancelled requests");
+        setTimeout(() => setMessage(""), 3000);
+        setCancelledRequests([]);
+        return;
+      }
+
+      const data = await response.json();
+      setCancelledRequests(data.cancelled_requests || []);
+    } catch (err) {
+      console.error("Error:", err);
+      setMessage("❌ Unable to load cancelled requests");
       setTimeout(() => setMessage(""), 3000);
     } finally {
       setLoading(false);
@@ -198,172 +256,9 @@ function CustomerViewRequests() {
     }
   };
 
-  // Create Request handlers
-  const fetchProductsForCreateRequest = async () => {
-    try {
-      const [productsRes, configuredRes] = await Promise.all([
-        fetch("http://localhost:8000/app/prodname/", {
-          method: "GET",
-          credentials: "include",
-        }),
-        fetch("http://localhost:8000/app/configured-products/", {
-          method: "GET",
-          credentials: "include",
-        }).catch(() => ({ ok: false })),
-      ]);
 
-      const productsData = await productsRes.json();
-      setProducts(Array.isArray(productsData) ? productsData : []);
 
-      if (configuredRes.ok) {
-        const configuredData = await configuredRes.json();
-        const processedData = Array.isArray(configuredData) ? configuredData : [];
-        const latestIds = new Set(processedData.slice(-3).map(p => p.id)); // Mark last 3 as new
-        setConfiguredProducts(processedData);
-        setNewProductIds(latestIds);
-      }
-    } catch (err) {
-      console.error("Error fetching products:", err);
-    }
-  };
-
-  const handleCreateRequestClick = () => {
-    setShowCreateRequestModal(true);
-    fetchProductsForCreateRequest();
-    setAddedProducts([]);
-    setFormData({ product: "", quantity: "", deadline: "" });
-    setCreateRequestMessage("");
-  };
-
-  const handleFormChange = (e) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
-  };
-
-  const addProductToRequest = () => {
-    if (!formData.product || !formData.quantity || !formData.deadline) {
-      setCreateRequestMessage("⚠️ Please fill all fields");
-      return;
-    }
-
-    // Check if it's a configured product
-    const configuredProduct = configuredProducts.find(p => p.id === formData.product);
-    if (configuredProduct) {
-      const newProduct = {
-        product: configuredProduct.id,
-        product_name: configuredProduct.prodName,
-        quantity: parseInt(formData.quantity),
-        deadline_extension: formData.deadline,
-        processes: configuredProduct.processes,
-      };
-      setAddedProducts([...addedProducts, newProduct]);
-      setCreateRequestMessage(`✓ Added "${configuredProduct.prodName}" to request`);
-      setFormData({ ...formData, product: "", quantity: "", deadline: "" });
-      setTimeout(() => setCreateRequestMessage(""), 3000);
-      return;
-    }
-
-    // Check database product
-    const productObj = products.find(p => p.ProdID == formData.product);
-    if (!productObj) {
-      setCreateRequestMessage("⚠️ Product not found");
-      return;
-    }
-
-    const newProduct = {
-      product: parseInt(formData.product),
-      product_name: productObj.prodName,
-      quantity: parseInt(formData.quantity),
-      deadline_extension: formData.deadline,
-    };
-
-    if (addedProducts.some(p => p.product === newProduct.product && !p.processes)) {
-      setCreateRequestMessage("⚠️ This product is already added");
-      return;
-    }
-
-    setAddedProducts([...addedProducts, newProduct]);
-    setFormData({ ...formData, product: "", quantity: "", deadline: "" });
-    setCreateRequestMessage("");
-  };
-
-  const removeProduct = (index) => {
-    setAddedProducts(addedProducts.filter((_, i) => i !== index));
-  };
-
-  const updateProductQuantity = (index, quantity) => {
-    const updated = [...addedProducts];
-    updated[index].quantity = parseInt(quantity) || 0;
-    setAddedProducts(updated);
-  };
-
-  const updateProductDeadline = (index, deadline) => {
-    const updated = [...addedProducts];
-    updated[index].deadline_extension = deadline;
-    setAddedProducts(updated);
-  };
-
-  const handleSubmitCreateRequest = async () => {
-    if (addedProducts.length === 0) {
-      setCreateRequestMessage("⚠️ Please add at least one product");
-      return;
-    }
-
-    const invalidProducts = addedProducts.filter(p => !p.quantity || !p.deadline_extension);
-    if (invalidProducts.length > 0) {
-      setCreateRequestMessage("⚠️ All products must have quantity and deadline");
-      return;
-    }
-
-    setCreateRequestLoading(true);
-    try {
-      const submissionProducts = addedProducts.map(product => ({
-        product: product.product,
-        quantity: product.quantity,
-        deadline_extension: product.deadline_extension,
-      }));
-
-      const requestPayload = {
-        requester: userData.id, // Use logged in user ID as requester
-        products: submissionProducts,
-        deadline: addedProducts[0]?.deadline_extension || new Date().toISOString().split("T")[0],
-      };
-
-      const response = await fetch("http://localhost:8000/app/request/", {
-        method: "POST",
-        credentials: "include",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(requestPayload),
-      });
-
-      const data = await response.json();
-
-      if (response.ok) {
-        setShowSuccessModal(true);
-        setFormData({ product: "", quantity: "", deadline: "" });
-        setAddedProducts([]);
-        setTimeout(() => {
-          setShowSuccessModal(false);
-          setShowCreateRequestModal(false);
-          checkAuthAndFetchRequests();
-        }, 2000);
-      } else {
-        let errorMessage = "Failed to create request";
-        if (data.detail) errorMessage = data.detail;
-        else if (data.error) errorMessage = data.error;
-        setCreateRequestMessage(`✗ Error: ${errorMessage}`);
-      }
-    } catch (err) {
-      console.error("Error submitting request:", err);
-      setCreateRequestMessage("✗ Error submitting request");
-    } finally {
-      setCreateRequestLoading(false);
-    }
-  };
-
-  // Handle click outside dropdown
+  // Handle click outside notification dropdown
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (
@@ -372,22 +267,18 @@ function CustomerViewRequests() {
         !dropdownMenuRef.current.contains(event.target) &&
         !dropdownButtonRef.current.contains(event.target)
       ) {
-        setShowProductDropdown(false);
-      }
-      
-      if (calendarRef.current && !calendarRef.current.contains(event.target)) {
-        setShowDeadlineCalendar(false);
+        setShowNotificationDropdown(false);
       }
     };
 
-    if (showProductDropdown || showDeadlineCalendar) {
+    if (showNotificationDropdown) {
       document.addEventListener("mousedown", handleClickOutside);
     }
 
     return () => {
       document.removeEventListener("mousedown", handleClickOutside);
     };
-  }, [showProductDropdown, showDeadlineCalendar]);
+  }, [showNotificationDropdown]);
 
   // Auto-dismiss delete toast after 3 seconds
   useEffect(() => {
@@ -428,35 +319,63 @@ function CustomerViewRequests() {
   };
 
   // Flatten products from all requests for table display
-  const flattenedTasks = requests.flatMap((request) => {
-    // Handle both possible field names (request_products from API, product_details from older code)
-    const products = request.request_products || request.product_details || [];
-    
-    return products.map((product) => {
-      // Parse progress value - could be "35%" (from backend PST-01 weighted calculation)
-      let progressValue = 0;
-      if (typeof product.progress === 'string') {
-        progressValue = parseFloat(product.progress.replace('%', '')) || 0;
-      } else {
-        progressValue = parseFloat(product.progress) || 0;
-      }
+  const flattenedTasks = requestStatusFilter === "cancelled" 
+    ? cancelledRequests.map((cancelled) => ({
+        requestId: cancelled.request_id,
+        productName: cancelled.product_name,
+        quantity: cancelled.quantity,
+        completedQuota: 0,
+        defectCount: 0,
+        status: "Cancelled",
+        progress: 0,
+        dueDate: cancelled.created_at,
+        workers: [],
+        cancelled_at: cancelled.cancelled_at,
+        cancelled_by_name: cancelled.cancelled_by_name,
+        cancellation_reason: cancelled.cancellation_reason,
+      }))
+    : requests.flatMap((request) => {
+      // Backend already filters by request_status, no need to filter again
+
+      // Handle both possible field names (request_products from API, product_details from older code)
+      const products = request.request_products || request.product_details || [];
       
-      const requestId = request.RequestID || request.request_id;
-      const dueDate = request.deadline || request.due_date;
-      
-      return {
-        requestId: requestId,
-        productName: product.product_name,
-        quantity: product.quantity,
-        completedQuota: product.completed_quota,
-        defectCount: product.defect_count,
-        status: product.task_status,
-        progress: Math.min(Math.max(progressValue, 0), 100), // Ensure between 0-100
-        dueDate: dueDate,
-        workers: product.workers || [],
-      };
+      return products.map((product) => {
+        // Parse progress value - could be "35%" (from backend PST-01 weighted calculation)
+        let progressValue = 0;
+        if (typeof product.progress === 'string') {
+          progressValue = parseFloat(product.progress.replace('%', '')) || 0;
+        } else {
+          progressValue = parseFloat(product.progress) || 0;
+        }
+        
+        const requestId = request.RequestID || request.request_id;
+        const dueDate = request.deadline || request.due_date;
+        
+        return {
+          requestId: requestId,
+          productName: product.product_name,
+          quantity: product.quantity,
+          completedQuota: product.completed_quota,
+          defectCount: product.defect_count,
+          status: product.task_status,
+          progress: Math.min(Math.max(progressValue, 0), 100), // Ensure between 0-100
+          dueDate: dueDate,
+          workers: product.workers || [],
+        };
+      }).filter((product) => {
+        // For active tab: exclude 100% complete items
+        if (requestStatusFilter === "active") {
+          return product.progress < 100;
+        }
+        // For completed tab: only show 100% complete items
+        if (requestStatusFilter === "completed") {
+          return product.progress === 100;
+        }
+        // For other tabs: show all
+        return true;
+      });
     });
-  });
 
   // Filter tasks
   const filteredTasks = flattenedTasks.filter((task) => {
@@ -488,12 +407,31 @@ function CustomerViewRequests() {
     return matchesSearch;
   });
 
-  // Sort tasks by Issuance No. (RequestID) in descending order
-  const sortedTasks = [...finalTasks].sort((a, b) => {
-    const aId = parseInt(a.requestId) || 0;
-    const bId = parseInt(b.requestId) || 0;
-    return bId - aId; // Descending order (highest first)
-  });
+  // Sort tasks based on sortBy and sortOrder
+  const sortedTasks = useMemo(() => {
+    const sorted = [...finalTasks];
+    sorted.sort((a, b) => {
+      let comparison = 0;
+
+      if (sortBy === "date") {
+        const dateA = new Date(a.deadline || 0);
+        const dateB = new Date(b.deadline || 0);
+        comparison = dateB - dateA;
+      } else if (sortBy === "number") {
+        const aId = parseInt(a.requestId) || 0;
+        const bId = parseInt(b.requestId) || 0;
+        comparison = bId - aId;
+      } else if (sortBy === "name") {
+        const nameA = (a.productName || "").toLowerCase();
+        const nameB = (b.productName || "").toLowerCase();
+        comparison = nameA.localeCompare(nameB);
+      }
+
+      return sortOrder === "asc" ? comparison : -comparison;
+    });
+
+    return sorted;
+  }, [finalTasks, sortBy, sortOrder]);
 
   if (loading) {
     return (
@@ -563,7 +501,13 @@ function CustomerViewRequests() {
           {/* Notification Bell */}
           <div style={{ position: "relative" }}>
             <button
-              onClick={() => setShowNotificationDropdown(!showNotificationDropdown)}
+              onClick={() => {
+                // If opening the dropdown, clear the badge visually
+                if (!showNotificationDropdown) {
+                  setUnreadCount(0);
+                }
+                setShowNotificationDropdown(!showNotificationDropdown);
+              }}
               className="btn btn-notification"
               title="Notifications"
               style={{
@@ -630,17 +574,80 @@ function CustomerViewRequests() {
                   zIndex: 1000,
                 }}
               >
-                {/* Notification Header */}
-                <div
-                  style={{
-                    padding: "12px 16px",
-                    borderBottom: "1px solid #eee",
-                    fontWeight: "600",
-                    fontSize: "14px",
-                    color: "#333",
-                  }}
-                >
-                  Notifications {unreadCount > 0 && `(${unreadCount} new)`}
+                {/* Notification Header with Filter */}
+                <div style={{ borderBottom: "1px solid #eee" }}>
+                  <div
+                    style={{
+                      padding: "12px 16px",
+                      fontWeight: "600",
+                      fontSize: "14px",
+                      color: "#333",
+                    }}
+                  >
+                    Notifications
+                  </div>
+                  {/* Filter Tabs */}
+                  <div
+                    style={{
+                      display: "flex",
+                      borderTop: "1px solid #eee",
+                      backgroundColor: "#f8f9fa",
+                    }}
+                  >
+                    <button
+                      onClick={() => setNotificationFilter("all")}
+                      style={{
+                        flex: 1,
+                        padding: "8px 12px",
+                        border: "none",
+                        backgroundColor: notificationFilter === "all" ? "white" : "transparent",
+                        color: notificationFilter === "all" ? "#1D6AB7" : "#666",
+                        borderBottom: notificationFilter === "all" ? "2px solid #1D6AB7" : "none",
+                        cursor: "pointer",
+                        fontSize: "13px",
+                        fontWeight: notificationFilter === "all" ? "600" : "500",
+                        transition: "all 0.2s",
+                      }}
+                    >
+                      All
+                    </button>
+                    <button
+                      onClick={() => setNotificationFilter("unread")}
+                      style={{
+                        flex: 1,
+                        padding: "8px 12px",
+                        border: "none",
+                        backgroundColor: notificationFilter === "unread" ? "white" : "transparent",
+                        color: notificationFilter === "unread" ? "#1D6AB7" : "#666",
+                        borderBottom: notificationFilter === "unread" ? "2px solid #1D6AB7" : "none",
+                        borderLeft: "1px solid #eee",
+                        cursor: "pointer",
+                        fontSize: "13px",
+                        fontWeight: notificationFilter === "unread" ? "600" : "500",
+                        transition: "all 0.2s",
+                      }}
+                    >
+                      Unread
+                    </button>
+                    <button
+                      onClick={() => setNotificationFilter("read")}
+                      style={{
+                        flex: 1,
+                        padding: "8px 12px",
+                        border: "none",
+                        backgroundColor: notificationFilter === "read" ? "white" : "transparent",
+                        color: notificationFilter === "read" ? "#1D6AB7" : "#666",
+                        borderBottom: notificationFilter === "read" ? "2px solid #1D6AB7" : "none",
+                        borderLeft: "1px solid #eee",
+                        cursor: "pointer",
+                        fontSize: "13px",
+                        fontWeight: notificationFilter === "read" ? "600" : "500",
+                        transition: "all 0.2s",
+                      }}
+                    >
+                      Read
+                    </button>
+                  </div>
                 </div>
 
                 {/* Notifications List */}
@@ -657,7 +664,14 @@ function CustomerViewRequests() {
                   </div>
                 ) : (
                   <div>
-                    {notifications.map((notification) => (
+                    {notifications
+                      .filter((notification) => {
+                        if (notificationFilter === "all") return true;
+                        if (notificationFilter === "unread") return !notification.is_read;
+                        if (notificationFilter === "read") return notification.is_read;
+                        return true;
+                      })
+                      .map((notification) => (
                       <div
                         key={notification.id}
                         style={{
@@ -961,12 +975,12 @@ function CustomerViewRequests() {
           <div
             style={{
               display: "flex",
-              gap: "10px",
+              gap: "15px",
               alignItems: "center",
               flexWrap: "wrap",
             }}
           >
-            {/* Status Dropdown */}
+            {/* Task Status Dropdown */}
             <div>
               <select
                 className="form-select form-select-sm"
@@ -979,13 +993,63 @@ function CustomerViewRequests() {
                   verticalAlign: "middle",
                 }}
                 value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
+                onChange={(e) => {
+                  setStatusFilter(e.target.value);
+                  setCurrentPage(1);
+                }}
               >
-                <option value="all">All Status</option>
+                <option value="all">All Task Status</option>
                 <option value="completed">Completed</option>
                 <option value="progress">In Progress</option>
                 <option value="started">Started</option>
                 <option value="not-started">Not Started</option>
+              </select>
+            </div>
+
+            {/* Sort By Dropdown */}
+            <div>
+              <select
+                className="form-select form-select-sm"
+                style={{ 
+                  width: "180px", 
+                  height: "38px",
+                  padding: "8px 12px",
+                  fontSize: "14px",
+                  lineHeight: "1.5",
+                  verticalAlign: "middle",
+                }}
+                value={sortBy}
+                onChange={(e) => {
+                  setSortBy(e.target.value);
+                  setCurrentPage(1);
+                }}
+              >
+                <option value="date">Sort By: Date</option>
+                <option value="number">Sort By: Number</option>
+                <option value="name">Sort By: Name</option>
+              </select>
+            </div>
+
+            {/* Sort Order Dropdown */}
+            <div>
+              <select
+                className="form-select form-select-sm"
+                style={{ 
+                  width: "160px", 
+                  height: "38px",
+                  padding: "8px 12px",
+                  fontSize: "14px",
+                  lineHeight: "1.5",
+                  verticalAlign: "middle",
+                }}
+                value={sortOrder}
+                onChange={(e) => {
+                  setSortOrder(e.target.value);
+                  setCurrentPage(1);
+                }}
+              >
+                <option value="desc">Order: Descending</option>
+                <option value="asc">Order: Ascending</option>
               </select>
             </div>
           </div>
@@ -1011,15 +1075,81 @@ function CustomerViewRequests() {
               onChange={(e) => setSearchTerm(e.target.value)}
             />
             
-            {/* Create Request Button */}
-            <button
-              className="btn btn-success btn-sm"
-              onClick={handleCreateRequestClick}
-              style={{ height: "38px", whiteSpace: "nowrap" }}
-            >
-              <i className="bi bi-plus-lg me-1"></i> Create Request
-            </button>
+
           </div>
+        </div>
+
+        {/* Request Status Tabs Bar */}
+        <div
+          style={{
+            marginTop: "20px",
+            marginBottom: "0",
+            background: "linear-gradient(to right, #f8f9fa 0%, #f5f7fa 100%)",
+            borderRadius: "12px 12px 0 0",
+            border: "1px solid #dfe6f0",
+            borderBottom: "none",
+            padding: "12px 16px",
+            display: "flex",
+            gap: "8px",
+            boxShadow: "0 2px 8px rgba(0,0,0,0.04)",
+          }}
+        >
+          <style>{`
+            @keyframes tabSlideIn {
+              from {
+                opacity: 0;
+                transform: translateX(10px);
+              }
+              to {
+                opacity: 1;
+                transform: translateX(0);
+              }
+            }
+            .request-status-tab {
+              animation: tabSlideIn 0.3s ease-out;
+            }
+          `}</style>
+          {[
+            { value: "active", label: "In-Progress Order", color: "#F59E0B" },
+            { value: "completed", label: "Completed Order", color: "#10B981" },
+            { value: "cancelled", label: "Cancelled Order", color: "#EF4444" },
+          ].map((tab) => (
+            <button
+              key={tab.value}
+              className="request-status-tab"
+              onClick={() => {
+                setRequestStatusFilter(tab.value);
+                setCurrentPage(1);
+              }}
+              style={{
+                padding: "12px 24px",
+                border: requestStatusFilter === tab.value ? "2px solid " + tab.color : "2px solid transparent",
+                borderRadius: "8px",
+                backgroundColor: requestStatusFilter === tab.value ? "white" : "transparent",
+                color: requestStatusFilter === tab.value ? tab.color : "#6B7280",
+                fontWeight: requestStatusFilter === tab.value ? "700" : "600",
+                fontSize: "16px",
+                cursor: "pointer",
+                transition: "all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)",
+                boxShadow: requestStatusFilter === tab.value ? "0 4px 12px " + tab.color + "20" : "none",
+                whiteSpace: "nowrap",
+              }}
+              onMouseEnter={(e) => {
+                if (requestStatusFilter !== tab.value) {
+                  e.currentTarget.style.borderColor = tab.color + "40";
+                  e.currentTarget.style.transform = "translateY(-1px)";
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (requestStatusFilter !== tab.value) {
+                  e.currentTarget.style.borderColor = "transparent";
+                  e.currentTarget.style.transform = "translateY(0)";
+                }
+              }}
+            >
+              {tab.label}
+            </button>
+          ))}
         </div>
 
         {message && (
@@ -1046,80 +1176,271 @@ function CustomerViewRequests() {
           </div>
         )}
 
-        {/* Tasks Table */}
-        {sortedTasks.length === 0 ? (
-          <div
-            className="alert alert-info"
-            role="alert"
-            style={{ marginTop: "20px" }}
-          >
-            <strong>No tasks assigned yet.</strong> Your admin will create and
-            assign tasks to you.
-          </div>
-        ) : (
-          <table className="data-table">
+        {/* Tasks Table with Animation */}
+        <div style={{ animation: "fadeInUp 0.4s ease-out" }}>
+          <style>{`
+            @keyframes fadeInUp {
+              from {
+                opacity: 0;
+                transform: translateY(20px);
+              }
+              to {
+                opacity: 1;
+                transform: translateY(0);
+              }
+            }
+          `}</style>
+          {sortedTasks.length === 0 ? (
+            <div
+              className="alert alert-info"
+              role="alert"
+              style={{ marginTop: "20px" }}
+            >
+              {requestStatusFilter === "completed" ? (
+                <>
+                  <strong>No completed orders yet.</strong> Once tasks are finished,
+                  they will appear here.
+                </>
+              ) : requestStatusFilter === "cancelled" ? (
+                <>
+                  <strong>No cancelled orders.</strong> Your orders will appear here if cancelled.
+                </>
+              ) : (
+                <>
+                  <strong>No orders assigned yet.</strong> Your admin will create and
+                  assign orders to you.
+                </>
+              )}
+            </div>
+          ) : (
+            <>
+            <table className="data-table">
             <thead>
               <tr>
-                <th>Issuance No.</th>
-                <th>Tasks</th>
-                <th>Progress Bar</th>
-                <th>Due Date</th>
-                <th>Status (Product)</th>
-                <th>Deadline Extension</th>
+                {requestStatusFilter === "cancelled" ? (
+                  <>
+                    <th>Issuance No.</th>
+                    <th>Product</th>
+                    <th>Quantity</th>
+                    <th>Cancelled Date</th>
+                    <th>Cancelled By</th>
+                    <th>Reason</th>
+                  </>
+                ) : (
+                  <>
+                    <th>Issuance No.</th>
+                    <th>Product</th>
+                    <th>Progress Bar</th>
+                    <th>Due Date</th>
+                    <th>Status</th>
+                    <th>Deadline Extension</th>
+                  </>
+                )}
               </tr>
             </thead>
             <tbody>
-              {sortedTasks.map((task, idx) => (
+              {sortedTasks
+                .slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
+                .map((task, idx) => (
                 <tr key={idx}>
-                  <td><strong>{task.requestId}</strong></td>
-                  <td>{task.productName}</td>
-                  <td>
-                    <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                      <div style={{ 
-                        backgroundColor: "#e0e0e0", 
-                        borderRadius: "4px", 
-                        width: "100px", 
-                        height: "6px", 
-                        overflow: "hidden" 
-                      }}>
-                        <div style={{ 
-                          backgroundColor: "#1D6AB7", 
-                          height: "100%", 
-                          width: `${task.progress}%` 
-                        }}></div>
-                      </div>
-                      {Math.round(task.progress)}%
-                    </div>
-                  </td>
-                  <td style={{ whiteSpace: "nowrap" }}>
-                    {new Date(task.dueDate).toLocaleDateString("en-US", {
-                      year: "numeric",
-                      month: "2-digit",
-                      day: "2-digit",
-                    })}
-                  </td>
-                  <td>
-                    <span style={{
-                      display: "inline-block",
-                      backgroundColor: getStatusColor(task.status) + "20",
-                      color: getStatusColor(task.status),
-                      padding: "4px 10px",
-                      borderRadius: "4px",
-                      fontSize: "12px",
-                      fontWeight: "500",
-                      border: `1px solid ${getStatusColor(task.status)}`,
-                    }}>
-                      {getStatusLabel(task.status)}
-                    </span>
-                  </td>
-                  <td>
-                    <span style={{ fontSize: "12px", color: "#666" }}>-</span>
-                  </td>
+                  {requestStatusFilter === "cancelled" ? (
+                    <>
+                      <td><strong>{task.requestId}</strong></td>
+                      <td>{task.productName}</td>
+                      <td>{task.quantity}</td>
+                      <td style={{ whiteSpace: "nowrap" }}>
+                        {new Date(task.cancelled_at).toLocaleDateString("en-US", {
+                          year: "numeric",
+                          month: "2-digit",
+                          day: "2-digit",
+                        })}
+                      </td>
+                      <td>{task.cancelled_by_name}</td>
+                      <td 
+                        title={task.cancellation_reason}
+                        style={{ 
+                          maxWidth: "200px", 
+                          overflow: "hidden", 
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap"
+                        }}
+                      >
+                        {task.cancellation_reason}
+                      </td>
+                    </>
+                  ) : (
+                    <>
+                      <td><strong>{task.requestId}</strong></td>
+                      <td>{task.productName}</td>
+                      <td>
+                        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                          <div style={{ 
+                            backgroundColor: "#e0e0e0", 
+                            borderRadius: "4px", 
+                            width: "100px", 
+                            height: "6px", 
+                            overflow: "hidden" 
+                          }}>
+                            <div style={{ 
+                              backgroundColor: "#1D6AB7", 
+                              height: "100%", 
+                              width: `${task.progress}%` 
+                            }}></div>
+                          </div>
+                          {Math.round(task.progress)}%
+                        </div>
+                      </td>
+                      <td style={{ whiteSpace: "nowrap" }}>
+                        {new Date(task.dueDate).toLocaleDateString("en-US", {
+                          year: "numeric",
+                          month: "2-digit",
+                          day: "2-digit",
+                        })}
+                      </td>
+                      <td>
+                        <span style={{
+                          display: "inline-block",
+                          backgroundColor: getStatusColor(task.status) + "20",
+                          color: getStatusColor(task.status),
+                          padding: "4px 10px",
+                          borderRadius: "4px",
+                          fontSize: "12px",
+                          fontWeight: "500",
+                          border: `1px solid ${getStatusColor(task.status)}`,
+                        }}>
+                          {getStatusLabel(task.status)}
+                        </span>
+                      </td>
+                      <td>
+                        <span style={{ fontSize: "12px", color: "#666" }}>-</span>
+                      </td>
+                    </>
+                  )}
                 </tr>
               ))}
             </tbody>
-          </table>
-        )}
+            </table>
+
+            {/* Pagination Controls */}
+            {sortedTasks.length > itemsPerPage && (
+              <div style={{
+                display: "flex",
+                justifyContent: "center",
+                alignItems: "center",
+                gap: "8px",
+                marginTop: "20px",
+                padding: "15px",
+                borderTop: "1px solid #e0e0e0",
+                flexWrap: "wrap"
+              }}>
+                <button
+                  onClick={() => setCurrentPage(1)}
+                  disabled={currentPage === 1}
+                  style={{
+                    padding: "6px 10px",
+                    border: currentPage === 1 ? "1px solid #ddd" : "1px solid #1D6AB7",
+                    backgroundColor: currentPage === 1 ? "#f0f0f0" : "#fff",
+                    color: currentPage === 1 ? "#999" : "#1D6AB7",
+                    borderRadius: "4px",
+                    cursor: currentPage === 1 ? "not-allowed" : "pointer",
+                    fontWeight: "500",
+                    fontSize: "12px"
+                  }}
+                >
+                  ◀◀ First
+                </button>
+
+                <button
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                  style={{
+                    padding: "6px 10px",
+                    border: currentPage === 1 ? "1px solid #ddd" : "1px solid #1D6AB7",
+                    backgroundColor: currentPage === 1 ? "#f0f0f0" : "#fff",
+                    color: currentPage === 1 ? "#999" : "#1D6AB7",
+                    borderRadius: "4px",
+                    cursor: currentPage === 1 ? "not-allowed" : "pointer",
+                    fontWeight: "500",
+                    fontSize: "12px"
+                  }}
+                >
+                  ◀ Previous
+                </button>
+
+                <div style={{ display: "flex", gap: "4px", alignItems: "center" }}>
+                  {Array.from({ length: Math.ceil(sortedTasks.length / itemsPerPage) }, (_, i) => i + 1)
+                    .filter(page => {
+                      const maxPage = Math.ceil(sortedTasks.length / itemsPerPage);
+                      if (maxPage <= 5) return true;
+                      if (page === 1 || page === maxPage) return true;
+                      if (Math.abs(page - currentPage) <= 1) return true;
+                      return false;
+                    })
+                    .map((page, idx, arr) => (
+                      <div key={page}>
+                        {idx > 0 && arr[idx - 1] !== page - 1 && <span style={{ color: "#999", padding: "0 4px" }}>...</span>}
+                        <button
+                          onClick={() => setCurrentPage(page)}
+                          style={{
+                            padding: "6px 10px",
+                            border: currentPage === page ? "1px solid #1D6AB7" : "1px solid #ddd",
+                            backgroundColor: currentPage === page ? "#1D6AB7" : "#fff",
+                            color: currentPage === page ? "#fff" : "#333",
+                            borderRadius: "4px",
+                            cursor: "pointer",
+                            fontWeight: currentPage === page ? "600" : "500",
+                            fontSize: "12px",
+                            minWidth: "32px"
+                          }}
+                        >
+                          {page}
+                        </button>
+                      </div>
+                    ))}
+                </div>
+
+                <button
+                  onClick={() => setCurrentPage(p => Math.min(Math.ceil(sortedTasks.length / itemsPerPage), p + 1))}
+                  disabled={currentPage === Math.ceil(sortedTasks.length / itemsPerPage)}
+                  style={{
+                    padding: "6px 10px",
+                    border: currentPage === Math.ceil(sortedTasks.length / itemsPerPage) ? "1px solid #ddd" : "1px solid #1D6AB7",
+                    backgroundColor: currentPage === Math.ceil(sortedTasks.length / itemsPerPage) ? "#f0f0f0" : "#fff",
+                    color: currentPage === Math.ceil(sortedTasks.length / itemsPerPage) ? "#999" : "#1D6AB7",
+                    borderRadius: "4px",
+                    cursor: currentPage === Math.ceil(sortedTasks.length / itemsPerPage) ? "not-allowed" : "pointer",
+                    fontWeight: "500",
+                    fontSize: "12px"
+                  }}
+                >
+                  Next ▶
+                </button>
+
+                <button
+                  onClick={() => setCurrentPage(Math.ceil(sortedTasks.length / itemsPerPage))}
+                  disabled={currentPage === Math.ceil(sortedTasks.length / itemsPerPage)}
+                  style={{
+                    padding: "6px 10px",
+                    border: currentPage === Math.ceil(sortedTasks.length / itemsPerPage) ? "1px solid #ddd" : "1px solid #1D6AB7",
+                    backgroundColor: currentPage === Math.ceil(sortedTasks.length / itemsPerPage) ? "#f0f0f0" : "#fff",
+                    color: currentPage === Math.ceil(sortedTasks.length / itemsPerPage) ? "#999" : "#1D6AB7",
+                    borderRadius: "4px",
+                    cursor: currentPage === Math.ceil(sortedTasks.length / itemsPerPage) ? "not-allowed" : "pointer",
+                    fontWeight: "500",
+                    fontSize: "12px"
+                  }}
+                >
+                  Last ▶▶
+                </button>
+
+                <span style={{ color: "#666", fontSize: "12px", marginLeft: "10px" }}>
+                  Page {currentPage} of {Math.ceil(sortedTasks.length / itemsPerPage)}
+                </span>
+              </div>
+            )}
+            </>
+          )}
+        </div>
       </div>
 
       {/* Delete Notification Confirmation Modal */}
@@ -1287,503 +1608,7 @@ function CustomerViewRequests() {
         </div>
       )}
 
-      {/* Create Request Modal */}
-      {showCreateRequestModal && (
-        <div 
-          className="modal-overlay" 
-          style={{ 
-            display: "flex", 
-            alignItems: "center", 
-            justifyContent: "center", 
-            zIndex: 9999,
-            position: "fixed",
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: "rgba(0, 0, 0, 0.5)"
-          }} 
-          onClick={(e) => { if (e.target === e.currentTarget) setShowCreateRequestModal(false); }}
-        >
-          <div 
-            className="modal-dialog" 
-            style={{ 
-              backgroundColor: "white", 
-              borderRadius: "12px", 
-              maxWidth: "900px", 
-              width: "95%", 
-              maxHeight: "90vh", 
-              overflow: "visible",
-              boxShadow: "0 10px 40px rgba(0, 0, 0, 0.15)",
-              position: "relative"
-            }} 
-            onClick={e => e.stopPropagation()}
-          >
-            {/* Header */}
-            <div 
-              className="modal-header" 
-              style={{ 
-                backgroundColor: "transparent",
-                padding: "2rem 2.5rem",
-                borderBottom: "none",
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center"
-              }}
-            >
-              <h2 
-                className="modal-title" 
-                style={{ 
-                  color: "#1a1a1a",
-                  marginBottom: 0,
-                  fontSize: "1.8rem",
-                  fontWeight: "600",
-                  letterSpacing: "-0.5px"
-                }}
-              >
-                Create Request
-              </h2>
-              <button 
-                type="button" 
-                className="btn-close" 
-                onClick={() => setShowCreateRequestModal(false)}
-                aria-label="Close"
-                style={{ 
-                  width: "32px",
-                  height: "32px",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  border: "none",
-                  backgroundColor: "#f5f5f5",
-                  borderRadius: "6px",
-                  cursor: "pointer",
-                  fontSize: "1.2rem",
-                  color: "#666",
-                  transition: "all 0.2s ease"
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = "#e9ecef";
-                  e.currentTarget.style.color = "#333";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = "#f5f5f5";
-                  e.currentTarget.style.color = "#666";
-                }}
-              >
-                ✕
-              </button>
-            </div>
-            <form onSubmit={(e) => { e.preventDefault(); handleSubmitCreateRequest(); }}>
-              <div className="modal-body" style={{ padding: "0 2.5rem 2rem 2.5rem", maxHeight: "calc(90vh - 200px)", overflowY: "auto", overflowX: "visible" }}>
-                {/* Alert Message */}
-                {createRequestMessage && (
-                  <div 
-                    className={`alert ${createRequestMessage.includes("✓") ? "alert-success" : "alert-danger"} mb-4`} 
-                    role="alert"
-                    style={{
-                      borderRadius: "8px",
-                      border: "none",
-                      padding: "1rem 1.25rem",
-                      fontSize: "0.95rem"
-                    }}
-                  >
-                    {createRequestMessage}
-                  </div>
-                )}
 
-                {/* Products Section */}
-                <h6 
-                  className="text-uppercase fw-700 text-muted small mb-3" 
-                  style={{ fontSize: "0.8rem", letterSpacing: "0.5px" }}
-                >
-                  <i className="bi bi-box-seam-fill me-2"></i> Add Products with Quantity & Deadline
-                </h6>
-                <div className="row g-3 mb-4" style={{ overflow: "visible" }}>
-                  <div className="col-md-5">
-                    <label htmlFor="product" className="form-label fw-600 mb-2" style={{ fontSize: "0.95rem", color: "#333" }}>
-                      Product Name
-                    </label>
-                    <div style={{ position: "relative" }}>
-                      <button
-                        ref={dropdownButtonRef}
-                        type="button"
-                        className="form-control text-start d-flex justify-content-between align-items-center"
-                        onClick={() => setShowProductDropdown(!showProductDropdown)}
-                        style={{
-                          backgroundColor: "white",
-                          color: formData.product ? "#1a1a1a" : "#999",
-                          padding: "0.65rem 1rem",
-                          cursor: "pointer",
-                          border: "1px solid #ddd",
-                          borderRadius: "6px",
-                          fontSize: "0.95rem",
-                          transition: "all 0.2s ease"
-                        }}
-                        onMouseEnter={(e) => e.currentTarget.style.borderColor = "#bbb"}
-                        onMouseLeave={(e) => e.currentTarget.style.borderColor = "#ddd"}
-                      >
-                        <span>
-                          {formData.product
-                            ? configuredProducts.find(p => p.id === formData.product)?.prodName ||
-                              products.find(p => p.ProdID == formData.product)?.prodName ||
-                              "-- Select Product --"
-                            : "-- Select Product --"}
-                        </span>
-                        <i className={`bi bi-chevron-${showProductDropdown ? 'up' : 'down'}`}></i>
-                      </button>
-
-                      {showProductDropdown && (
-                        <div
-                          ref={dropdownMenuRef}
-                          className="product-dropdown-menu"
-                        >
-                          {products.map((p) => (
-                            <button
-                              key={`db-${p.ProdID}`}
-                              type="button"
-                              className={`dropdown-item ${formData.product == p.ProdID ? "active" : ""}`}
-                              onClick={() => {
-                                setFormData({ ...formData, product: p.ProdID });
-                                setShowProductDropdown(false);
-                              }}
-                            >
-                              {p.prodName}
-                            </button>
-                          ))}
-
-                          {configuredProducts
-                            .filter((cp) => !products.some((p) => p.prodName === cp.prodName))
-                            .map((p) => (
-                              <button
-                                key={`config-${p.id}`}
-                                type="button"
-                                className={`dropdown-item ${formData.product === p.id ? "active" : ""}`}
-                                onClick={() => {
-                                  setFormData({ ...formData, product: p.id });
-                                  setShowProductDropdown(false);
-                                }}
-                              >
-                                {p.prodName}
-                                {newProductIds.has(p.id) && (
-                                  <span style={{ marginLeft: "8px", color: "#22863a", fontSize: "0.85rem", fontWeight: "600" }}>
-                                    ✨ NEW
-                                  </span>
-                                )}
-                              </button>
-                            ))}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="col-md-2">
-                    <label htmlFor="quantity" className="form-label fw-600 mb-2" style={{ fontSize: "0.95rem", color: "#333" }}>
-                      Quantity
-                    </label>
-                    <input
-                      id="quantity"
-                      type="number"
-                      name="quantity"
-                      value={formData.quantity}
-                      onChange={handleFormChange}
-                      placeholder="0"
-                      min="1"
-                      className="form-control"
-                      style={{
-                        border: "1px solid #ddd",
-                        borderRadius: "6px",
-                        padding: "0.65rem 1rem",
-                        fontSize: "0.95rem",
-                        transition: "all 0.2s ease"
-                      }}
-                      onFocus={(e) => e.currentTarget.style.borderColor = "#999"}
-                      onBlur={(e) => e.currentTarget.style.borderColor = "#ddd"}
-                    />
-                  </div>
-
-                  <div className="col-md-3">
-                    <label htmlFor="deadline" className="form-label fw-600 mb-2" style={{ fontSize: "0.95rem", color: "#333" }}>
-                      Deadline
-                    </label>
-                    <div className="calendar-container" ref={calendarRef}>
-                      <button
-                        type="button"
-                        className="form-control date-input-btn"
-                        onClick={() => setShowDeadlineCalendar(!showDeadlineCalendar)}
-                        style={{
-                          textAlign: 'left',
-                          backgroundColor: 'white',
-                          display: 'flex',
-                          justifyContent: 'space-between',
-                          alignItems: 'center',
-                          border: "1px solid #ddd",
-                          borderRadius: "6px",
-                          padding: "0.65rem 1rem",
-                          fontSize: "0.95rem",
-                          color: formData.deadline ? "#1a1a1a" : "#999",
-                          cursor: "pointer",
-                          transition: "all 0.2s ease"
-                        }}
-                        onMouseEnter={(e) => e.currentTarget.style.borderColor = "#bbb"}
-                        onMouseLeave={(e) => e.currentTarget.style.borderColor = "#ddd"}
-                      >
-                        <span>{formData.deadline ? formatDateToString(formData.deadline) : 'Select deadline...'}</span>
-                        <i className={`bi bi-calendar3 ${showDeadlineCalendar ? 'rotate-calendar' : ''}`}></i>
-                      </button>
-                      {showDeadlineCalendar && (
-                        <div className="calendar-popup">
-                          <Calendar
-                            value={formData.deadline ? new Date(formData.deadline) : null}
-                            onChange={(date) => {
-                              setFormData({ ...formData, deadline: formatDateToString(date) });
-                              setShowDeadlineCalendar(false);
-                            }}
-                            minDate={getMinimumDate()}
-                            tileDisabled={({ date }) => date < getMinimumDate()}
-                            className="custom-calendar"
-                          />
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="col-md-2 d-flex align-items-end">
-                    <button
-                      type="button"
-                      className="btn w-100"
-                      onClick={addProductToRequest}
-                      disabled={createRequestLoading}
-                      style={{
-                        padding: "0.65rem 1.5rem",
-                        backgroundColor: "#007bff",
-                        color: "white",
-                        border: "none",
-                        borderRadius: "6px",
-                        fontWeight: "600",
-                        cursor: createRequestLoading ? "not-allowed" : "pointer",
-                        transition: "all 0.2s ease",
-                        fontSize: "0.95rem",
-                        opacity: createRequestLoading ? 0.6 : 1
-                      }}
-                      onMouseEnter={(e) => {
-                        if (!createRequestLoading) e.currentTarget.style.backgroundColor = "#0056b3";
-                      }}
-                      onMouseLeave={(e) => {
-                        if (!createRequestLoading) e.currentTarget.style.backgroundColor = "#007bff";
-                      }}
-                    >
-                      <i className="bi bi-plus-lg me-1"></i> Add
-                    </button>
-                  </div>
-                </div>
-
-                {/* Products List Section */}
-                {addedProducts.length > 0 && (
-                  <>
-                    <div className="border-top my-4" style={{ borderColor: "#f0f0f0" }}></div>
-                    <h6 
-                      className="text-uppercase fw-700 text-muted small mb-3"
-                      style={{ fontSize: "0.8rem", letterSpacing: "0.5px" }}
-                    >
-                      <i className="bi bi-list-check text-info me-2"></i>
-                      Products Added <span className="badge bg-info" style={{ fontSize: "0.7rem" }}>{addedProducts.length}</span>
-                    </h6>
-                    <div className="table-responsive">
-                      <table className="table table-hover mb-0" style={{ fontSize: "0.95rem" }}>
-                        <thead className="table-light" style={{ backgroundColor: "#f8f9fa", borderBottom: "2px solid #f0f0f0" }}>
-                          <tr>
-                            <th className="fw-700" style={{ color: "#666", paddingTop: "1rem", paddingBottom: "1rem" }}>Product</th>
-                            <th className="fw-700" style={{ color: "#666", paddingTop: "1rem", paddingBottom: "1rem" }}>Quantity</th>
-                            <th className="fw-700" style={{ color: "#666", paddingTop: "1rem", paddingBottom: "1rem" }}>Deadline</th>
-                            <th className="fw-700 text-center" style={{ color: "#666", paddingTop: "1rem", paddingBottom: "1rem", width: "80px" }}>Action</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {addedProducts.map((product, index) => (
-                            <tr key={index} className="align-middle" style={{ borderBottom: "1px solid #f0f0f0" }}>
-                              <td className="fw-500" style={{ color: "#333", paddingTop: "1rem", paddingBottom: "1rem" }}>{product.product_name}</td>
-                              <td>
-                                <input
-                                  type="number"
-                                  className="form-control form-control-sm"
-                                  style={{ width: "80px" }}
-                                  value={product.quantity || ""}
-                                  onChange={(e) => updateProductQuantity(index, e.target.value)}
-                                  placeholder="Qty"
-                                  min="1"
-                                />
-                              </td>
-                              <td>
-                                <div className="calendar-container-sm">
-                                  <button
-                                    type="button"
-                                    className="form-control form-control-sm date-input-btn"
-                                    onClick={() => setShowProductCalendars({ ...showProductCalendars, [index]: !showProductCalendars[index] })}
-                                    style={{
-                                      width: "120px",
-                                      textAlign: 'left',
-                                      backgroundColor: 'white',
-                                      display: 'flex',
-                                      justifyContent: 'space-between',
-                                      alignItems: 'center',
-                                      padding: '0.35rem 0.5rem'
-                                    }}
-                                  >
-                                    <span style={{ fontSize: '0.8rem' }}>{product.deadline_extension ? formatDateToString(product.deadline_extension) : 'Pick'}</span>
-                                    <i className="bi bi-calendar3" style={{ fontSize: '0.85rem' }}></i>
-                                  </button>
-                                  {showProductCalendars[index] && (
-                                    <div className="calendar-popup-sm">
-                                      <Calendar
-                                        value={product.deadline_extension ? new Date(product.deadline_extension) : null}
-                                        onChange={(date) => {
-                                          updateProductDeadline(index, formatDateToString(date));
-                                          setShowProductCalendars({ ...showProductCalendars, [index]: false });
-                                        }}
-                                        minDate={getMinimumDate()}
-                                        tileDisabled={({ date }) => date < getMinimumDate()}
-                                        className="custom-calendar"
-                                      />
-                                    </div>
-                                  )}
-                                </div>
-                              </td>
-                              <td className="text-center">
-                                <button
-                                  type="button"
-                                  className="btn btn-sm btn-outline-danger"
-                                  onClick={() => removeProduct(index)}
-                                  disabled={createRequestLoading}
-                                  title="Remove this product"
-                                >
-                                  <i className="bi bi-trash"></i>
-                                </button>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </>
-                )}
-              </div>
-
-              {/* Modal Footer */}
-              <div 
-                className="modal-footer" 
-                style={{ 
-                  padding: "2rem 2.5rem",
-                  borderTop: "1px solid #f0f0f0",
-                  display: "flex",
-                  justifyContent: "flex-end",
-                  gap: "1rem",
-                  backgroundColor: "#fafafa"
-                }}
-              >
-                <button
-                  type="button"
-                  className="btn"
-                  onClick={() => setShowCreateRequestModal(false)}
-                  disabled={createRequestLoading}
-                  style={{
-                    padding: "0.625rem 1.5rem",
-                    border: "1px solid #ddd",
-                    backgroundColor: "white",
-                    color: "#666",
-                    borderRadius: "6px",
-                    fontWeight: "500",
-                    cursor: "pointer",
-                    transition: "all 0.2s ease",
-                    fontSize: "0.95rem"
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.backgroundColor = "#f5f5f5";
-                    e.currentTarget.style.borderColor = "#ccc";
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.backgroundColor = "white";
-                    e.currentTarget.style.borderColor = "#ddd";
-                  }}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={createRequestLoading || addedProducts.length === 0}
-                  style={{
-                    padding: "0.625rem 2rem",
-                    backgroundColor: createRequestLoading || addedProducts.length === 0 ? "#ccc" : "#1a1a1a",
-                    color: "white",
-                    border: "none",
-                    borderRadius: "6px",
-                    fontWeight: "600",
-                    cursor: createRequestLoading || addedProducts.length === 0 ? "not-allowed" : "pointer",
-                    transition: "all 0.2s ease",
-                    fontSize: "0.95rem",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "0.5rem"
-                  }}
-                  onMouseEnter={(e) => {
-                    if (!createRequestLoading && addedProducts.length > 0) {
-                      e.currentTarget.style.backgroundColor = "#333";
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (!createRequestLoading && addedProducts.length > 0) {
-                      e.currentTarget.style.backgroundColor = "#1a1a1a";
-                    }
-                  }}
-                >
-                  {createRequestLoading ? (
-                    <>
-                      <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true" style={{ width: "14px", height: "14px" }}></span>
-                      Submitting...
-                    </>
-                  ) : (
-                    <>
-                      <i className="bi bi-check-circle"></i>
-                      Submit Request
-                    </>
-                  )}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Success Modal */}
-      {showSuccessModal && (
-        <div 
-          className="modal d-block"
-          style={{ 
-            backgroundColor: "rgba(0, 0, 0, 0.5)", 
-            display: "flex", 
-            justifyContent: "center", 
-            alignItems: "center",
-            position: "fixed",
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            zIndex: 10000
-          }}
-        >
-          <div className="modal-dialog">
-            <div className="modal-content">
-              <div className="modal-header bg-success text-white">
-                <h5 className="modal-title"><i className="bi bi-check-circle me-2"></i>Request Created Successfully</h5>
-              </div>
-              <div className="modal-body">
-                <p>Your request has been submitted successfully.</p>
-                <p>You will see it in your request list shortly.</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

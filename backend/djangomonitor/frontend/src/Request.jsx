@@ -402,7 +402,7 @@ function Request() {
                   </div>
                   <h4 className="fw-bold mb-2 text-success">Success!</h4>
                   <p className="text-muted mb-4">Your request has been submitted successfully.</p>
-                  <p className="small text-muted">Redirecting to request list...</p>
+                  <p className="small text-muted">Redirecting to purchase order list...</p>
                   <div className="mt-4">
                     <div className="spinner-border spinner-border-sm text-success" role="status">
                       <span className="visually-hidden">Loading...</span>
@@ -417,10 +417,6 @@ function Request() {
         {/* Page Header with Add Item and View List Buttons */}
         <div className="d-flex justify-content-between align-items-start mb-5">
           <div>
-            <h2 className="mb-2">
-              <i className="bi bi-clipboard-plus text-primary me-2"></i>
-              Create New Request
-            </h2>
             <p className="text-muted small mb-0">Add products and specify delivery deadlines for your manufacturing request</p>
           </div>
           <div className="d-flex gap-2">
@@ -428,7 +424,7 @@ function Request() {
               className="btn btn-outline-primary"
               onClick={() => navigate("/request-list")}
             >
-              <i className="bi bi-list-check me-2"></i> View Request List
+              <i className="bi bi-list-check me-2"></i> View Purchase Order List
             </button>
           </div>
         </div>

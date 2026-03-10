@@ -33,7 +33,6 @@ function ExtensionApprovalModal({ notification, onClose, onSuccess }) {
 
       if (response.ok) {
         const data = await response.json();
-        console.log("Extension approved:", data);
         onSuccess();
         onClose();
       } else {
@@ -74,7 +73,6 @@ function ExtensionApprovalModal({ notification, onClose, onSuccess }) {
 
       if (response.ok) {
         const data = await response.json();
-        console.log("Extension rejected:", data);
         onSuccess();
         onClose();
       } else {

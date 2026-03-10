@@ -8,10 +8,10 @@ from django.views.decorators.csrf import csrf_exempt
 from django.contrib.auth.models import User
 from django.db.models import Q
 from django.db import models
-from .models import Requests, UserProfile, Roles
+from .models import Requests, UserProfile, Roles, ProductProcess, ProcessTemplate, RequestProduct
 from .permissions import role_required
 from rest_framework.parsers import JSONParser
-from .views import log_audit, create_notification
+from .views import log_audit, create_notification, _extract_process_details
 
 
 @csrf_exempt
@@ -49,7 +49,6 @@ def get_pending_customer_requests(request):
                     "approval_status": req.approval_status,
                 })
             except Exception as e:
-                print(f"[ERROR] Failed to serialize request {req.RequestID}: {str(e)}")
                 continue
         
         return JsonResponse({
@@ -85,30 +84,20 @@ def approve_customer_request(request):
         if not request_id:
             return JsonResponse({"detail": "request_id is required"}, status=400)
         
-        print(f"[APPROVE] Attempting to approve Request #{request_id}")
-        
         customer_request = Requests.objects.get(RequestID=request_id)
-        print(f"[APPROVE] Found request. Current status: {customer_request.approval_status}")
         
         # Only approve if status is pending
         if customer_request.approval_status != "pending":
-            print(f"[APPROVE] Request already has status: {customer_request.approval_status}")
             return JsonResponse({
                 "detail": f"Request is already {customer_request.approval_status}"
             }, status=400)
         
         # Approve the request
         customer_request.approval_status = "approved"
+        customer_request.request_status = "active"  # Mark as active when approved
         customer_request.approved_by = request.user
         customer_request.approval_notes = approval_notes
         customer_request.save()
-        
-        print(f"[APPROVE] Request #{request_id} saved successfully with status: {customer_request.approval_status}")
-        print(f"[APPROVE] Approved by: {request.user.username}")
-        
-        # Verify it was saved
-        verified = Requests.objects.get(RequestID=request_id)
-        print(f"[APPROVE] Verification - current status in DB: {verified.approval_status}")
         
         # Log audit entry
         try:
@@ -122,12 +111,11 @@ def approve_customer_request(request):
                 })
             )
         except Exception as e:
-            print(f"[AUDIT] Failed to log approval: {str(e)}")
+            pass
         
         # Create notification for the requester
         if customer_request.requester:
             try:
-                print(f"[APPROVE] Creating notification for requester: {customer_request.requester.username}")
                 result = create_notification(
                     user=customer_request.requester,
                     notification_type='request_approved',
@@ -135,7 +123,6 @@ def approve_customer_request(request):
                     message=f'Your request #{request_id} has been approved by {request.user.username}',
                     related_request=customer_request
                 )
-                print(f"[APPROVE] Notification created for requester: {result}")
             except Exception as e:
                 print(f"[NOTIFICATION] Failed to create approval notification for requester: {str(e)}")
                 import traceback
@@ -143,9 +130,7 @@ def approve_customer_request(request):
         
         # Create notifications for admin users
         try:
-            print(f"[APPROVE] Creating notifications for admin users")
             admin_users = User.objects.filter(Q(is_staff=True) | Q(is_superuser=True)).exclude(id=request.user.id)
-            print(f"[APPROVE] Found {admin_users.count()} admin users")
             requester_name = customer_request.requester.username if customer_request.requester else "Unknown"
             for admin_user in admin_users:
                 result = create_notification(
@@ -155,7 +140,6 @@ def approve_customer_request(request):
                     message=f'Request #{request_id} from {requester_name} has been approved by {request.user.username}',
                     related_request=customer_request
                 )
-                print(f"[APPROVE] Notification created for admin {admin_user.username}: {result}")
         except Exception as e:
             print(f"[NOTIFICATION] Failed to create approval notification for admins: {str(e)}")
             import traceback
@@ -163,9 +147,7 @@ def approve_customer_request(request):
         
         # Create notifications for production managers
         try:
-            print(f"[APPROVE] Creating notifications for production managers")
             pm_users = User.objects.filter(userprofile__role=Roles.PRODUCTION_MANAGER)
-            print(f"[APPROVE] Found {pm_users.count()} production managers")
             requester_name = customer_request.requester.username if customer_request.requester else "Unknown"
             for pm_user in pm_users:
                 result = create_notification(
@@ -175,7 +157,6 @@ def approve_customer_request(request):
                     message=f'Request #{request_id} from {requester_name} has been approved',
                     related_request=customer_request
                 )
-                print(f"[APPROVE] Notification created for PM {pm_user.username}: {result}")
         except Exception as e:
             print(f"[NOTIFICATION] Failed to create approval notification for PMs: {str(e)}")
             import traceback
@@ -245,12 +226,11 @@ def decline_customer_request(request):
                 })
             )
         except Exception as e:
-            print(f"[AUDIT] Failed to log decline: {str(e)}")
+            pass
         
         # Create notification for the requester
         if customer_request.requester:
             try:
-                print(f"[DECLINE] Creating notification for requester: {customer_request.requester.username}")
                 result = create_notification(
                     user=customer_request.requester,
                     notification_type='request_declined',
@@ -258,7 +238,6 @@ def decline_customer_request(request):
                     message=f'Your request #{request_id} has been declined. Reason: {reason}',
                     related_request=customer_request
                 )
-                print(f"[DECLINE] Notification created for requester: {result}")
             except Exception as e:
                 print(f"[NOTIFICATION] Failed to create decline notification for requester: {str(e)}")
                 import traceback
@@ -266,9 +245,7 @@ def decline_customer_request(request):
         
         # Create notifications for admin users
         try:
-            print(f"[DECLINE] Creating notifications for admin users")
             admin_users = User.objects.filter(Q(is_staff=True) | Q(is_superuser=True)).exclude(id=request.user.id)
-            print(f"[DECLINE] Found {admin_users.count()} admin users")
             requester_name = customer_request.requester.username if customer_request.requester else "Unknown"
             for admin_user in admin_users:
                 result = create_notification(
@@ -278,7 +255,6 @@ def decline_customer_request(request):
                     message=f'Request #{request_id} from {requester_name} has been declined. Reason: {reason}',
                     related_request=customer_request
                 )
-                print(f"[DECLINE] Notification created for admin {admin_user.username}: {result}")
         except Exception as e:
             print(f"[NOTIFICATION] Failed to create decline notification for admins: {str(e)}")
             import traceback
@@ -286,9 +262,7 @@ def decline_customer_request(request):
         
         # Create notifications for production managers
         try:
-            print(f"[DECLINE] Creating notifications for production managers")
             pm_users = User.objects.filter(userprofile__role=Roles.PRODUCTION_MANAGER)
-            print(f"[DECLINE] Found {pm_users.count()} production managers")
             requester_name = customer_request.requester.username if customer_request.requester else "Unknown"
             for pm_user in pm_users:
                 result = create_notification(
@@ -298,7 +272,6 @@ def decline_customer_request(request):
                     message=f'Request #{request_id} from {requester_name} has been declined. Reason: {reason}',
                     related_request=customer_request
                 )
-                print(f"[DECLINE] Notification created for PM {pm_user.username}: {result}")
         except Exception as e:
             print(f"[NOTIFICATION] Failed to create decline notification for PMs: {str(e)}")
             import traceback
@@ -442,3 +415,221 @@ def diagnose_request(request, request_id):
         return JsonResponse({"detail": f"Request #{request_id} not found"}, status=404)
     except Exception as e:
         return JsonResponse({"detail": f"Error: {str(e)}"}, status=500)
+
+
+@csrf_exempt
+@role_required("admin")
+def get_available_customers(request):
+    """
+    Get list of all available customers for admin to assign requests
+    GET /app/admin/available-customers/
+    """
+    try:
+        if request.method != "GET":
+            return JsonResponse({"detail": "Method not allowed"}, status=405)
+        
+        # Get all users with customer role
+        customer_users = User.objects.filter(
+            userprofile__role=Roles.CUSTOMER
+        ).select_related('userprofile').order_by('userprofile__full_name')
+        
+        customers = []
+        for user in customer_users:
+            profile = user.userprofile
+            customers.append({
+                "id": user.id,
+                "username": user.username,
+                "email": user.email,
+                "full_name": profile.full_name,
+                "company_name": profile.company_name,
+                "contact_number": profile.contact_number,
+                "is_verified": profile.is_verified,
+            })
+        
+        return JsonResponse({
+            "success": True,
+            "customers": customers,
+            "total_customers": len(customers)
+        }, status=200)
+        
+    except Exception as e:
+        return JsonResponse({"detail": f"Error fetching customers: {str(e)}"}, status=500)
+
+
+def _create_product_process_tasks_from_templates(request_obj):
+    """
+    Helper function to create ProductProcess tasks from ProcessTemplate records
+    for each product in a request after the request is created
+    
+    This ensures that when admin creates a request with products (via Add Product/Part modal),
+    all the ProductProcess tasks are automatically created so the request appears in Task Status
+    """
+    try:
+        request_products = request_obj.request_products.all()
+        total_tasks_created = 0
+        
+        print(f"[TASK_CREATION] Creating ProductProcess tasks for request {request_obj.RequestID}")
+        print(f"[TASK_CREATION] Request has {request_products.count()} products")
+        
+        for request_product in request_products:
+            product = request_product.product
+            if not product:
+                print(f"[TASK_CREATION] Skipping RequestProduct {request_product.id} - no product assigned")
+                continue
+            
+            # Check if tasks already exist for this product
+            existing_tasks = ProductProcess.objects.filter(request_product=request_product).count()
+            if existing_tasks > 0:
+                print(f"[TASK_CREATION] Product '{product.prodName}' already has {existing_tasks} tasks - skipping")
+                continue
+            
+            # Get ProcessTemplate records for this product (these were created when admin added the product)
+            templates = ProcessTemplate.objects.filter(product_name=product).order_by('step_order')
+            
+            print(f"[TASK_CREATION] Product '{product.prodName}' has {templates.count()} templates")
+            
+            if templates.exists():
+                # Create ProductProcess task for each template
+                for template in templates:
+                    # Extract process number and name from combined format "PST-01 - Withdrawal"
+                    process_num, process_name_text = _extract_process_details(template.process.name)
+                    
+                    task = ProductProcess.objects.create(
+                        request_product=request_product,
+                        process=template.process,
+                        process_number=process_num,
+                        process_name=process_name_text,
+                        step_order=template.step_order,
+                        production_date=request_obj.deadline,
+                        completed_quota=0,
+                        is_completed=False
+                    )
+                    total_tasks_created += 1
+                    print(f"[TASK_CREATION] ✓ Created task {task.id}: {process_name_text} (PST-{process_num})")
+            else:
+                print(f"[TASK_CREATION] WARNING: Product '{product.prodName}' has no ProcessTemplate records!")
+                print(f"[TASK_CREATION] This product was likely not properly configured with processes.")
+        
+        print(f"[TASK_CREATION] ✓ COMPLETE: Created {total_tasks_created} ProductProcess tasks for request {request_obj.RequestID}")
+        return total_tasks_created
+        
+    except Exception as e:
+        print(f"[TASK_CREATION] ERROR creating ProductProcess tasks: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return 0
+
+
+@csrf_exempt
+@role_required("admin")
+def create_admin_request(request):
+    """
+    Create a new request as admin and assign it to a customer
+    POST /app/admin/create-request/
+    {
+        "requester_id": 5,
+        "deadline": "2025-01-15",
+        "products": [
+            {"product": 1, "quantity": 10, "deadline_extension": "2025-01-20"},
+            {"product": 2, "quantity": 5, "deadline_extension": "2025-01-20"}
+        ]
+    }
+    """
+    try:
+        if request.method != "POST":
+            return JsonResponse({"detail": "Method not allowed"}, status=405)
+        
+        from .serializers import RequestSerializer
+        
+        data = JSONParser().parse(request)
+        requester_id = data.get('requester_id')
+        
+        if not requester_id:
+            return JsonResponse({"detail": "requester_id is required"}, status=400)
+        
+        # Verify requester exists and is a customer
+        try:
+            requester = User.objects.get(id=requester_id)
+            requester_profile = requester.userprofile
+            if requester_profile.role != Roles.CUSTOMER:
+                return JsonResponse({
+                    "detail": f"User {requester.username} is not a customer (role: {requester_profile.role})"
+                }, status=400)
+        except User.DoesNotExist:
+            return JsonResponse({"detail": f"User with ID {requester_id} not found"}, status=404)
+        except UserProfile.DoesNotExist:
+            return JsonResponse({"detail": f"User {requester_id} does not have a profile"}, status=404)
+        
+        # Add requester to data for the serializer
+        data['requester'] = requester_id
+        
+        # Map 'products' key to 'request_products' for the serializer
+        if 'products' in data:
+            data['request_products'] = data.pop('products')
+            print(f"[CREATE_REQUEST] Mapped products to request_products: {data['request_products']}")
+        
+        # Use RequestSerializer to create the request
+        serializer = RequestSerializer(data=data, context={'request': request})
+        
+        if serializer.is_valid():
+            created_request = serializer.save()
+            
+            # Auto-approve the request (set approval_status to 'approved')
+            # This way it goes directly to production manager, bypassing admin approval
+            created_request.approval_status = 'approved'
+            created_request.request_status = 'new_request'  # Set to new_request - waiting to be started by production manager
+            created_request.save()
+            
+            # ===== NEW: Automatically create ProductProcess tasks from ProcessTemplate records =====
+            # This ensures the request appears in Task Status for the production manager
+            tasks_created = _create_product_process_tasks_from_templates(created_request)
+            print(f"[CREATE_REQUEST] Created {tasks_created} ProductProcess tasks for request {created_request.RequestID}")
+            
+            # Create notification for the customer
+            try:
+                create_notification(
+                    user=requester,
+                    notification_type='request_created',
+                    title='New Request Assigned',
+                    message=f'Admin {request.user.username} has created a new request #{created_request.RequestID} for you with deadline {created_request.deadline}',
+                    related_request=created_request
+                )
+            except Exception as notif_error:
+                print(f"[NOTIFICATION] Failed to create notification: {str(notif_error)}")
+            
+            # Create notification for all admin users
+            try:
+                admin_users = User.objects.filter(
+                    Q(is_staff=True) | Q(is_superuser=True)
+                ).exclude(id=request.user.id)
+                for admin_user in admin_users:
+                    create_notification(
+                        user=admin_user,
+                        notification_type='request_created',
+                        title='New Request Created by Admin',
+                        message=f'{request.user.username} created request #{created_request.RequestID} for customer {requester.username}',
+                        related_request=created_request
+                    )
+            except Exception as notif_error:
+                print(f"[NOTIFICATION] Failed to create admin notification: {str(notif_error)}")
+            
+            return JsonResponse({
+                "success": True,
+                "message": f"Request #{created_request.RequestID} created and approved - {tasks_created} tasks ready for production",
+                "request_id": created_request.RequestID,
+                "requester": requester.username,
+                "tasks_created": tasks_created,
+            }, status=201)
+        else:
+            print(f"[CREATE_REQUEST] Serializer validation failed!")
+            print(f"[CREATE_REQUEST] Serializer errors: {serializer.errors}")
+            print(f"[CREATE_REQUEST] Validated data: {serializer.validated_data if hasattr(serializer, 'validated_data') else 'N/A'}")
+            return JsonResponse({
+                "success": False,
+                "errors": serializer.errors
+            }, status=400)
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return JsonResponse({"detail": f"Error creating request: {str(e)}"}, status=500)

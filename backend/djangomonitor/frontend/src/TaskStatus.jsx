@@ -16,6 +16,8 @@ function TaskStatus() {
   const [showAddProductModal, setShowAddProductModal] = useState(false);
   const [sortBy, setSortBy] = useState("date"); // "date", "number", "name"
   const [sortOrder, setSortOrder] = useState("desc"); // "asc", "desc"
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
   const [partForm, setPartForm] = useState({
     part_name: "",
     processes: [{ process_number: "", process_name: "" }]
@@ -23,6 +25,7 @@ function TaskStatus() {
   const [addProductLoading, setAddProductLoading] = useState(false);
   const [addProductMessage, setAddProductMessage] = useState("");
   const [toastType, setToastType] = useState("info"); // 'success' or 'error'
+  const [selectedProcessIndex, setSelectedProcessIndex] = useState(0);
 
   useEffect(() => {
     fetchTaskStatus(filterStatus);
@@ -42,6 +45,7 @@ function TaskStatus() {
     setShowAddProductModal(true);
     setPartForm({ part_name: "", processes: [{ process_number: "", process_names: [""] }] });
     setAddProductMessage("");
+    setSelectedProcessIndex(0);
   };
 
   const handleAddProductFormChange = (e) => {
@@ -229,24 +233,15 @@ function TaskStatus() {
         // Find first incomplete step (current step being worked on)
         const currentStep = product.steps.find(s => !s.is_completed) || product.steps[totalSteps - 1];
         
-        console.log(`📋 Product: ${product.product_name}`);
-        console.log(`   Total steps: ${totalSteps}, Completed: ${completedSteps}`);
-        console.log(`   Steps:`, product.steps.map(s => `[${s.process_name}:${s.is_completed ? '✓' : '✗'}]`));
-        console.log(`   Current step: ${currentStep?.process_name} (is_completed: ${currentStep?.is_completed})`);
-        
         // Use overall_progress from backend if available, otherwise calculate
         let progressPercent = 0;
         
         if (product.steps.length > 0 && product.steps[0].overall_progress !== undefined) {
           // Use backend's calculated overall_progress
           progressPercent = product.steps[0].overall_progress;
-          console.log(`📊 Using backend overall_progress for ${product.product_name}:`);
-          console.log(`   overall_progress: ${progressPercent}%`);
-          console.log(`   Steps completed: ${completedSteps}/${totalSteps}`);
-          console.log(`   PST-01 completed: ${product.steps[0]?.is_pst_01 && product.steps[0]?.is_completed}`);
+
         } else {
           // Fallback to old calculation method
-          console.log(`⚠️ No overall_progress from backend for ${product.product_name}, calculating fallback`);
           // Calculate progress of current step (how much of the quota is done)
           const currentStepProgress = currentStep 
             ? (currentStep.completed_quota || 0) / (currentStep.total_quota || 1)
@@ -262,8 +257,28 @@ function TaskStatus() {
         // For completed tasks, aggregate ALL steps data; for in-progress, show current step only
         let displayData = {};
         if (isCompleted) {
-          // Sum defects from all steps
-          const totalDefects = product.steps.reduce((sum, step) => sum + (step.defect_count || 0), 0);
+          // Sum defects from all steps using defect_logs array (new) or fallback to defect_count (old)
+          const totalDefects = product.steps.reduce((sum, step) => {
+            const stepDefects = step.defect_logs && step.defect_logs.length > 0
+              ? step.defect_logs.reduce((logSum, log) => logSum + (log.defect_count || 0), 0)
+              : (step.defect_count || 0);
+            return sum + stepDefects;
+          }, 0);
+          
+          // Collect all unique defect types from all steps (from defect_logs array)
+          const defectTypes = new Set();
+          product.steps.forEach(step => {
+            // First, collect from new defect_logs array
+            if (step.defect_logs && step.defect_logs.length > 0) {
+              step.defect_logs.forEach(log => {
+                defectTypes.add(log.defect_type);
+              });
+            }
+            // Fallback to old defect_type field for backward compatibility
+            if (step.defect_type) {
+              defectTypes.add(step.defect_type);
+            }
+          });
           
           // Collect all unique workers from all steps
           const allWorkers = new Set();
@@ -280,6 +295,9 @@ function TaskStatus() {
             total_quota: step.total_quota,
             completed_quota: step.completed_quota,
             defect_count: step.defect_count,
+            defect_type: step.defect_type,
+            defect_description: step.defect_description,
+            defect_logs: step.defect_logs || [],
             workers: step.worker_names || [],
             is_pst_01: step.is_pst_01
           }));
@@ -287,6 +305,7 @@ function TaskStatus() {
           displayData = {
             completed_summary: `${product.total_quota}/${product.total_quota}`,
             defect_count: totalDefects,
+            defect_types: Array.from(defectTypes),
             worker_names: Array.from(allWorkers),
             process_name: `All Steps (${totalSteps})`,
             updated_at: product.steps[totalSteps - 1]?.updated_at || "—",
@@ -297,11 +316,16 @@ function TaskStatus() {
           // Show current step's information
           const isPST01 = currentStep?.is_pst_01;
           
+          // Calculate current step defects from defect_logs array (new) or fallback to defect_count (old)
+          const currentStepDefects = currentStep && currentStep.defect_logs && currentStep.defect_logs.length > 0
+            ? currentStep.defect_logs.reduce((sum, log) => sum + (log.defect_count || 0), 0)
+            : (currentStep?.defect_count || 0);
+          
           displayData = {
             completed_summary: isPST01 
               ? `✓ Withdrawal` 
               : `${currentStep?.completed_quota || 0}/${product.total_quota}`,
-            defect_count: currentStep?.defect_count || 0,
+            defect_count: currentStepDefects,
             worker_names: currentStep?.worker_names || [],
             process_name: currentStep?.process_name || "—",
             updated_at: currentStep?.updated_at || "—",
@@ -334,7 +358,6 @@ function TaskStatus() {
       }
       // For "all", show everything that came from the API (respecting include_completed param)
       
-      console.log("📊 Loaded aggregated product data:", aggregatedData);
       setRequestProducts(aggregatedData);
     } catch (err) {
       console.error("Error fetching task status:", err);
@@ -345,6 +368,7 @@ function TaskStatus() {
 
   const handleFilterChange = (e) => {
     setFilterStatus(e.target.value);
+    setCurrentPage(1); // Reset to first page when filter changes
     fetchTaskStatus(e.target.value);
   };
 
@@ -378,37 +402,29 @@ function TaskStatus() {
   }, [requestProducts, searchTerm, sortBy, sortOrder]);
 
   const handleOpenTaskDetail = (product) => {
-    console.log(`📂 Opening task detail for product: ${product.product_name}, is_completed: ${product.is_completed}`);
-    
     if (product.is_completed) {
       // For completed tasks, pass the product data directly (aggregated view)
       setSelectedTaskId(product);
     } else {
       // For in-progress tasks, find the first incomplete step
       const stepToOpen = product.steps.find(s => !s.is_completed) || product.steps[product.steps.length - 1];
-      console.log(`   Current step: ${stepToOpen?.step_order}`);
       setSelectedTaskId(stepToOpen?.id);
     }
     setShowTaskDetailModal(true);
   };
 
   const handleCloseTaskDetail = () => {
-    console.log("📁 Closing task detail modal");
     setShowTaskDetailModal(false);
     setSelectedTaskId(null);
   };
 
   const handleTaskSave = async (nextStepId) => {
-    console.log(`💾 Task saved. Next step ID: ${nextStepId}`);
     
     // Refresh the task list
-    console.log(`🔄 Calling fetchTaskStatus to refresh...`);
     await fetchTaskStatus(filterStatus);
-    console.log(`✅ fetchTaskStatus completed`);
     
     // If there's a next step, auto-open it
     if (nextStepId) {
-      console.log(`🔄 Auto-opening next step: ${nextStepId}`);
       setTimeout(() => {
         handleOpenTaskDetail(nextStepId);
       }, 300);
@@ -431,8 +447,8 @@ function TaskStatus() {
         {userData.role !== "admin" && (
           <>
             {/* Filter and Controls Bar */}
-            <div className="mb-4 d-flex align-items-end gap-3">
-          <div style={{ minWidth: "280px", display: "flex", flexDirection: "column" }}>
+            <div className="mb-4 d-flex align-items-end gap-3" style={{ marginTop: "30px" }}>
+          <div style={{ minWidth: "140px", display: "flex", flexDirection: "column" }}>
             <label className="fw-600 text-muted small mb-2 d-block">
               <i className="bi bi-funnel me-2"></i>Task Status Filter
               {loading && (
@@ -444,20 +460,20 @@ function TaskStatus() {
               onChange={handleFilterChange}
               className="form-select border-2 fw-500"
               disabled={loading}
-              style={{ opacity: loading ? 0.6 : 1, cursor: loading ? "not-allowed" : "pointer" }}
+              style={{ opacity: loading ? 0.6 : 1, cursor: loading ? "not-allowed" : "pointer", padding: "0.375rem 0.75rem", fontSize: "12px" }}
             >
               <option value="in-progress">In Progress</option>
               <option value="done">Completed</option>
             </select>
           </div>
           
-          <div style={{ minWidth: "200px", display: "flex", flexDirection: "column" }}>
+          <div style={{ minWidth: "130px", display: "flex", flexDirection: "column" }}>
             <select
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value)}
               className="form-select border-2 fw-500"
               disabled={loading}
-              style={{ opacity: loading ? 0.6 : 1, cursor: loading ? "not-allowed" : "pointer" }}
+              style={{ opacity: loading ? 0.6 : 1, cursor: loading ? "not-allowed" : "pointer", padding: "0.375rem 0.75rem", fontSize: "12px" }}
             >
               <option value="date">Sort By: Date</option>
               <option value="number">Sort By: Number</option>
@@ -465,13 +481,13 @@ function TaskStatus() {
             </select>
           </div>
 
-          <div style={{ minWidth: "180px", display: "flex", flexDirection: "column" }}>
+          <div style={{ minWidth: "165px", display: "flex", flexDirection: "column" }}>
             <select
               value={sortOrder}
               onChange={(e) => setSortOrder(e.target.value)}
               className="form-select border-2 fw-500"
               disabled={loading}
-              style={{ opacity: loading ? 0.6 : 1, cursor: loading ? "not-allowed" : "pointer" }}
+              style={{ opacity: loading ? 0.6 : 1, cursor: loading ? "not-allowed" : "pointer", padding: "0.375rem 0.75rem", fontSize: "12px" }}
             >
               <option value="desc">Order: Descending</option>
               <option value="asc">Order: Ascending</option>
@@ -487,17 +503,18 @@ function TaskStatus() {
               onChange={(e) => setSearchTerm(e.target.value)}
               className="form-control border-2"
               style={{
-                fontSize: "14px",
-                minWidth: "280px",
-                outline: "none"
+                fontSize: "12px",
+                minWidth: "200px",
+                outline: "none",
+                padding: "0.375rem 0.75rem"
               }}
             />
             
-            {userData.role === "admin" && (
+            {(userData.role === "admin" || userData.role === "production_manager") && (
               <button
                 onClick={handleAddProductClick}
                 className="btn fw-600"
-                style={{ minWidth: "200px", padding: "0.5rem 1.5rem", backgroundColor: "#9BC284", color: "white", border: "none" }}
+                style={{ minWidth: "170px", padding: "0.375rem 0.75rem", backgroundColor: "#46E63E", color: "white", border: "none", fontSize: "12px" }}
               >
                 <i className="bi bi-plus-circle me-2"></i>Add Product/Part
               </button>
@@ -509,33 +526,36 @@ function TaskStatus() {
         {loading ? (
           <div className="loading">Loading task status...</div>
         ) : sortedRequestProducts.length > 0 ? (
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Issuance No.</th>
-                <th>Requester</th>
-                <th>Product Name</th>
-                {filterStatus === "done" ? (
-                  <>
-                    <th>Total Completed Quota</th>
-                    <th>Total Defects</th>
-                    <th>Workers Assigned</th>
-                    <th>Completed Date</th>
-                  </>
-                ) : (
-                  <>
-                    <th>Progress</th>
-                    <th>Completed Quota</th>
-                    <th>Defect Count</th>
-                  </>
-                )}
-                <th>Due Date</th>
-                <th>Deadline Extension</th>
-                <th style={{ textAlign: "center", width: "50px" }}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {sortedRequestProducts.map((item) => (
+          <>
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Issuance No.</th>
+                  <th>Requester</th>
+                  <th>Product Name</th>
+                  {filterStatus === "done" ? (
+                    <>
+                      <th>Total Completed Quota</th>
+                      <th>Total Defects</th>
+                      <th>Completed Date</th>
+                    </>
+                  ) : (
+                    <>
+                      <th>Progress</th>
+                      <th>Completed Quota</th>
+                      <th>Defect Count</th>
+                    </>
+                  )}
+                  <th>Due Date</th>
+                  <th>Deadline Extension</th>
+                  <th>Last Update</th>
+                  <th style={{ textAlign: "center", width: "50px" }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sortedRequestProducts
+                  .slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
+                  .map((item) => (
                 <tr key={item.id}>
                   <td>
                     <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
@@ -560,12 +580,23 @@ function TaskStatus() {
                   {filterStatus === "done" ? (
                     <>
                       <td>{item.completed_summary || `0/${item.total_quota}`}</td>
-                      <td>{item.defect_count || 0}</td>
                       <td>
-                        {item.worker_names && item.worker_names.length > 0 
-                          ? item.worker_names.join(", ") 
-                          : "No workers assigned"
-                        }
+                        <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                          <div style={{ fontWeight: "600" }}>{item.defect_count || 0}</div>
+                          {item.defect_types && item.defect_types.length > 0 && (
+                            <div style={{ fontSize: "0.85em", color: "#666" }}>
+                              {item.defect_types.map(type => {
+                                const typeLabels = {
+                                  'dimension': 'Dimension',
+                                  'thickness': 'Thickness',
+                                  'rush': 'Rush',
+                                  'other': 'Other'
+                                };
+                                return typeLabels[type] || type;
+                              }).join(', ')}
+                            </div>
+                          )}
+                        </div>
                       </td>
                       <td>{item.completed_at || "N/A"}</td>
                     </>
@@ -605,6 +636,18 @@ function TaskStatus() {
                   )}
                   <td style={{ whiteSpace: "nowrap" }}>{item.due_date || "N/A"}</td>
                   <td style={{ whiteSpace: "nowrap" }}>{item.deadline_extension || "N/A"}</td>
+                  <td style={{ whiteSpace: "nowrap", fontSize: "0.85rem", color: "#666" }}>
+                    {item.updated_at 
+                      ? new Date(item.updated_at).toLocaleString('en-US', {
+                          year: 'numeric',
+                          month: '2-digit',
+                          day: '2-digit',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                          hour12: true
+                        })
+                      : "N/A"}
+                  </td>
                   <td style={{ textAlign: "center" }}>
                     <button 
                       className="actions-menu-btn" 
@@ -616,8 +659,127 @@ function TaskStatus() {
                   </td>
                 </tr>
               ))}
-            </tbody>
-          </table>
+              </tbody>
+            </table>
+
+            {/* Pagination Controls */}
+            {sortedRequestProducts.length > itemsPerPage && (
+              <div style={{
+                display: "flex",
+                justifyContent: "center",
+                alignItems: "center",
+                gap: "8px",
+                marginTop: "20px",
+                padding: "15px",
+                borderTop: "1px solid #e0e0e0",
+                flexWrap: "wrap"
+              }}>
+                <button
+                  onClick={() => setCurrentPage(1)}
+                  disabled={currentPage === 1}
+                  style={{
+                    padding: "6px 10px",
+                    border: currentPage === 1 ? "1px solid #ddd" : "1px solid #1D6AB7",
+                    backgroundColor: currentPage === 1 ? "#f0f0f0" : "#fff",
+                    color: currentPage === 1 ? "#999" : "#1D6AB7",
+                    borderRadius: "4px",
+                    cursor: currentPage === 1 ? "not-allowed" : "pointer",
+                    fontWeight: "500",
+                    fontSize: "12px"
+                  }}
+                >
+                  ◀◀ First
+                </button>
+
+                <button
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                  style={{
+                    padding: "6px 10px",
+                    border: currentPage === 1 ? "1px solid #ddd" : "1px solid #1D6AB7",
+                    backgroundColor: currentPage === 1 ? "#f0f0f0" : "#fff",
+                    color: currentPage === 1 ? "#999" : "#1D6AB7",
+                    borderRadius: "4px",
+                    cursor: currentPage === 1 ? "not-allowed" : "pointer",
+                    fontWeight: "500",
+                    fontSize: "12px"
+                  }}
+                >
+                  ◀ Previous
+                </button>
+
+                <div style={{ display: "flex", gap: "4px", alignItems: "center" }}>
+                  {Array.from({ length: Math.ceil(sortedRequestProducts.length / itemsPerPage) }, (_, i) => i + 1)
+                    .filter(page => {
+                      const maxPage = Math.ceil(sortedRequestProducts.length / itemsPerPage);
+                      if (maxPage <= 5) return true;
+                      if (page === 1 || page === maxPage) return true;
+                      if (Math.abs(page - currentPage) <= 1) return true;
+                      return false;
+                    })
+                    .map((page, idx, arr) => (
+                      <div key={page}>
+                        {idx > 0 && arr[idx - 1] !== page - 1 && <span style={{ color: "#999", padding: "0 4px" }}>...</span>}
+                        <button
+                          onClick={() => setCurrentPage(page)}
+                          style={{
+                            padding: "6px 10px",
+                            border: currentPage === page ? "1px solid #1D6AB7" : "1px solid #ddd",
+                            backgroundColor: currentPage === page ? "#1D6AB7" : "#fff",
+                            color: currentPage === page ? "#fff" : "#333",
+                            borderRadius: "4px",
+                            cursor: "pointer",
+                            fontWeight: currentPage === page ? "600" : "500",
+                            fontSize: "12px",
+                            minWidth: "32px"
+                          }}
+                        >
+                          {page}
+                        </button>
+                      </div>
+                    ))}
+                </div>
+
+                <button
+                  onClick={() => setCurrentPage(p => Math.min(Math.ceil(sortedRequestProducts.length / itemsPerPage), p + 1))}
+                  disabled={currentPage === Math.ceil(sortedRequestProducts.length / itemsPerPage)}
+                  style={{
+                    padding: "6px 10px",
+                    border: currentPage === Math.ceil(sortedRequestProducts.length / itemsPerPage) ? "1px solid #ddd" : "1px solid #1D6AB7",
+                    backgroundColor: currentPage === Math.ceil(sortedRequestProducts.length / itemsPerPage) ? "#f0f0f0" : "#fff",
+                    color: currentPage === Math.ceil(sortedRequestProducts.length / itemsPerPage) ? "#999" : "#1D6AB7",
+                    borderRadius: "4px",
+                    cursor: currentPage === Math.ceil(sortedRequestProducts.length / itemsPerPage) ? "not-allowed" : "pointer",
+                    fontWeight: "500",
+                    fontSize: "12px"
+                  }}
+                >
+                  Next ▶
+                </button>
+
+                <button
+                  onClick={() => setCurrentPage(Math.ceil(sortedRequestProducts.length / itemsPerPage))}
+                  disabled={currentPage === Math.ceil(sortedRequestProducts.length / itemsPerPage)}
+                  style={{
+                    padding: "6px 10px",
+                    border: currentPage === Math.ceil(sortedRequestProducts.length / itemsPerPage) ? "1px solid #ddd" : "1px solid #1D6AB7",
+                    backgroundColor: currentPage === Math.ceil(sortedRequestProducts.length / itemsPerPage) ? "#f0f0f0" : "#fff",
+                    color: currentPage === Math.ceil(sortedRequestProducts.length / itemsPerPage) ? "#999" : "#1D6AB7",
+                    borderRadius: "4px",
+                    cursor: currentPage === Math.ceil(sortedRequestProducts.length / itemsPerPage) ? "not-allowed" : "pointer",
+                    fontWeight: "500",
+                    fontSize: "12px"
+                  }}
+                >
+                  Last ▶▶
+                </button>
+
+                <span style={{ color: "#666", fontSize: "12px", marginLeft: "10px" }}>
+                  Page {currentPage} of {Math.ceil(sortedRequestProducts.length / itemsPerPage)}
+                </span>
+              </div>
+            )}
+          </>
         ) : (
           <div className="no-data">
             {searchTerm ? (
@@ -684,7 +846,7 @@ function TaskStatus() {
       {showAddProductModal && (
         <div className="modal-overlay" style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0, 0, 0, 0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999 }}>
           <div className="modal-dialog" style={{ backgroundColor: "white", borderRadius: "8px", maxWidth: "600px", width: "90%", maxHeight: "90vh", display: "flex", flexDirection: "column", overflow: "hidden" }} onClick={e => e.stopPropagation()}>
-            <div className="modal-header" style={{ backgroundColor: "#9BC284", padding: "1.5rem", borderBottom: "2px solid #fff", color: "white", display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0, gap: "1rem" }}>
+            <div className="modal-header" style={{ backgroundColor: "#46E63E", padding: "1.5rem", borderBottom: "2px solid #fff", color: "white", display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0, gap: "1rem" }}>
               <h5 className="modal-title" style={{ color: "white", marginBottom: 0, flex: 1 }}>Add Product/Part</h5>
               <button 
                 type="button" 

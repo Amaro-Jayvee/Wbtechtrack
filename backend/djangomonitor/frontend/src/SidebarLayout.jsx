@@ -16,14 +16,15 @@ function SidebarLayout({ children }) {
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [showNotificationDropdown, setShowNotificationDropdown] = useState(false);
+  const [notificationFilter, setNotificationFilter] = useState("all");
   const [showTermsModal, setShowTermsModal] = useState(false);
   const [termsLoading, setTermsLoading] = useState(false);
   const [showExtensionApprovalModal, setShowExtensionApprovalModal] = useState(false);
   const [selectedExtensionNotification, setSelectedExtensionNotification] = useState(null);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
 
   const fetchNotifications = async () => {
     try {
-      console.log("[SidebarLayout] Fetching notifications from: http://localhost:8000/app/notifications/");
       const response = await fetch("http://localhost:8000/app/notifications/", {
         method: "GET",
         credentials: "include",
@@ -32,13 +33,9 @@ function SidebarLayout({ children }) {
           "Content-Type": "application/json",
         }
       });
-
-      console.log("[SidebarLayout] Response status:", response.status);
       
       if (response.ok) {
         const data = await response.json();
-        console.log("[SidebarLayout] Fetched notifications:", data);
-        console.log("[SidebarLayout] Unread count from API:", data.unread_count);
         setNotifications(data.notifications || []);
         setUnreadCount(data.unread_count || 0);
         return data;
@@ -57,18 +54,15 @@ function SidebarLayout({ children }) {
       setShowTermsModal(true);
     }
     
-    console.log("[SidebarLayout] Initial notification fetch on mount");
     fetchNotifications();
 
-    // Poll for new notifications every 5 seconds
+    // Poll for new notifications every 60 seconds (increased from 30s to prevent thrashing)
     const notificationInterval = setInterval(() => {
-      console.log("[SidebarLayout] Polling for notifications (5s interval)");
       fetchNotifications();
-    }, 5000);
+    }, 60000);
 
     // Listen for manual refresh events from child components
     const handleRefreshNotifications = () => {
-      console.log("[SidebarLayout] Manual refresh event triggered");
       fetchNotifications();
     };
     window.addEventListener('refreshNotifications', handleRefreshNotifications);
@@ -81,24 +75,27 @@ function SidebarLayout({ children }) {
 
   const markAllNotificationsRead = async () => {
     try {
-      console.log("[SidebarLayout] Marking all notifications as read");
       const unreadNotifications = notifications.filter(n => !n.is_read);
       
       if (unreadNotifications.length === 0) {
-        console.log("[SidebarLayout] No unread notifications to mark");
         return;
       }
       
-      // Mark all unread notifications as read
+      // Immediately update local state to reflect read status (optimistic update)
+      const updatedNotifications = notifications.map(n => ({
+        ...n,
+        is_read: true
+      }));
+      setNotifications(updatedNotifications);
+      setUnreadCount(0);
+      
+      // Mark all unread notifications as read on the server (fire and forget)
       for (const notif of unreadNotifications) {
         await fetch(`http://localhost:8000/app/notifications/${notif.id}/read/`, {
           method: "POST",
           credentials: "include",
         });
       }
-      
-      console.log("[SidebarLayout] All notifications marked as read, fetching updated list");
-      await fetchNotifications();
     } catch (err) {
       console.error("[SidebarLayout] Error marking all notifications as read:", err);
     }
@@ -106,7 +103,15 @@ function SidebarLayout({ children }) {
 
   const markNotificationRead = async (notificationId) => {
     try {
-      console.log("[SidebarLayout] Marking notification as read:", notificationId);
+      // Immediately update local state (optimistic update)
+      const updatedNotifications = notifications.map(n =>
+        n.id === notificationId ? { ...n, is_read: true } : n
+      );
+      setNotifications(updatedNotifications);
+      const newUnreadCount = updatedNotifications.filter(n => !n.is_read).length;
+      setUnreadCount(newUnreadCount);
+      
+      // Mark as read on server (fire and forget, don't refetch)
       const response = await fetch(`http://localhost:8000/app/notifications/${notificationId}/read/`, {
         method: "POST",
         credentials: "include",
@@ -114,12 +119,6 @@ function SidebarLayout({ children }) {
 
       if (response.ok) {
         const markData = await response.json();
-        console.log("[SidebarLayout] Notification marked as read successfully:", markData);
-        
-        // Now fetch the updated notifications list to get the new unread count
-        console.log("[SidebarLayout] Fetching updated notifications list...");
-        await fetchNotifications();
-        console.log("[SidebarLayout] Notifications refreshed");
       } else {
         console.error("[SidebarLayout] Failed to mark notification as read:", response.status);
       }
@@ -129,11 +128,8 @@ function SidebarLayout({ children }) {
   };
 
   const handleNotificationClick = (notification) => {
-    console.log("[SidebarLayout] Notification clicked:", notification.notification_type);
-    
     // Handle extension request notifications
     if (notification.notification_type === "extension_requested") {
-      console.log("[SidebarLayout] Loading extension approval modal");
       setSelectedExtensionNotification(notification);
       setShowExtensionApprovalModal(true);
       setShowNotificationDropdown(false);
@@ -146,7 +142,6 @@ function SidebarLayout({ children }) {
   };
 
   const handleExtensionApprovalSuccess = async () => {
-    console.log("[SidebarLayout] Extension approval/rejection successful");
     await fetchNotifications();
   };
 
@@ -227,13 +222,14 @@ function SidebarLayout({ children }) {
     if (path === "/dashboard") return "Dashboard";
     if (path === "/accounts") return "Accounts";
     if (path === "/request") return "Requests";
-    if (path === "/request-list") return "Request List";
+    if (path === "/request-list") return "Purchase Order List";
     if (path === "/customer-requests") return "My Requests";
     if (path === "/customer/settings") return "Settings";
     if (path === "/task-status") {
-      // Show "Customer Requests" for admin, "Task Status" for others
-      return userData.role === "admin" ? "Customer Requests" : "Task Status";
+      // Show "Create Purchase Order" for admin, "Task Status" for others
+      return userData.role === "admin" ? "Create Purchase Order" : "Task Status";
     }
+    if (path === "/cancelled-requests") return "Cancelled Purchase Order";
     if (path === "/settings") return "Settings";
     return "Dashboard";
   };
@@ -241,10 +237,27 @@ function SidebarLayout({ children }) {
   return (
     <div className="dashboard-container">
       {/* Sidebar */}
-      <div className="sidebar">
-        <div className="sidebar-logo">
-          <img src="/Group 1.png" alt="WB Technologies" className="sidebar-logo-img" />
+      <div className={`sidebar ${sidebarCollapsed ? "collapsed" : "expanded"}`}>
+        {/* Sidebar Header - Logo and Toggle */}
+        <div className="sidebar-header">
+          <div className="sidebar-logo">
+            <img src="/Group 1.png" alt="WB Technologies" className="sidebar-logo-img" />
+          </div>
+          <button
+            className="sidebar-toggle-btn"
+            onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+            title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+          >
+            <i className={`bi ${sidebarCollapsed ? "bi-chevron-right" : "bi-chevron-left"}`}></i>
+          </button>
         </div>
+
+        {/* Sidebar Title */}
+        {!sidebarCollapsed && (
+          <div className="sidebar-title">
+            {getPageTitle()}
+          </div>
+        )}
         
         <div className="sidebar-items">
           {/* Admin/Manager Menu */}
@@ -256,6 +269,7 @@ function SidebarLayout({ children }) {
                 title="Dashboard"
               >
                 <img src="/Graph.png" alt="Dashboard" className="sidebar-icon" />
+                {!sidebarCollapsed && <span className="sidebar-label">Dashboard</span>}
               </Link>
               {/* Accounts - Only for Admin */}
               {userData.role === "admin" && (
@@ -265,6 +279,7 @@ function SidebarLayout({ children }) {
                   title="Accounts"
                 >
                   <img src="/Users.png" alt="Accounts" className="sidebar-icon" />
+                  {!sidebarCollapsed && <span className="sidebar-label">Accounts</span>}
                 </Link>
               )}
               
@@ -276,6 +291,19 @@ function SidebarLayout({ children }) {
                   title="Request Approval"
                 >
                   <img src="/3rd.png" alt="Request Approval" className="sidebar-icon" />
+                  {!sidebarCollapsed && <span className="sidebar-label">Request Approval</span>}
+                </Link>
+              )}
+              
+              {/* Admin - Cancelled Purchase Order */}
+              {userData.role === "admin" && (
+                <Link
+                  to="/cancelled-requests"
+                  className={`sidebar-item ${isActive("/cancelled-requests") ? "active" : ""}`}
+                  title="Cancelled Purchase Order"
+                >
+                  <img src="/cancel-removebg-preview.png" alt="Cancelled Purchase Order" className="sidebar-icon" />
+                  {!sidebarCollapsed && <span className="sidebar-label">Cancelled PO</span>}
                 </Link>
               )}
               
@@ -287,6 +315,7 @@ function SidebarLayout({ children }) {
                   title="View Requests"
                 >
                   <img src="/3rd.png" alt="View Requests" className="sidebar-icon" />
+                  {!sidebarCollapsed && <span className="sidebar-label">View Requests</span>}
                 </Link>
               )}
               
@@ -298,6 +327,19 @@ function SidebarLayout({ children }) {
                   title="Task Status"
                 >
                   <img src="/4th.png" alt="Task Status" className="sidebar-icon" />
+                  {!sidebarCollapsed && <span className="sidebar-label">Task Status</span>}
+                </Link>
+              )}
+
+              {/* Production Manager - Cancelled Purchase Order */}
+              {userData.role === "production_manager" && (
+                <Link
+                  to="/cancelled-requests"
+                  className={`sidebar-item ${isActive("/cancelled-requests") ? "active" : ""}`}
+                  title="Cancelled Purchase Order"
+                >
+                  <img src="/cancel-removebg-preview.png" alt="Cancelled Purchase Order" className="sidebar-icon" />
+                  {!sidebarCollapsed && <span className="sidebar-label">Cancelled PO</span>}
                 </Link>
               )}
 
@@ -307,6 +349,7 @@ function SidebarLayout({ children }) {
                 title="Settings"
               >
                 <img src="/Settings.png" alt="Settings" className="sidebar-icon" />
+                {!sidebarCollapsed && <span className="sidebar-label">Settings</span>}
               </Link>
             </>
           )}
@@ -320,6 +363,7 @@ function SidebarLayout({ children }) {
                 title="My Requests"
               >
                 <img src="/3rd.png" alt="My Requests" className="sidebar-icon" />
+                {!sidebarCollapsed && <span className="sidebar-label">My Requests</span>}
               </Link>
               <Link
                 to="/customer/settings"
@@ -327,6 +371,7 @@ function SidebarLayout({ children }) {
                 title="Settings"
               >
                 <img src="/Settings.png" alt="Settings" className="sidebar-icon" />
+                {!sidebarCollapsed && <span className="sidebar-label">Settings</span>}
               </Link>
             </>
           )}
@@ -334,7 +379,7 @@ function SidebarLayout({ children }) {
       </div>
 
       {/* Main Content */}
-      <div className="main-content">
+      <div className={`main-content ${sidebarCollapsed ? "sidebar-collapsed" : "sidebar-expanded"}`}>
         {/* Header */}
         <div className="header">
           <div className="header-title">
@@ -346,15 +391,11 @@ function SidebarLayout({ children }) {
               <button 
                 className={`btn btn-notification ${showNotificationDropdown ? 'notification-paused' : ''}`}
                 title="Notifications"
-                onClick={async () => {
-                  console.log("[SidebarLayout] Notification bell clicked, current dropdown state:", showNotificationDropdown);
-                  console.log("[SidebarLayout] Current notifications:", notifications);
-                  console.log("[SidebarLayout] Unread count:", unreadCount);
-                  
-                  // If opening the dropdown, mark all as read
-                  if (!showNotificationDropdown && unreadCount > 0) {
-                    console.log("[SidebarLayout] Opening dropdown - marking all as read");
-                    await markAllNotificationsRead();
+                onClick={() => {
+                  // If opening the dropdown, mark all notifications as read
+                  if (!showNotificationDropdown) {
+                    // Mark all unread notifications as read on server
+                    markAllNotificationsRead();
                   }
                   
                   setShowNotificationDropdown(!showNotificationDropdown);
@@ -382,17 +423,80 @@ function SidebarLayout({ children }) {
                     zIndex: 1000,
                   }}
                 >
-                  {/* Notification Header */}
-                  <div
-                    style={{
-                      padding: "12px 16px",
-                      borderBottom: "1px solid #eee",
-                      fontWeight: "600",
-                      fontSize: "14px",
-                      color: "#333",
-                    }}
-                  >
-                    Notifications {unreadCount > 0 && `(${unreadCount} new)`}
+                  {/* Notification Header with Filter */}
+                  <div style={{ borderBottom: "1px solid #eee" }}>
+                    <div
+                      style={{
+                        padding: "12px 16px",
+                        fontWeight: "600",
+                        fontSize: "14px",
+                        color: "#333",
+                      }}
+                    >
+                      Notifications
+                    </div>
+                    {/* Filter Tabs */}
+                    <div
+                      style={{
+                        display: "flex",
+                        borderTop: "1px solid #eee",
+                        backgroundColor: "#f8f9fa",
+                      }}
+                    >
+                      <button
+                        onClick={() => setNotificationFilter("all")}
+                        style={{
+                          flex: 1,
+                          padding: "8px 12px",
+                          border: "none",
+                          backgroundColor: notificationFilter === "all" ? "white" : "transparent",
+                          color: notificationFilter === "all" ? "#1D6AB7" : "#666",
+                          borderBottom: notificationFilter === "all" ? "2px solid #1D6AB7" : "none",
+                          cursor: "pointer",
+                          fontSize: "13px",
+                          fontWeight: notificationFilter === "all" ? "600" : "500",
+                          transition: "all 0.2s",
+                        }}
+                      >
+                        All
+                      </button>
+                      <button
+                        onClick={() => setNotificationFilter("unread")}
+                        style={{
+                          flex: 1,
+                          padding: "8px 12px",
+                          border: "none",
+                          backgroundColor: notificationFilter === "unread" ? "white" : "transparent",
+                          color: notificationFilter === "unread" ? "#1D6AB7" : "#666",
+                          borderBottom: notificationFilter === "unread" ? "2px solid #1D6AB7" : "none",
+                          borderLeft: "1px solid #eee",
+                          cursor: "pointer",
+                          fontSize: "13px",
+                          fontWeight: notificationFilter === "unread" ? "600" : "500",
+                          transition: "all 0.2s",
+                        }}
+                      >
+                        Unread
+                      </button>
+                      <button
+                        onClick={() => setNotificationFilter("read")}
+                        style={{
+                          flex: 1,
+                          padding: "8px 12px",
+                          border: "none",
+                          backgroundColor: notificationFilter === "read" ? "white" : "transparent",
+                          color: notificationFilter === "read" ? "#1D6AB7" : "#666",
+                          borderBottom: notificationFilter === "read" ? "2px solid #1D6AB7" : "none",
+                          borderLeft: "1px solid #eee",
+                          cursor: "pointer",
+                          fontSize: "13px",
+                          fontWeight: notificationFilter === "read" ? "600" : "500",
+                          transition: "all 0.2s",
+                        }}
+                      >
+                        Read
+                      </button>
+                    </div>
                   </div>
 
                   {/* Notifications List */}
@@ -409,7 +513,14 @@ function SidebarLayout({ children }) {
                     </div>
                   ) : (
                     <div>
-                      {notifications.map((notification) => (
+                      {notifications
+                        .filter((notification) => {
+                          if (notificationFilter === "all") return true;
+                          if (notificationFilter === "unread") return !notification.is_read;
+                          if (notificationFilter === "read") return notification.is_read;
+                          return true;
+                        })
+                        .map((notification) => (
                         <div
                           key={notification.id}
                           style={{

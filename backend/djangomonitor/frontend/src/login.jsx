@@ -28,10 +28,6 @@ function Login() {
       let url = "http://localhost:8000/app/login/";
       let body = { username: formData.username, password: formData.password };
 
-      console.log("🔐 Sending login request to:", url);
-      console.log("📝 Username:", formData.username);
-      console.log("📝 Password length:", formData.password.length);
-
       const response = await fetch(url, {
         method: "POST",
         headers: { 
@@ -42,11 +38,7 @@ function Login() {
         body: JSON.stringify(body),
       });
 
-      console.log("📊 Response status:", response.status);
-      console.log("📊 Content-Type:", response.headers.get('content-type'));
-      
       const responseText = await response.text();
-      console.log("📄 Raw response:", responseText);
       
       let data = {};
       try {
@@ -56,21 +48,16 @@ function Login() {
         data = { detail: "Invalid server response", raw: responseText };
       }
       
-      console.log("📦 Parsed data:", data);
-      
       if (!response.ok) {
         const errorMsg = data.detail || data.error || JSON.stringify(data) || "Unknown error";
         setMessage(`❌ ${errorMsg}`);
-        console.error("❌ Login failed with status", response.status, ":", data);
         return;
       }
 
       // Success - show loading screen and redirect
-      console.log("✅ Login successful!");
       setIsLoading(true);
       
       // Refresh user data in context
-      console.log("🔄 Refreshing user data in context...");
       await refreshUserData();
       
       // Determine redirect based on user role
@@ -79,7 +66,6 @@ function Login() {
         redirectPath = "/dashboard";
       }
       
-      console.log("🔀 Redirecting to " + redirectPath + " (role: " + data.role + ")");
       setTimeout(() => navigate(redirectPath), 1500);
     } catch (err) {
       console.error("❌ Network error:", err);
@@ -114,6 +100,7 @@ function Login() {
   // Login/Register Step
   return (
     <div className="login-page-wrapper">
+      <div className="login-hero">
       <div className="login-container">
         {/* Left Side - Branding */}
         <div className="login-left">
@@ -136,12 +123,14 @@ function Login() {
           ) : (
             <>
               <form onSubmit={handleSubmit}>
+                <h2 className="login-form-title">Login to your account</h2>
+                
                 <div>
-                  <label className="form-label">USERNAME</label>
+                  <label className="login-label">USERNAME</label>
                   <input
                     type="text"
                     name="username"
-                    className="form-control"
+                    className="login-input"
                     placeholder="Username"
                     value={formData.username}
                     onChange={handleChange}
@@ -151,11 +140,11 @@ function Login() {
                 </div>
 
                 <div>
-                  <label className="form-label">PASSWORD</label>
+                  <label className="login-label">PASSWORD</label>
                   <input
                     type="password"
                     name="password"
-                    className="form-control"
+                    className="login-input"
                     placeholder="Password"
                     value={formData.password}
                     onChange={handleChange}
@@ -164,21 +153,23 @@ function Login() {
                   />
                 </div>
 
-                {message && (
-                  <div className={`alert ${message.includes("error") ? "alert-danger" : "alert-success"}`} role="alert">
-                    {message}
-                  </div>
-                )}
-
-                <button type="submit" className="btn btn-primary">
-                  Sign In
-                </button>
+                <hr className="my-separator" />
 
                 <div className="text-center">
                   <a href="http://localhost:8000/app/reset_password/" className="forgot-password">
                     Forgot password?
                   </a>
                 </div>
+
+                {message && (
+                  <div className={`alert ${message.includes("error") ? "alert-danger" : "alert-success"}`} role="alert">
+                    {message}
+                  </div>
+                )}
+
+                <button type="submit" className="btn btn-primary sign-in-btn">
+                  Sign In
+                </button>
 
                 <div className="text-center mt-3">
                   <p className="mb-0">
@@ -206,6 +197,48 @@ function Login() {
           )}
         </div>
       </div>
+      </div>{/* end login-hero */}
+
+      {/* Footer */}
+      <footer className="login-footer">
+        <div className="footer-content">
+          <h3 className="footer-title">WB Technologies Inc.</h3>
+          <div className="footer-grid">
+            <div className="footer-item">
+              <span className="footer-label">Tel:</span>
+              <span className="footer-text">(02) 994.9971</span>
+            </div>
+            <div className="footer-item">
+              <span className="footer-label">Mobile:</span>
+              <span className="footer-text">0922 823 7874</span>
+            </div>
+            <div className="footer-item">
+              <span className="footer-label">Address:</span>
+              <span className="footer-text">B2, L11, Greenland Bulihan Business Park</span>
+            </div>
+            <div className="footer-item">
+              <span className="footer-label">Email:</span>
+              <span className="footer-text">wbtechnologiesinc@yahoo.com / worksbellphiles@yahoo.com</span>
+            </div>
+          </div>
+
+          {/* Company Vision */}
+          <div className="footer-vision">
+            <h4 className="footer-vision-title" style={{color: '#cc0000'}}>The Customer</h4>
+            <p className="footer-vision-text">
+The customer is the most important visitor in our premises.
+
+He is not dependent on us. We are dependent on him.
+
+He is not a distraction to our work. He is the purpose of it.
+
+He is not outsider of our business. He is a part of it.
+
+We are not doing him a favor serving him. He is doing us a favor by giving us opportunity to do so.
+            </p>
+          </div>
+        </div>
+      </footer>
     </div>
   );
 }

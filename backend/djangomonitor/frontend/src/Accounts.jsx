@@ -2,7 +2,6 @@ import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import SidebarLayout from "./SidebarLayout";
 import { useUser } from "./UserContext.jsx";
-import ActivityLogsPanel from "./ActivityLogsPanel";
 import "./Dashboard.css";
 
 function Accounts() {
@@ -27,7 +26,7 @@ function Accounts() {
   const [selectedAccount, setSelectedAccount] = useState(null);
   
   // View mode state
-  const [viewMode, setViewMode] = useState("active"); // "active", "pending", or "activity"
+  const [viewMode, setViewMode] = useState("active"); // "active" or "pending"
   
   const [createForm, setCreateForm] = useState({
     username: "",
@@ -328,27 +327,6 @@ function Accounts() {
                       {pendingSignups.length}
                     </span>
                   )}
-                </button>
-              )}
-              {userData.role === "admin" && (
-                <button
-                  onClick={() => setViewMode("activity")}
-                  style={{
-                    backgroundColor: viewMode === "activity" ? "#1D6AB7" : "#f0f0f0",
-                    color: viewMode === "activity" ? "white" : "#333",
-                    border: "none",
-                    borderRadius: "8px",
-                    padding: "12px 24px",
-                    fontSize: "16px",
-                    fontWeight: "600",
-                    cursor: "pointer",
-                    transition: "all 0.3s ease",
-                    boxShadow: viewMode === "activity" ? "0 2px 8px rgba(29, 106, 183, 0.2)" : "none"
-                  }}
-                  onMouseEnter={(e) => viewMode !== "activity" && (e.target.style.backgroundColor = "#e0e0e0")}
-                  onMouseLeave={(e) => viewMode !== "activity" && (e.target.style.backgroundColor = "#f0f0f0")}
-                >
-                  Activity Logs
                 </button>
               )}
             </div>
@@ -782,15 +760,6 @@ function Accounts() {
                 </button>
               </div>
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* Activity Logs View */}
-      {viewMode === "activity" && userData.role === "admin" && (
-        <div className="row">
-          <div className="col-md-12">
-            <ActivityLogsPanel title="System Activity Logs" limit={10} />
           </div>
         </div>
       )}
