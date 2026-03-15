@@ -91,7 +91,10 @@ class RequestProductReadSerializer(serializers.ModelSerializer):
         return obj.task_status()   # ✅ reuse model method
 
     def get_deadline_extension(self, obj):
-        # Only return deadline_extension if it's set AND extension_status is "approved"
+        # If extension is pending, return "-" to indicate it's under review
+        if obj.extension_status == "pending":
+            return "-"
+        # Only return the new deadline if extension is approved
         if obj.deadline_extension and obj.extension_status == "approved":
             return obj.deadline_extension.strftime("%Y-%m-%d")
         return None
@@ -538,6 +541,9 @@ class ProductProcessSerializer(serializers.ModelSerializer):
         return None
     
     def get_deadline_extension(self, obj):
+        # If extension is pending, return "-" to indicate it's under review
+        if obj.request_product and obj.request_product.extension_status == "pending":
+            return "-"
         # Only return deadline_extension if it's set AND extension_status is "approved"
         if obj.request_product and obj.request_product.deadline_extension and obj.request_product.extension_status == "approved":
             return obj.request_product.deadline_extension.strftime("%Y-%m-%d")
@@ -809,6 +815,9 @@ class CustomerProductDetailSerializer(serializers.ModelSerializer):
         return None
 
     def get_deadline_extension(self, obj):
+        # If extension is pending, return "-" to indicate it's under review
+        if obj.extension_status == "pending":
+            return "-"
         # Only return deadline_extension if it's set AND extension_status is "approved"
         if obj.deadline_extension and obj.extension_status == "approved":
             return obj.deadline_extension.strftime("%Y-%m-%d")

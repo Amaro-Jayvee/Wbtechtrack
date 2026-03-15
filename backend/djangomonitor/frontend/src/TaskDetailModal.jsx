@@ -1000,7 +1000,12 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
             </div>
           </div>
 
-          {/* Row 2: Process Number | Process Name | Start Date */}
+          {/* Row 2: Process Number | Process Name | Start Date 
+              LAYOUT ADJUSTMENT (March 15, 2026):
+              - Process Name/Operation Description: Increased flex from 0.5 → 1.5 (3x more width for full visibility)
+              - Start Date: Reduced flex from 1 → 0.5 (50% reduction)
+              This allows long process descriptions to be fully visible without truncation
+          */}
           <div className="task-row">
             <div className="task-section" style={{ flex: "0 0 22%" }}>
               <label className="section-label" style={{ fontSize: "12px", whiteSpace: "nowrap", lineHeight: "1.3" }}>
@@ -1014,7 +1019,7 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
                 style={{ fontWeight: "600", fontSize: "14px", backgroundColor: "#f0f8ff" }}
               />
             </div>
-            <div className="task-section" style={{ flex: "0.5" }}>
+            <div className="task-section" style={{ flex: "1.5" }}>
               <label className="section-label" style={{ fontSize: "12px" }}>
                 Process Name/Operation Description
               </label>
@@ -1026,7 +1031,7 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
                 style={{ fontWeight: "500", fontSize: "14px" }}
               />
             </div>
-            <div className="task-section" style={{ flex: "1" }}>
+            <div className="task-section" style={{ flex: "0.5" }}>
               <label className="section-label" style={{ fontSize: "12px", whiteSpace: "nowrap" }}>Start Date</label>
               <input
                 type="text"

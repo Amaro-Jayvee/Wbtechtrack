@@ -458,3 +458,39 @@
 [CREATE_NOTIF] OK Created notification ID: 814
 [CREATE_NOTIF] User: prodmanager, Type: task_status_updated, Title: Task Updated
 [CREATE_NOTIF] OK Created notification ID: 815
+[CREATE_NOTIF] User: Jayveeamaro, Type: request_created, Title: New Request Assigned
+[CREATE_NOTIF] OK Created notification ID: 816
+[CREATE_NOTIF] User: testadmin, Type: request_created, Title: New Request Created by Admin
+[CREATE_NOTIF] OK Created notification ID: 817
+[CREATE_NOTIF] User: Jayveeamaro, Type: task_status_updated, Title: Task Status Updated
+[CREATE_NOTIF] OK Created notification ID: 818
+[CREATE_NOTIF] User: prodmanager, Type: task_status_updated, Title: Task Updated
+[CREATE_NOTIF] OK Created notification ID: 819
+[CREATE_NOTIF] User: Jayveeamaro, Type: task_status_updated, Title: Task Status Updated
+[CREATE_NOTIF] OK Created notification ID: 820
+[CREATE_NOTIF] User: prodmanager, Type: task_status_updated, Title: Task Updated
+[CREATE_NOTIF] OK Created notification ID: 821
+[CREATE_NOTIF] User: Jayveeamaro, Type: task_status_updated, Title: Task Status Updated
+[CREATE_NOTIF] OK Created notification ID: 822
+[CREATE_NOTIF] User: prodmanager, Type: task_status_updated, Title: Task Updated
+[CREATE_NOTIF] OK Created notification ID: 823
+[CREATE_NOTIF] User: Jayveeamaro, Type: task_status_updated, Title: Task Status Updated
+[CREATE_NOTIF] OK Created notification ID: 824
+[CREATE_NOTIF] User: prodmanager, Type: task_status_updated, Title: Task Updated
+[CREATE_NOTIF] OK Created notification ID: 825
+[CREATE_NOTIF] User: Jayveeamaro, Type: task_status_updated, Title: Task Status Updated
+[CREATE_NOTIF] OK Created notification ID: 826
+[CREATE_NOTIF] User: prodmanager, Type: task_status_updated, Title: Task Updated
+[CREATE_NOTIF] OK Created notification ID: 827
+[CREATE_NOTIF] User: Jayveeamaro, Type: task_status_updated, Title: Task Status Updated
+[CREATE_NOTIF] OK Created notification ID: 828
+[CREATE_NOTIF] User: prodmanager, Type: task_status_updated, Title: Task Updated
+[CREATE_NOTIF] OK Created notification ID: 829
+[CREATE_NOTIF] User: Jayveeamaro, Type: task_status_updated, Title: Task Status Updated
+[CREATE_NOTIF] OK Created notification ID: 830
+[CREATE_NOTIF] User: prodmanager, Type: task_status_updated, Title: Task Updated
+[CREATE_NOTIF] OK Created notification ID: 831
+[CREATE_NOTIF] User: Jayveeamaro, Type: task_status_updated, Title: Task Status Updated
+[CREATE_NOTIF] OK Created notification ID: 832
+[CREATE_NOTIF] User: prodmanager, Type: task_status_updated, Title: Task Updated
+[CREATE_NOTIF] OK Created notification ID: 833

@@ -11,8 +11,8 @@ function RequestList() {
   const [requests, setRequests] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [loading, setLoading] = useState(true);
-  const [sortBy, setSortBy] = useState("date"); // "date", "name", "number"
-  const [sortOrder, setSortOrder] = useState("desc"); // "asc", "desc"
+  const [sortBy, setSortBy] = useState("number"); // "date", "name", "number"
+  const [sortOrder, setSortOrder] = useState("asc"); // "asc", "desc"
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -611,7 +611,7 @@ function RequestList() {
               );
               const maxPage = Math.ceil(filteredData.length / itemsPerPage);
               
-              return filteredData.length > itemsPerPage ? (
+              return maxPage > 1 ? (
                 <div style={{
                   display: "flex",
                   justifyContent: "center",

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { Bar, Pie } from "react-chartjs-2";
 import {
   Chart as ChartJS,
@@ -51,6 +52,7 @@ const pieChartLabelsPlugin = {
 ChartJS.register(CategoryScale, LinearScale, BarElement, ArcElement, Title, Tooltip, Legend, pieChartLabelsPlugin);
 
 function Dashboard() {
+  const navigate = useNavigate();
   const [barData, setBarData] = useState(null);
   const [pieData, setPieData] = useState(null);
   const [topMovers, setTopMovers] = useState(null);
@@ -129,8 +131,7 @@ function Dashboard() {
   };
 
   const handleDownloadReport = () => {
-    const params = `?month=${selectedMonth}&year=${selectedYear}&include_archived=${includeArchived}`;
-    window.location.href = `http://localhost:8000/app/full_report_pdf/${params}`;
+    navigate("/printable-report");
   };
 
 
@@ -198,8 +199,8 @@ function Dashboard() {
             </p>
           </div>
           <button className="btn btn-success" onClick={handleDownloadReport}>
-            <i className="bi bi-download" style={{ marginRight: "8px" }}></i>
-            Downloadable Report
+            <i className="bi bi-printer" style={{ marginRight: "8px" }}></i>
+            Printable Report
           </button>
         </div>
 
@@ -246,7 +247,7 @@ function Dashboard() {
               </select>
             </div>
 
-            {/* Include Archived Checkbox */}
+            {/* Include Cancelled Checkbox */}
             <div className="filter-group checkbox-group">
               <label htmlFor="include-archived" className="checkbox-label">
                 <input
@@ -256,7 +257,7 @@ function Dashboard() {
                   onChange={(e) => setIncludeArchived(e.target.checked)}
                   className="checkbox-input"
                 />
-                <span className="checkbox-text">Include Archived</span>
+                <span className="checkbox-text">Include Cancelled</span>
               </label>
             </div>
           </div>

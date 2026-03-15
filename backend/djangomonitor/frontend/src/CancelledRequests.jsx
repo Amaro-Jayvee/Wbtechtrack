@@ -8,8 +8,8 @@ function CancelledRequests() {
   const [cancelledRequests, setCancelledRequests] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [loading, setLoading] = useState(true);
-  const [sortBy, setSortBy] = useState("date");
-  const [sortOrder, setSortOrder] = useState("desc");
+  const [sortBy, setSortBy] = useState("number");
+  const [sortOrder, setSortOrder] = useState("asc");
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
 
@@ -251,7 +251,7 @@ function CancelledRequests() {
             </table>
 
             {/* Pagination Controls */}
-            {sortedRequests.length > itemsPerPage && (
+            {Math.ceil(sortedRequests.length / itemsPerPage) > 1 && (
               <div style={{
                 display: "flex",
                 justifyContent: "center",

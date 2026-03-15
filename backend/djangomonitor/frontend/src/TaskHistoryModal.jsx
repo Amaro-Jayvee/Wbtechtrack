@@ -1,3 +1,22 @@
+/**
+ * TaskHistoryModal Component
+ * 
+ * Displays detailed audit log history for a specific task/product.
+ * Shows all updates made to the product with detailed descriptions of what changed.
+ * 
+ * Features:
+ * - Title: "Log History" (renamed from "Task History" for clarity)
+ * - Action column: Plain text display (removed button styling for cleaner UI)
+ * - Changes column: Shows meaningful details like:
+ *   - "PST 01 (Withdrawal), Saved total quota: 140"
+ *   - "PST 08 (Assembly), Saved defect: 2"
+ *   - "PST 01, Marked as complete"
+ * - By column: Shows the user who performed the action
+ * - Date & Time column: Timestamp of each action
+ * 
+ * Related Backend: app/views.py -> task_history_view()
+ */
+
 import React, { useState, useEffect } from "react";
 import "./Dashboard.css";
 
@@ -81,7 +100,7 @@ function TaskHistoryModal({ requestProductId, productName, onClose }) {
         }}>
           <div>
             <h2 style={{ margin: 0, color: "white", fontSize: "1.1rem", fontWeight: "600" }}>
-              Task History
+              Log History
             </h2>
             <p style={{ margin: "0.25rem 0 0 0", fontSize: "0.85rem", opacity: 0.9 }}>
               {productName || "Product"}
@@ -146,25 +165,14 @@ function TaskHistoryModal({ requestProductId, productName, onClose }) {
               <tbody>
                 {history.map((item) => (
                   <tr key={item.id}>
-                    <td>
-                      <span style={{
-                        display: "inline-block",
-                        padding: "0.25rem 0.5rem",
-                        borderRadius: "3px",
-                        fontSize: "0.8rem",
-                        fontWeight: "600",
-                        color: "white",
-                        backgroundColor: getActionTypeColor(item.action_type),
-                        whiteSpace: "nowrap"
-                      }}>
-                        {item.action_display}
-                      </span>
+                    <td style={{ fontSize: "0.85rem", fontWeight: "500" }}>
+                      {item.action_display}
                     </td>
                     <td style={{ fontSize: "0.85rem", whiteSpace: "nowrap" }}>
                       {formatTimestamp(item.timestamp)}
                     </td>
                     <td style={{ fontSize: "0.9rem" }}>
-                      {item.performed_by}
+                      {item.performed_by || "System"}
                     </td>
                     <td>
                       {item.changes && item.changes.length > 0 ? (
@@ -176,7 +184,7 @@ function TaskHistoryModal({ requestProductId, productName, onClose }) {
                           ))}
                         </div>
                       ) : (
-                        <span style={{ color: "#999", fontSize: "0.85rem" }}>No details</span>
+                        <span style={{ color: "#999", fontSize: "0.85rem" }}>—</span>
                       )}
                     </td>
                   </tr>

@@ -31,7 +31,7 @@ function CustomerViewRequests() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [searchTerm, setSearchTerm] = useState("");
   const [sortBy, setSortBy] = useState("number");
-  const [sortOrder, setSortOrder] = useState("desc");
+  const [sortOrder, setSortOrder] = useState("asc");
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
   const [showLogoutModal, setShowLogoutModal] = useState(false);
@@ -1322,7 +1322,7 @@ function CustomerViewRequests() {
             </table>
 
             {/* Pagination Controls */}
-            {sortedTasks.length > itemsPerPage && (
+            {Math.ceil(sortedTasks.length / itemsPerPage) > 1 && (
               <div style={{
                 display: "flex",
                 justifyContent: "center",
@@ -1437,7 +1437,7 @@ function CustomerViewRequests() {
                   Page {currentPage} of {Math.ceil(sortedTasks.length / itemsPerPage)}
                 </span>
               </div>
-            )}
+            )}}
             </>
           )}
         </div>

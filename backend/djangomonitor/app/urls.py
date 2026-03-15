@@ -1,6 +1,6 @@
 from django.urls import path
 from .views import *
-from .views import login_view, logout_view, session_view, whoami_view, accept_terms_view, user_activity_logs, archived_requests_view, task_update_logs_view, task_update_log_delete_view, restore_request_view, restore_request_product_view
+from .views import login_view, logout_view, session_view, whoami_view, accept_terms_view, user_activity_logs, archived_requests_view, task_update_logs_view, task_update_log_delete_view, restore_request_view, restore_request_product_view, csrf_token_view
 from .admin_approval_views import (
     get_pending_customer_requests,
     approve_customer_request,
@@ -25,6 +25,7 @@ urlpatterns = [
     path('session/', session_view, name='api_session'),    
     path('whoami/', whoami_view, name='api_whoami'),
     path('accept-terms/', accept_terms_view, name='api_accept_terms'),
+    path('csrf-token/', csrf_token_view, name='csrf-token'),
 
     path('reset_password/', auth_views.PasswordResetView.as_view(), name='reset_password'),
     path('reset_password_sent/', auth_views.PasswordResetDoneView.as_view(), name='password_reset_done'),

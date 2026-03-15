@@ -14,10 +14,8 @@ function TaskStatus() {
   const [showTaskDetailModal, setShowTaskDetailModal] = useState(false);
   const [selectedTaskId, setSelectedTaskId] = useState(null);
   const [showAddProductModal, setShowAddProductModal] = useState(false);
-  const [sortBy, setSortBy] = useState("date"); // "date", "number", "name"
-  const [sortOrder, setSortOrder] = useState("desc"); // "asc", "desc"
-  const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 10;
+  const [sortBy, setSortBy] = useState("number"); // "date", "number", "name"
+  const [sortOrder, setSortOrder] = useState("asc"); // "asc", "desc"
   const [partForm, setPartForm] = useState({
     part_name: "",
     processes: [{ process_number: "", process_name: "" }]
@@ -26,6 +24,8 @@ function TaskStatus() {
   const [addProductMessage, setAddProductMessage] = useState("");
   const [toastType, setToastType] = useState("info"); // 'success' or 'error'
   const [selectedProcessIndex, setSelectedProcessIndex] = useState(0);
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
 
   useEffect(() => {
     fetchTaskStatus(filterStatus);
@@ -366,9 +366,13 @@ function TaskStatus() {
     }
   };
 
+  // Reset pagination when filter or sort changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filterStatus, sortBy, sortOrder, searchTerm]);
+
   const handleFilterChange = (e) => {
     setFilterStatus(e.target.value);
-    setCurrentPage(1); // Reset to first page when filter changes
     fetchTaskStatus(e.target.value);
   };
 
@@ -400,6 +404,21 @@ function TaskStatus() {
 
     return sorted;
   }, [requestProducts, searchTerm, sortBy, sortOrder]);
+
+  // Calculate paginated data
+  const totalPages = Math.ceil(sortedRequestProducts.length / itemsPerPage);
+  const paginatedData = useMemo(() => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    const endIndex = startIndex + itemsPerPage;
+    return sortedRequestProducts.slice(startIndex, endIndex);
+  }, [sortedRequestProducts, currentPage, itemsPerPage]);
+
+  // Reset to page 1 if current page exceeds total pages
+  useEffect(() => {
+    if (currentPage > totalPages && totalPages > 0) {
+      setCurrentPage(1);
+    }
+  }, [totalPages, currentPage]);
 
   const handleOpenTaskDetail = (product) => {
     if (product.is_completed) {
@@ -553,9 +572,7 @@ function TaskStatus() {
                 </tr>
               </thead>
               <tbody>
-                {sortedRequestProducts
-                  .slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
-                  .map((item) => (
+                {paginatedData.map((item) => (
                 <tr key={item.id}>
                   <td>
                     <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
@@ -659,11 +676,11 @@ function TaskStatus() {
                   </td>
                 </tr>
               ))}
-              </tbody>
+            </tbody>
             </table>
 
             {/* Pagination Controls */}
-            {sortedRequestProducts.length > itemsPerPage && (
+            {totalPages > 1 && (
               <div style={{
                 display: "flex",
                 justifyContent: "center",
@@ -709,11 +726,10 @@ function TaskStatus() {
                 </button>
 
                 <div style={{ display: "flex", gap: "4px", alignItems: "center" }}>
-                  {Array.from({ length: Math.ceil(sortedRequestProducts.length / itemsPerPage) }, (_, i) => i + 1)
+                  {Array.from({ length: totalPages }, (_, i) => i + 1)
                     .filter(page => {
-                      const maxPage = Math.ceil(sortedRequestProducts.length / itemsPerPage);
-                      if (maxPage <= 5) return true;
-                      if (page === 1 || page === maxPage) return true;
+                      if (totalPages <= 5) return true;
+                      if (page === 1 || page === totalPages) return true;
                       if (Math.abs(page - currentPage) <= 1) return true;
                       return false;
                     })
@@ -741,15 +757,15 @@ function TaskStatus() {
                 </div>
 
                 <button
-                  onClick={() => setCurrentPage(p => Math.min(Math.ceil(sortedRequestProducts.length / itemsPerPage), p + 1))}
-                  disabled={currentPage === Math.ceil(sortedRequestProducts.length / itemsPerPage)}
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                  disabled={currentPage === totalPages}
                   style={{
                     padding: "6px 10px",
-                    border: currentPage === Math.ceil(sortedRequestProducts.length / itemsPerPage) ? "1px solid #ddd" : "1px solid #1D6AB7",
-                    backgroundColor: currentPage === Math.ceil(sortedRequestProducts.length / itemsPerPage) ? "#f0f0f0" : "#fff",
-                    color: currentPage === Math.ceil(sortedRequestProducts.length / itemsPerPage) ? "#999" : "#1D6AB7",
+                    border: currentPage === totalPages ? "1px solid #ddd" : "1px solid #1D6AB7",
+                    backgroundColor: currentPage === totalPages ? "#f0f0f0" : "#fff",
+                    color: currentPage === totalPages ? "#999" : "#1D6AB7",
                     borderRadius: "4px",
-                    cursor: currentPage === Math.ceil(sortedRequestProducts.length / itemsPerPage) ? "not-allowed" : "pointer",
+                    cursor: currentPage === totalPages ? "not-allowed" : "pointer",
                     fontWeight: "500",
                     fontSize: "12px"
                   }}
@@ -758,15 +774,15 @@ function TaskStatus() {
                 </button>
 
                 <button
-                  onClick={() => setCurrentPage(Math.ceil(sortedRequestProducts.length / itemsPerPage))}
-                  disabled={currentPage === Math.ceil(sortedRequestProducts.length / itemsPerPage)}
+                  onClick={() => setCurrentPage(totalPages)}
+                  disabled={currentPage === totalPages}
                   style={{
                     padding: "6px 10px",
-                    border: currentPage === Math.ceil(sortedRequestProducts.length / itemsPerPage) ? "1px solid #ddd" : "1px solid #1D6AB7",
-                    backgroundColor: currentPage === Math.ceil(sortedRequestProducts.length / itemsPerPage) ? "#f0f0f0" : "#fff",
-                    color: currentPage === Math.ceil(sortedRequestProducts.length / itemsPerPage) ? "#999" : "#1D6AB7",
+                    border: currentPage === totalPages ? "1px solid #ddd" : "1px solid #1D6AB7",
+                    backgroundColor: currentPage === totalPages ? "#f0f0f0" : "#fff",
+                    color: currentPage === totalPages ? "#999" : "#1D6AB7",
                     borderRadius: "4px",
-                    cursor: currentPage === Math.ceil(sortedRequestProducts.length / itemsPerPage) ? "not-allowed" : "pointer",
+                    cursor: currentPage === totalPages ? "not-allowed" : "pointer",
                     fontWeight: "500",
                     fontSize: "12px"
                   }}
@@ -775,7 +791,7 @@ function TaskStatus() {
                 </button>
 
                 <span style={{ color: "#666", fontSize: "12px", marginLeft: "10px" }}>
-                  Page {currentPage} of {Math.ceil(sortedRequestProducts.length / itemsPerPage)}
+                  Page {currentPage} of {totalPages}
                 </span>
               </div>
             )}

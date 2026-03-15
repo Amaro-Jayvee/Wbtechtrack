@@ -14,7 +14,7 @@ function Login() {
   const [message, setMessage] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
-  const { refreshUserData } = useUser();
+  const { refreshUserData, userData } = useUser();
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -89,7 +89,7 @@ function Login() {
             <div className="spinner-border text-primary loading-spinner" role="status">
               <span className="visually-hidden">Loading...</span>
             </div>
-            <h2 className="loading-text">Welcome back!</h2>
+            <h2 className="loading-text">Welcome {userData.username ? `${userData.username}` : '!'}!</h2>
             <p className="loading-subtext">Preparing your dashboard...</p>
           </div>
         </div>

@@ -68,6 +68,15 @@ def success_response(data, code=200):
     """Return a standardized success response"""
     return JsonResponse(data, status=code)
 
+@ensure_csrf_cookie
+def csrf_token_view(request):
+    """
+    Endpoint to get CSRF token
+    Django automatically sets csrftoken cookie with @ensure_csrf_cookie
+    Frontend can call this to ensure CSRF token is initialized
+    """
+    return JsonResponse({'message': 'CSRF token set'}, status=200)
+
 @csrf_exempt
 @require_POST
 def register_customer(request):
@@ -943,6 +952,19 @@ def requestAPI(request, id=0):
                 for admin_user in admin_users:
                     create_notification(
                         user=admin_user,
+                        notification_type='request_created',
+                        title='New Request Created',
+                        message=f'Admin {request.user.username} created request #{new_request.RequestID} for customer {new_request.requester.username if new_request.requester else "Unknown"}',
+                        related_request=new_request
+                    )
+                
+                # Create notification for all production managers
+                production_manager_users = User.objects.filter(
+                    userprofile__role=Roles.PRODUCTION_MANAGER
+                ).exclude(id=request.user.id)
+                for pm_user in production_manager_users:
+                    create_notification(
+                        user=pm_user,
                         notification_type='request_created',
                         title='New Request Created',
                         message=f'Admin {request.user.username} created request #{new_request.RequestID} for customer {new_request.requester.username if new_request.requester else "Unknown"}',
@@ -4192,10 +4214,28 @@ def customer_request_view(request):
         total_requested = sum(rp.quantity for rp in active_products)
         total_completed = sum(rp.get_completed_quota() for rp in active_products)
         
+        print(f"\n{'='*80}")
+        print(f"[REQUEST #{req.RequestID}]")
+        print(f"  Status: {req.request_status}")
+        print(f"  Active Products: {active_products.count()}")
+        print(f"  Total Requested (Active): {total_requested}")
+        print(f"  Total Completed (Active): {total_completed}")
+        print(f"  Product Details:")
+        for rp in active_products:
+            completed = rp.get_completed_quota()
+            percent = (completed / rp.quantity * 100) if rp.quantity > 0 else 0
+            print(f"    - {rp.product.prodName}: {completed}/{rp.quantity} ({percent:.1f}%)")
+        
         if total_requested > 0 and total_completed >= total_requested:
             if req.request_status != "completed":
+                print(f"  ✓ AUTO-COMPLETING this request")
                 req.request_status = "completed"
                 req.save(update_fields=['request_status'])
+            else:
+                print(f"  ✓ Already marked as completed")
+        else:
+            print(f"  ✗ Not yet complete ({total_completed}/{total_requested})")
+        print(f"{'='*80}\n")
         
         # NOW filter by request_status after updating
         if request_status_filter == "completed":
@@ -5064,7 +5104,27 @@ def cancelled_requests_view(request):
 def task_history_view(request, request_product_id):
     """
     Fetch audit log history for a specific request product (task).
-    Shows all updates made to this product.
+    Shows all updates made to this product with detailed descriptions.
+    
+    ENHANCED: March 15, 2026
+    - Extracts process context (PST 01, PST 08, etc.) for each audit log entry
+    - Provides meaningful change descriptions instead of generic "Product updated"
+    - Tracks specific field changes:
+      * completed_quota → "Saved total quota: [value]"
+      * defect_count → "Saved defect: [value]"
+      * is_completed → "Marked as complete" or "Marked as in-progress"
+      * worker_names → "Assigned workers: [names]"
+      * archived_at → "Archived" or "Restored"
+    - Combines process context with changes for readability
+    - Example: "PST 01 (Withdrawal), Saved total quota: 140, Saved defect: 2"
+    
+    Returns JSON with history list containing:
+    - id: Audit log ID
+    - action_type: create/update/delete/archive/restore
+    - action_display: Human-readable action label
+    - performed_by: User who performed the action (or "System")
+    - timestamp: When the action occurred
+    - changes: Array of detailed change descriptions
     """
     try:
         # Get user role
@@ -5086,33 +5146,139 @@ def task_history_view(request, request_product_id):
         # Build response data
         history = []
         for log in logs:
-            # Parse old and new values if they're JSON
-            old_data = None
-            new_data = None
             changes = []
             
             try:
-                if log.old_value:
-                    old_data = json.loads(log.old_value)
-                if log.new_value:
-                    new_data = json.loads(log.new_value)
+                # Parse old and new values if they're JSON
+                old_data = None
+                new_data = None
                 
-                # Track what changed
+                if log.old_value:
+                    try:
+                        old_data = json.loads(log.old_value)
+                    except (json.JSONDecodeError, TypeError):
+                        old_data = None
+                
+                if log.new_value:
+                    try:
+                        new_data = json.loads(log.new_value)
+                    except (json.JSONDecodeError, TypeError):
+                        new_data = None
+                
+                # Extract process info for context
+                process_num = None
+                process_name = None
+                
+                if new_data:
+                    process_num = new_data.get('process_number') or new_data.get('process_num')
+                    process_name = new_data.get('process_name')
+                elif old_data:
+                    process_num = old_data.get('process_number') or old_data.get('process_num')
+                    process_name = old_data.get('process_name')
+                
+                # Build process identifier string for context
+                process_context = ""
+                if process_num or process_name:
+                    if process_num and process_name:
+                        process_context = f"{process_num} ({process_name})"
+                    elif process_num:
+                        process_context = str(process_num)
+                    else:
+                        process_context = str(process_name)
+                
+                # Collect detailed changes
+                detailed_changes = []
+                
                 if old_data and new_data:
-                    if old_data.get('completed_quota') != new_data.get('completed_quota'):
-                        changes.append(f"Completed: {old_data.get('completed_quota', 0)} → {new_data.get('completed_quota', 0)}")
-                    if old_data.get('defect_count') != new_data.get('defect_count'):
-                        changes.append(f"Defects: {old_data.get('defect_count', 0)} → {new_data.get('defect_count', 0)}")
-                    if old_data.get('defect_type') != new_data.get('defect_type'):
-                        old_type = old_data.get('defect_type') or 'None'
-                        new_type = new_data.get('defect_type') or 'None'
-                        changes.append(f"Defect Type: {old_type} → {new_type}")
-                    if old_data.get('worker_names') != new_data.get('worker_names'):
-                        old_workers = ', '.join(old_data.get('worker_names', [])) or 'None'
-                        new_workers = ', '.join(new_data.get('worker_names', [])) or 'None'
-                        changes.append(f"Workers: {old_workers} → {new_workers}")
-            except:
-                pass
+                    # Track completed_quota changes
+                    old_quota = old_data.get('completed_quota')
+                    new_quota = new_data.get('completed_quota')
+                    if old_quota != new_quota:
+                        detailed_changes.append(f"Saved total quota: {new_quota or 0}")
+                    
+                    # Track defect changes
+                    old_defects = old_data.get('defect_count')
+                    new_defects = new_data.get('defect_count')
+                    if old_defects != new_defects:
+                        detailed_changes.append(f"Saved defect: {new_defects or 0}")
+                    
+                    # Track defect type changes
+                    old_defect_type = old_data.get('defect_type')
+                    new_defect_type = new_data.get('defect_type')
+                    if old_defect_type != new_defect_type and new_defect_type:
+                        detailed_changes.append(f"Defect type: {new_defect_type}")
+                    
+                    # Track is_completed status
+                    old_completed = old_data.get('is_completed')
+                    new_completed = new_data.get('is_completed')
+                    if old_completed != new_completed:
+                        if new_completed:
+                            detailed_changes.append("Marked as complete")
+                        else:
+                            detailed_changes.append("Marked as in-progress")
+                    
+                    # Track worker assignments
+                    old_workers = old_data.get('worker_names')
+                    new_workers = new_data.get('worker_names')
+                    if old_workers != new_workers:
+                        workers_str = ', '.join(new_workers) if isinstance(new_workers, list) and new_workers else 'None'
+                        detailed_changes.append(f"Assigned workers: {workers_str}")
+                    
+                    # Track archive/restore
+                    old_archived = old_data.get('archived_at')
+                    new_archived = new_data.get('archived_at')
+                    if old_archived != new_archived:
+                        if new_archived:
+                            detailed_changes.append("Archived")
+                        else:
+                            detailed_changes.append("Restored")
+                
+                # Compose final change message
+                if detailed_changes:
+                    # Combine process context with changes
+                    change_details = ", ".join(detailed_changes)
+                    if process_context:
+                        changes.append(f"{process_context}, {change_details}")
+                    else:
+                        changes.append(change_details)
+                elif log.action_type == 'create':
+                    if process_context:
+                        changes.append(f"{process_context}, Step created")
+                    else:
+                        changes.append("Step created")
+                elif log.action_type == 'delete':
+                    if process_context:
+                        changes.append(f"{process_context}, Step deleted")
+                    else:
+                        changes.append("Step deleted")
+                elif log.action_type == 'archive':
+                    if process_context:
+                        changes.append(f"{process_context}, Archived")
+                    else:
+                        changes.append("Archived")
+                elif log.action_type == 'restore':
+                    if process_context:
+                        changes.append(f"{process_context}, Restored")
+                    else:
+                        changes.append("Restored")
+                else:
+                    # Generic fallback
+                    if process_context:
+                        changes.append(f"{process_context}, {log.get_action_type_display()}")
+                    else:
+                        changes.append(log.get_action_type_display())
+                
+            except Exception as parse_err:
+                print(f"[DEBUG] Error parsing audit log {log.id}: {str(parse_err)}")
+                # Provide fallback message based on action type
+                fallback_messages = {
+                    'create': 'Product created',
+                    'update': 'Product updated',
+                    'archive': 'Product archived',
+                    'restore': 'Product restored',
+                    'delete': 'Process step deleted',
+                }
+                changes = [fallback_messages.get(log.action_type, 'Action performed')]
             
             history.append({
                 'id': log.id,
@@ -5120,9 +5286,7 @@ def task_history_view(request, request_product_id):
                 'action_display': log.get_action_type_display(),
                 'performed_by': log.performed_by.get_full_name() if log.performed_by else 'System',
                 'timestamp': log.timestamp,
-                'changes': changes,
-                'old_value': log.old_value,
-                'new_value': log.new_value,
+                'changes': changes if changes else [],
             })
         
         return success_response({

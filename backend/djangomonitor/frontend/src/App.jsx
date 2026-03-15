@@ -10,6 +10,7 @@ import Dashboard from "./Dashboard";
 import Settings from "./Settings";
 import CustomerViewRequests from "./CustomerViewRequests";
 import CustomerSettings from "./CustomerSettings";
+import PrintableReport from "./PrintableReport";
 import { UserProvider } from "./UserContext.jsx";
 
 function App() {
@@ -26,6 +27,7 @@ function App() {
           <Route path="/customer/settings" element={<CustomerSettings />} />
           <Route path="/task-status" element={<TaskStatus />} />
           <Route path="/cancelled-requests" element={<CancelledRequests />} />
+          <Route path="/printable-report" element={<PrintableReport />} />
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/settings" element={<Settings />} />
         </Routes>

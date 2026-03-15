@@ -4,6 +4,7 @@ import "bootstrap/dist/css/bootstrap.min.css";
 import "./Dashboard.css";
 import ExtensionApprovalModal from "./ExtensionApprovalModal";
 import { useUser } from "./UserContext.jsx";
+import { fetchWithCSRF, initializeCsrfToken } from "./csrfUtils.js";
 
 function SidebarLayout({ children }) {
   const navigate = useNavigate();
@@ -91,9 +92,8 @@ function SidebarLayout({ children }) {
       
       // Mark all unread notifications as read on the server (fire and forget)
       for (const notif of unreadNotifications) {
-        await fetch(`http://localhost:8000/app/notifications/${notif.id}/read/`, {
+        await fetchWithCSRF(`http://localhost:8000/app/notifications/${notif.id}/read/`, {
           method: "POST",
-          credentials: "include",
         });
       }
     } catch (err) {
@@ -112,9 +112,8 @@ function SidebarLayout({ children }) {
       setUnreadCount(newUnreadCount);
       
       // Mark as read on server (fire and forget, don't refetch)
-      const response = await fetch(`http://localhost:8000/app/notifications/${notificationId}/read/`, {
+      const response = await fetchWithCSRF(`http://localhost:8000/app/notifications/${notificationId}/read/`, {
         method: "POST",
-        credentials: "include",
       });
 
       if (response.ok) {
@@ -156,9 +155,8 @@ function SidebarLayout({ children }) {
     setShowLogoutLoading(true);
     
     try {
-      const response = await fetch("http://localhost:8000/app/logout/", {
+      const response = await fetchWithCSRF("http://localhost:8000/app/logout/", {
         method: "POST",
-        credentials: "include",
         headers: {
           "Content-Type": "application/json",
           "X-Requested-With": "XMLHttpRequest",
@@ -189,9 +187,8 @@ function SidebarLayout({ children }) {
   const handleAcceptTerms = async () => {
     setTermsLoading(true);
     try {
-      const response = await fetch("http://localhost:8000/app/accept-terms/", {
+      const response = await fetchWithCSRF("http://localhost:8000/app/accept-terms/", {
         method: "POST",
-        credentials: "include",
         headers: {
           "Content-Type": "application/json",
           "X-Requested-With": "XMLHttpRequest",
@@ -230,6 +227,7 @@ function SidebarLayout({ children }) {
       return userData.role === "admin" ? "Create Purchase Order" : "Task Status";
     }
     if (path === "/cancelled-requests") return "Cancelled Purchase Order";
+    if (path === "/printable-report") return "Printable Report";
     if (path === "/settings") return "Settings";
     return "Dashboard";
   };
@@ -302,7 +300,7 @@ function SidebarLayout({ children }) {
                   className={`sidebar-item ${isActive("/cancelled-requests") ? "active" : ""}`}
                   title="Cancelled Purchase Order"
                 >
-                  <img src="/cancel-removebg-preview.png" alt="Cancelled Purchase Order" className="sidebar-icon" />
+                  <img src="/Cancel Order.png" alt="Cancelled Purchase Order" className="sidebar-icon" />
                   {!sidebarCollapsed && <span className="sidebar-label">Cancelled PO</span>}
                 </Link>
               )}
@@ -338,7 +336,7 @@ function SidebarLayout({ children }) {
                   className={`sidebar-item ${isActive("/cancelled-requests") ? "active" : ""}`}
                   title="Cancelled Purchase Order"
                 >
-                  <img src="/cancel-removebg-preview.png" alt="Cancelled Purchase Order" className="sidebar-icon" />
+                  <img src="/Cancel Order.png" alt="Cancelled Purchase Order" className="sidebar-icon" />
                   {!sidebarCollapsed && <span className="sidebar-label">Cancelled PO</span>}
                 </Link>
               )}
@@ -829,7 +827,7 @@ function SidebarLayout({ children }) {
           left: 0,
           right: 0,
           bottom: 0,
-          background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+          background: "linear-gradient(135deg, #1D6AB7 0%, #2563eb 100%)",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
