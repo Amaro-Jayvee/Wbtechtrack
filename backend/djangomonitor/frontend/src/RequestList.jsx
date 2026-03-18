@@ -245,7 +245,8 @@ function RequestList() {
       setShowDetailsModal(false);
       
       // Remove the request from the list immediately
-      setRequests(requests.filter(r => r.RequestID !== selectedRequest.RequestID));
+      setRequests((current) => current.filter((r) => r.RequestID !== selectedRequest.RequestID));
+      setSelectedRequest(null);
       
       // Set modal data and show success modal
       setProjectStartData({
@@ -257,6 +258,7 @@ function RequestList() {
       
       // Refresh notifications
       window.dispatchEvent(new Event('refreshNotifications'));
+      window.dispatchEvent(new Event('requestsUpdated'));
       
       // Navigate to task-status after 3 seconds
       setTimeout(() => {
@@ -740,50 +742,28 @@ function RequestList() {
             <div className="modal-dialog" style={{ backgroundColor: "white", borderRadius: "8px", maxWidth: "600px", width: "90%", maxHeight: "85vh", display: "flex", flexDirection: "column", overflow: "hidden", boxShadow: "0 4px 20px rgba(0,0,0,0.15)" }} onClick={e => e.stopPropagation()}>
               {/* Header */}
               <div className="modal-header" style={{ backgroundColor: "#9BC284", padding: "1.5rem", borderBottom: "2px solid #fff", color: "white", display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0, gap: "1rem" }}>
-                <h5 className="modal-title" style={{ color: "white", marginBottom: 0, flex: 1, fontSize: "1.25rem", fontWeight: "600" }}>ISSUANCE #{selectedRequest.RequestID}</h5>
-                <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
-                  <button
-                    type="button"
-                    onClick={handleCancelRequest}
-                    style={{
-                      background: "#EF4444",
-                      border: "none",
-                      color: "white",
-                      padding: "0.5rem 1rem",
-                      borderRadius: "4px",
-                      cursor: "pointer",
-                      fontSize: "0.9rem",
-                      fontWeight: "500",
-                      transition: "background 0.2s"
-                    }}
-                    onMouseOver={(e) => e.target.style.background = "#DC2626"}
-                    onMouseOut={(e) => e.target.style.background = "#EF4444"}
-                    aria-label="Cancel request"
-                  >
-                    Cancel Request
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setShowDetailsModal(false)}
-                    style={{
-                      background: "transparent",
-                      border: "none",
-                      color: "white",
-                      fontSize: "2rem",
-                      cursor: "pointer",
-                      padding: "0",
-                      width: "2rem",
-                      height: "2rem",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      flexShrink: 0
-                    }}
-                    aria-label="Close modal"
-                  >
-                    ×
-                  </button>
-                </div>
+                <h5 className="modal-title" style={{ color: "white", marginBottom: 0, flex: 1, fontSize: "0.6rem", fontWeight: "600" }}>ISSUANCE #{selectedRequest.RequestID}</h5>
+                <button
+                  type="button"
+                  onClick={() => setShowDetailsModal(false)}
+                  style={{
+                    background: "transparent",
+                    border: "none",
+                    color: "white",
+                    fontSize: "2rem",
+                    cursor: "pointer",
+                    padding: "0",
+                    width: "2rem",
+                    height: "2rem",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    flexShrink: 0
+                  }}
+                  aria-label="Close modal"
+                >
+                  ×
+                </button>
               </div>
 
               {/* Body */}
@@ -833,14 +813,14 @@ function RequestList() {
               </div>
 
               {/* Footer */}
-              <div style={{ backgroundColor: "#f8f9fa", padding: "1rem", borderTop: "2px solid #dee2e6", display: "flex", gap: "10px", justifyContent: "flex-end", position: "sticky", bottom: 0, zIndex: 999, flexShrink: 0 }}>
+              <div style={{ backgroundColor: "#f8f9fa", padding: "1rem", borderTop: "2px solid #dee2e6", display: "flex", gap: "1.25rem", justifyContent: "space-between", alignItems: "center", position: "sticky", bottom: 0, zIndex: 999, flexShrink: 0 }}>
                 {userData.role === "production_manager" && (
                   <button 
                     className="btn"
                     onClick={handleStartProject}
                     disabled={requestHasTasks}
                     style={{
-                      flex: 1,
+                      minWidth: "160px",
                       padding: "0.65rem 1rem",
                       backgroundColor: "#28a745",
                       color: "white",
@@ -856,22 +836,28 @@ function RequestList() {
                     {requestHasTasks ? "✓ Project Started" : "Start Project"}
                   </button>
                 )}
-                <button 
+                <button
+                  type="button"
+                  onClick={handleCancelRequest}
                   className="btn"
-                  onClick={() => setShowDetailsModal(false)}
                   style={{
-                    flex: 1,
+                    minWidth: "160px",
+                    marginLeft: "auto",
                     padding: "0.65rem 1rem",
-                    backgroundColor: "#e9ecef",
-                    color: "#333",
-                    border: "1px solid #dee2e6",
+                    backgroundColor: "#EF4444",
+                    color: "white",
+                    border: "none",
                     borderRadius: "4px",
                     cursor: "pointer",
                     fontWeight: "600",
-                    fontSize: "0.9rem"
+                    fontSize: "0.9rem",
+                    transition: "background 0.2s"
                   }}
+                  onMouseOver={(e) => e.currentTarget.style.backgroundColor = "#DC2626"}
+                  onMouseOut={(e) => e.currentTarget.style.backgroundColor = "#EF4444"}
+                  aria-label="Cancel order"
                 >
-                  Close
+                  Cancel Order
                 </button>
               </div>
             </div>

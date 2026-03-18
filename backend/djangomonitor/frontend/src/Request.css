@@ -304,9 +304,10 @@ input[type="date"] {
 
 /* Custom Calendar Styling */
 .custom-calendar {
-  width: 100%;
+  width: 380px;
   border: none;
   font-family: 'Segoe UI', 'Trebuchet MS', sans-serif;
+  display: inline-block;
 }
 
 .custom-calendar .react-calendar {
@@ -316,16 +317,16 @@ input[type="date"] {
 }
 
 .custom-calendar .react-calendar__navigation {
-  margin-bottom: 1rem;
+  margin-bottom: 0.6rem;
 }
 
 .custom-calendar .react-calendar__navigation button {
   color: #333;
-  font-size: 1rem;
+  font-size: 0.8rem;
   font-weight: 600;
   background: transparent;
   border: none;
-  padding: 0.5rem;
+  padding: 0.3rem 0.4rem;
   border-radius: 6px;
   transition: all 0.2s ease;
   cursor: pointer;
@@ -337,7 +338,7 @@ input[type="date"] {
 }
 
 .custom-calendar .react-calendar__navigation__label {
-  font-size: 1.1rem;
+  font-size: 0.95rem;
   font-weight: 700;
   color: #333;
 }
@@ -347,16 +348,16 @@ input[type="date"] {
 }
 
 .custom-calendar .react-calendar__month-view__weekdays {
-  margin-bottom: 0.75rem;
+  margin-bottom: 0.4rem;
 }
 
 .custom-calendar .react-calendar__month-view__weekdays__weekday {
   color: #666;
   font-weight: 700;
-  font-size: 0.85rem;
+  font-size: 0.7rem;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
-  padding: 0.5rem;
+  letter-spacing: 0.3px;
+  padding: 0.25rem;
   text-align: center;
   text-decoration: none;
   white-space: nowrap;
@@ -368,10 +369,10 @@ input[type="date"] {
 }
 
 .custom-calendar .react-calendar__month-view__days__day {
-  padding: 0.75rem;
-  margin: 2px;
+  padding: 0.5rem;
+  margin: 1px;
   border-radius: 6px;
-  font-size: 0.9rem;
+  font-size: 0.8rem;
   font-weight: 500;
   cursor: pointer;
   transition: all 0.2s ease;
@@ -393,7 +394,7 @@ input[type="date"] {
 .custom-calendar .react-calendar__tile {
   border: none;
   font-weight: 500;
-  padding: 0.75rem;
+  padding: 0.5rem;
 }
 
 .custom-calendar .react-calendar__tile:enabled:hover,

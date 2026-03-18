@@ -8,9 +8,11 @@ function CancelledRequests() {
   const [cancelledRequests, setCancelledRequests] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [loading, setLoading] = useState(true);
-  const [sortBy, setSortBy] = useState("number");
-  const [sortOrder, setSortOrder] = useState("asc");
+  const [sortBy, setSortBy] = useState("updated");
+  const [sortOrder, setSortOrder] = useState("desc");
   const [currentPage, setCurrentPage] = useState(1);
+  const [showLogModal, setShowLogModal] = useState(false);
+  const [selectedLogItem, setSelectedLogItem] = useState(null);
   const itemsPerPage = 10;
 
   useEffect(() => {
@@ -60,10 +62,12 @@ function CancelledRequests() {
       const searchLower = searchTerm.toLowerCase();
       return (
         searchTerm === "" ||
-        item.request_id?.toString().includes(searchLower) ||
-        item.requester_name?.toLowerCase().includes(searchLower) ||
+        String(item.request_id || "").toLowerCase().includes(searchLower) ||
         item.product_name?.toLowerCase().includes(searchLower) ||
-        item.cancellation_reason?.toLowerCase().includes(searchLower)
+        item.cancelled_by_name?.toLowerCase().includes(searchLower) ||
+        item.deadline?.toLowerCase().includes(searchLower) ||
+        item.cancellation_reason?.toLowerCase().includes(searchLower) ||
+        item.cancellation_log?.toLowerCase().includes(searchLower)
       );
     });
 
@@ -72,12 +76,14 @@ function CancelledRequests() {
     sorted.sort((a, b) => {
       let compareValue = 0;
       
-      if (sortBy === "date") {
-        const dateA = new Date(a.cancelled_at || 0);
-        const dateB = new Date(b.cancelled_at || 0);
-        compareValue = dateB - dateA;
-      } else if (sortBy === "number") {
-        compareValue = (b.request_id || 0) - (a.request_id || 0);
+      if (sortBy === "updated") {
+        const dateA = new Date(a.updated_at || 0).getTime();
+        const dateB = new Date(b.updated_at || 0).getTime();
+        compareValue = dateA - dateB;
+      } else if (sortBy === "deadline") {
+        const dateA = new Date(a.deadline || 0).getTime();
+        const dateB = new Date(b.deadline || 0).getTime();
+        compareValue = dateA - dateB;
       } else if (sortBy === "name") {
         const nameA = (a.product_name || "").toLowerCase();
         const nameB = (b.product_name || "").toLowerCase();
@@ -89,6 +95,55 @@ function CancelledRequests() {
     
     return sorted;
   }, [cancelledRequests, searchTerm, sortBy, sortOrder]);
+
+  const formatDateTime = (value) => {
+    if (!value) return "N/A";
+    return new Date(value).toLocaleString("en-US", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: true,
+    });
+  };
+
+  const formatIssuanceLabel = (item) => {
+    if (item.request_id) {
+      return `#${item.request_id}`;
+    }
+    return String(item.id || "").startsWith("draft-") ? "Cancelled Order" : "Unknown Issuance";
+  };
+
+  const getCleanLogDetails = (item) => {
+    const rawLog = (item.cancellation_log || "").trim();
+    if (!rawLog) return "—";
+
+    const reasonMarker = "Reason:";
+    const markerIndex = rawLog.lastIndexOf(reasonMarker);
+    if (markerIndex === -1) {
+      return rawLog;
+    }
+
+    const reasonFromLog = rawLog.slice(markerIndex + reasonMarker.length).trim();
+    const reasonFromField = (item.cancellation_reason || "").trim();
+
+    if (!reasonFromField || reasonFromLog.toLowerCase() === reasonFromField.toLowerCase()) {
+      return rawLog.slice(0, markerIndex).trim().replace(/[.\s]+$/, "");
+    }
+
+    return rawLog;
+  };
+
+  const openLogModal = (item) => {
+    setSelectedLogItem(item);
+    setShowLogModal(true);
+  };
+
+  const closeLogModal = () => {
+    setShowLogModal(false);
+    setSelectedLogItem(null);
+  };
 
   return (
     <SidebarLayout>
@@ -118,9 +173,9 @@ function CancelledRequests() {
                 fontSize: "12px"
               }}
             >
-              <option value="date">Sort By: Date</option>
-              <option value="number">Sort By: Number</option>
-              <option value="name">Sort By: Name</option>
+              <option value="updated">Sort By: Last Update</option>
+              <option value="deadline">Sort By: Deadline</option>
+              <option value="name">Sort By: Product Name</option>
             </select>
           </div>
 
@@ -170,17 +225,17 @@ function CancelledRequests() {
           <div className="loading">Loading cancelled requests...</div>
         ) : sortedRequests.length > 0 ? (
           <>
-            <table className="data-table">
+            <table className="data-table" style={{ tableLayout: "fixed", width: "100%" }}>
               <thead>
                 <tr>
-                  <th>Issuance No.</th>
-                  <th>Requester</th>
-                  <th>Product Name</th>
-                  <th>Quantity</th>
-                  <th>Cancelled Date</th>
-                  <th>Cancelled By</th>
-                  <th>Reason</th>
-                  <th>Last Update</th>
+                  <th style={{ width: "120px", textAlign: "left" }}>Issuance No.</th>
+                  <th style={{ width: "210px", textAlign: "left" }}>Product Name</th>
+                  <th style={{ width: "90px", textAlign: "center" }}>Quantity</th>
+                  <th style={{ width: "95px", textAlign: "left" }}>Deadline</th>
+                  <th style={{ width: "105px", textAlign: "left" }}>Cancelled By</th>
+                  <th style={{ width: "210px", textAlign: "left" }}>Reason</th>
+                  <th style={{ width: "75px", textAlign: "center" }}>Log</th>
+                  <th style={{ width: "170px", textAlign: "left" }}>Last Update</th>
                 </tr>
               </thead>
               <tbody>
@@ -188,42 +243,29 @@ function CancelledRequests() {
                   .slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
                   .map((item) => (
                   <tr key={item.id}>
-                    <td>
-                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                        <span style={{
-                          backgroundColor: "#dc3545",
-                          color: "white",
-                          fontSize: "11px",
-                          padding: "2px 6px",
-                          borderRadius: "3px",
-                          fontWeight: "600",
-                          whiteSpace: "nowrap"
-                        }}>
-                          ✕ CANCELLED
-                        </span>
-                        {item.request_id}
+                    <td style={{ whiteSpace: "nowrap", fontWeight: "600", verticalAlign: "middle" }}>
+                      {formatIssuanceLabel(item)}
+                    </td>
+                    <td style={{ verticalAlign: "middle" }} title={item.product_name || "N/A"}>
+                      <div style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                        {item.product_name || "N/A"}
                       </div>
                     </td>
-                    <td>{item.requester_name || "—"}</td>
-                    <td>{item.product_name || "N/A"}</td>
-                    <td>{item.quantity || 0}</td>
-                    <td style={{ whiteSpace: "nowrap" }}>
-                      {item.cancelled_at 
-                        ? new Date(item.cancelled_at).toLocaleString('en-US', {
+                    <td style={{ textAlign: "center", verticalAlign: "middle" }}>{item.quantity || 0}</td>
+                    <td style={{ whiteSpace: "nowrap", verticalAlign: "middle" }}>
+                      {item.deadline
+                        ? new Date(item.deadline).toLocaleDateString('en-US', {
                             year: 'numeric',
                             month: '2-digit',
-                            day: '2-digit',
-                            hour: '2-digit',
-                            minute: '2-digit',
-                            hour12: true
+                            day: '2-digit'
                           })
                         : "N/A"}
                     </td>
-                    <td>{item.cancelled_by_name || "—"}</td>
-                    <td>
+                    <td style={{ verticalAlign: "middle" }}>{item.cancelled_by_name || "—"}</td>
+                    <td style={{ verticalAlign: "middle" }}>
                       <div 
                         style={{ 
-                          maxWidth: "300px", 
+                          maxWidth: "100%", 
                           overflow: "hidden", 
                           textOverflow: "ellipsis",
                           whiteSpace: "nowrap"
@@ -233,17 +275,26 @@ function CancelledRequests() {
                         {item.cancellation_reason || "—"}
                       </div>
                     </td>
-                    <td style={{ whiteSpace: "nowrap", fontSize: "0.85rem", color: "#666" }}>
-                      {item.updated_at 
-                        ? new Date(item.updated_at).toLocaleString('en-US', {
-                            year: 'numeric',
-                            month: '2-digit',
-                            day: '2-digit',
-                            hour: '2-digit',
-                            minute: '2-digit',
-                            hour12: true
-                          })
-                        : "N/A"}
+                    <td style={{ textAlign: "center", verticalAlign: "middle" }}>
+                      <button
+                        type="button"
+                        onClick={() => openLogModal(item)}
+                        style={{
+                          border: "1px solid #0d6efd",
+                          color: "#0d6efd",
+                          backgroundColor: "#fff",
+                          borderRadius: "4px",
+                          fontSize: "12px",
+                          fontWeight: "600",
+                          padding: "3px 8px",
+                          cursor: "pointer",
+                        }}
+                      >
+                        View
+                      </button>
+                    </td>
+                    <td style={{ whiteSpace: "nowrap", fontSize: "0.85rem", color: "#666", verticalAlign: "middle" }}>
+                      {formatDateTime(item.updated_at)}
                     </td>
                   </tr>
                 ))}
@@ -362,6 +413,84 @@ function CancelledRequests() {
                   Last ▶▶
                 </button>
 
+
+              {showLogModal && selectedLogItem && (
+                <div
+                  onClick={closeLogModal}
+                  style={{
+                    position: "fixed",
+                    inset: 0,
+                    background: "radial-gradient(circle at top, rgba(30, 58, 138, 0.32), rgba(2, 6, 23, 0.78))",
+                    display: "flex",
+                    justifyContent: "center",
+                    alignItems: "center",
+                    zIndex: 1050,
+                    padding: "16px",
+                    backdropFilter: "blur(4px)",
+                  }}
+                >
+                  <div
+                    onClick={(e) => e.stopPropagation()}
+                    style={{
+                      width: "100%",
+                      maxWidth: "760px",
+                      background: "linear-gradient(145deg, #0f172a 0%, #172554 52%, #1e293b 100%)",
+                      border: "1px solid rgba(125, 211, 252, 0.26)",
+                      borderRadius: "14px",
+                      boxShadow: "0 24px 54px rgba(2, 6, 23, 0.58)",
+                      overflow: "hidden",
+                    }}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "16px 18px", borderBottom: "1px solid rgba(125, 211, 252, 0.22)" }}>
+                      <h5 style={{ margin: 0, color: "#f8fafc", fontSize: "1.05rem", fontWeight: "800", letterSpacing: "0.02em" }}>Cancellation Log Details</h5>
+                      <button
+                        type="button"
+                        onClick={closeLogModal}
+                        style={{ border: "1px solid rgba(148, 163, 184, 0.45)", background: "rgba(15, 23, 42, 0.65)", color: "#cbd5e1", width: "34px", height: "34px", borderRadius: "9px", fontSize: "19px", lineHeight: 1, cursor: "pointer" }}
+                      >
+                        ×
+                      </button>
+                    </div>
+                    <div style={{ padding: "18px" }}>
+                      <div style={{ display: "grid", gridTemplateColumns: "170px 1fr", rowGap: "12px", columnGap: "12px", fontSize: "0.93rem", color: "#e2e8f0" }}>
+                        <strong style={{ color: "#93c5fd" }}>Issuance No.</strong>
+                        <span>{formatIssuanceLabel(selectedLogItem)}</span>
+
+                        <strong style={{ color: "#93c5fd" }}>Product Name</strong>
+                        <span>{selectedLogItem.product_name || "N/A"}</span>
+
+                        <strong style={{ color: "#93c5fd" }}>Quantity</strong>
+                        <span>{selectedLogItem.quantity || 0}</span>
+
+                        <strong style={{ color: "#93c5fd" }}>Deadline</strong>
+                        <span>
+                          {selectedLogItem.deadline
+                            ? new Date(selectedLogItem.deadline).toLocaleDateString("en-US", {
+                                year: "numeric",
+                                month: "2-digit",
+                                day: "2-digit",
+                              })
+                            : "N/A"}
+                        </span>
+
+                        <strong style={{ color: "#93c5fd" }}>Cancelled By</strong>
+                        <span>{selectedLogItem.cancelled_by_name || "—"}</span>
+
+                        <strong style={{ color: "#93c5fd" }}>Reason</strong>
+                        <span>{selectedLogItem.cancellation_reason || "—"}</span>
+
+                        <strong style={{ color: "#93c5fd" }}>Last Update</strong>
+                        <span>{formatDateTime(selectedLogItem.updated_at)}</span>
+
+                        <strong style={{ color: "#93c5fd" }}>Log Details</strong>
+                        <div style={{ whiteSpace: "pre-wrap", lineHeight: 1.45, background: "rgba(15, 23, 42, 0.62)", border: "1px solid rgba(148, 163, 184, 0.28)", borderRadius: "10px", padding: "10px 12px", color: "#e2e8f0" }}>
+                          {getCleanLogDetails(selectedLogItem)}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
                 <span style={{ color: "#666", fontSize: "12px", marginLeft: "10px" }}>
                   Page {currentPage} of {Math.ceil(sortedRequests.length / itemsPerPage)}
                 </span>

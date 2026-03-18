@@ -1,5 +1,5 @@
 .printable-report-container {
-  max-width: 900px;
+  max-width: 1080px;
   margin: 0 auto;
   padding: 20px;
   background-color: #f9f9f9;
@@ -129,6 +129,10 @@
   margin: 3px 0;
 }
 
+.printable-company-info strong {
+  color: #223f5c;
+}
+
 .printable-logo {
   max-width: 100px;
   height: auto;
@@ -187,6 +191,7 @@
 /* Table Section */
 .table-section {
   margin-bottom: 30px;
+  page-break-inside: avoid;
 }
 
 .table-section h3 {
@@ -204,6 +209,7 @@
   border-collapse: collapse;
   margin-bottom: 20px;
   border: 1px solid #999;
+  table-layout: fixed;
 }
 
 .production-table thead {
@@ -212,10 +218,10 @@
 }
 
 .production-table th {
-  padding: 12px;
+  padding: 10px;
   text-align: left;
   font-weight: 600;
-  font-size: 13px;
+  font-size: 12px;
   border: 1px solid #3d6284;
 }
 
@@ -224,10 +230,12 @@
 }
 
 .production-table tbody tr td {
-  padding: 12px;
-  font-size: 13px;
+  padding: 10px;
+  font-size: 12px;
   color: #333;
   border: 1px solid #999;
+  vertical-align: top;
+  overflow-wrap: anywhere;
 }
 
 .production-table tbody tr.rank-1 {
@@ -354,6 +362,11 @@
 }
 
 /* Print Styles - Minimal */
+@page {
+  size: A4 portrait;
+  margin: 10mm;
+}
+
 @media print {
   /* UPDATED: March 15, 2026
      - Hide both html and body ScrollBar: overflow: hidden prevents scroll bar from showing in print preview and PDF
@@ -364,11 +377,13 @@
     margin: 0;
     padding: 0;
     background-color: white;
-    overflow: hidden;
+    overflow: visible;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
 
   html {
-    overflow: hidden;
+    overflow: visible;
   }
 
   /* Hide only these elements */
@@ -401,15 +416,60 @@
   }
 
   .printable-report-container {
+    width: 100%;
     max-width: 100%;
     margin: 0;
-    padding: 20px;
+    padding: 0;
+    background: #fff;
   }
 
   .report-content {
     padding: 0;
     margin: 0;
     box-shadow: none;
+    border-radius: 0;
+    background: #fff;
+  }
+
+  .table-section {
+    page-break-inside: auto;
+    break-inside: auto;
+  }
+
+  .keep-together {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  .report-title-section,
+  .summary-line,
+  .printable-header {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .production-table {
+    page-break-inside: auto;
+    break-inside: auto;
+  }
+
+  .production-table tr {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  .production-table thead {
+    display: table-header-group;
+  }
+
+  .production-table tfoot {
+    display: table-footer-group;
+  }
+
+  .production-table th,
+  .production-table td {
+    font-size: 11px;
+    padding: 7px;
   }
 }
 

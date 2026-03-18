@@ -37,58 +37,190 @@ function PrintableReport() {
   const [month, setMonth] = useState(new Date().getMonth() + 1);
   const [year, setYear] = useState(new Date().getFullYear());
   const [loading, setLoading] = useState(true);
-  const [reportData, setReportData] = useState(null);
+  const [weeklyRows, setWeeklyRows] = useState([]);
+  const [summaryData, setSummaryData] = useState({
+    totalCompleted: 0,
+    totalDefects: 0,
+    totalOutput: 0,
+    inProgressCount: 0,
+    cancelledCount: 0,
+  });
   const [topMovers, setTopMovers] = useState([]);
+  const [inProgressRows, setInProgressRows] = useState([]);
+  const [cancelledRows, setCancelledRows] = useState([]);
 
   useEffect(() => {
     fetchReportData();
   }, [month, year]);
 
+  const isWithinSelectedMonth = (dateText) => {
+    if (!dateText) return false;
+    const dt = new Date(dateText);
+    if (Number.isNaN(dt.getTime())) return false;
+    return dt.getFullYear() === year && dt.getMonth() + 1 === month;
+  };
+
+  const sumDefectLogs = (logs) => {
+    if (!Array.isArray(logs)) return 0;
+    return logs.reduce((total, log) => total + (Number(log?.defect_count) || 0), 0);
+  };
+
   const fetchReportData = async () => {
     setLoading(true);
     try {
       const params = `?month=${month}&year=${year}&include_archived=false`;
-      
-      const barResponse = await fetch(`http://localhost:8000/app/reports/bar-chart${params}`, {
-        method: "GET",
-        credentials: "include",
-      });
-      
-      if (!barResponse.ok) {
-        console.warn("Bar chart endpoint not available, using template mode");
-        setReportData(null);
-        setTopMovers([]);
-        setLoading(false);
-        return;
-      }
-      
-      const barData = await barResponse.json();
-      const totalCompleted = barData.datasets?.find(d => d.label === "Completed")?.data?.reduce((a, b) => a + b, 0) || 0;
-      const totalDefects = barData.datasets?.find(d => d.label === "Defects")?.data?.reduce((a, b) => a + b, 0) || 0;
-      
-      setReportData({
-        total_completed: totalCompleted,
-        total_defects: totalDefects,
-        total_output: totalCompleted - totalDefects
-      });
-      
-      try {
-        const moversResponse = await fetch(`http://localhost:8000/app/reports/top-movers${params}&limit=5`, {
+
+      const [barResponse, moversResponse, inProgressResponse, cancelledResponse] = await Promise.all([
+        fetch(`http://localhost:8000/app/reports/bar-chart/${params}`, {
           method: "GET",
           credentials: "include",
+        }),
+        fetch(`http://localhost:8000/app/reports/top-movers/${params}&limit=5`, {
+          method: "GET",
+          credentials: "include",
+        }),
+        fetch("http://localhost:8000/app/product/?include_completed=false&include_archived=false", {
+          method: "GET",
+          credentials: "include",
+        }),
+        fetch("http://localhost:8000/app/cancelled-requests/", {
+          method: "GET",
+          credentials: "include",
+        }),
+      ]);
+
+      let totalCompleted = 0;
+      let totalDefects = 0;
+      let filteredInProgressRows = [];
+      let filteredCancelledRows = [];
+
+      if (barResponse.ok) {
+        const barData = await barResponse.json();
+        const labels = Array.isArray(barData.labels) ? barData.labels : [];
+        const productionData = Array.isArray(barData.data?.production) ? barData.data.production : [];
+        const defectData = Array.isArray(barData.data?.defects) ? barData.data.defects : [];
+
+        const weekBuckets = {
+          1: { week: "Week 1", completed: 0, defects: 0 },
+          2: { week: "Week 2", completed: 0, defects: 0 },
+          3: { week: "Week 3", completed: 0, defects: 0 },
+          4: { week: "Week 4", completed: 0, defects: 0 },
+        };
+
+        labels.forEach((label, idx) => {
+          const matched = String(label).match(/\d+/);
+          const weekNumber = matched ? parseInt(matched[0], 10) : idx + 1;
+          const normalizedWeek = weekNumber > 4 ? 4 : weekNumber < 1 ? 1 : weekNumber;
+          weekBuckets[normalizedWeek].completed += Number(productionData[idx]) || 0;
+          weekBuckets[normalizedWeek].defects += Number(defectData[idx]) || 0;
         });
-        
-        if (moversResponse.ok) {
-          const moversData = await moversResponse.json();
-          setTopMovers(Array.isArray(moversData) ? moversData.slice(0, 5) : []);
-        }
-      } catch (err) {
-        console.warn("Could not fetch top movers:", err);
+
+        const rows = [weekBuckets[1], weekBuckets[2], weekBuckets[3], weekBuckets[4]];
+
+        totalCompleted = rows.reduce((sum, row) => sum + row.completed, 0);
+        totalDefects = rows.reduce((sum, row) => sum + row.defects, 0);
+        setWeeklyRows(rows);
+      } else {
+        setWeeklyRows([]);
       }
+
+      if (moversResponse.ok) {
+        const moversData = await moversResponse.json();
+        const moverProducts = Array.isArray(moversData.products) ? moversData.products : [];
+        const ranked = moverProducts.slice(0, 5).map((product, index) => {
+          const quota = Number(product.total_quota) || 0;
+          const achievement = totalCompleted > 0 ? (quota / totalCompleted) * 100 : 0;
+          return {
+            rank: index + 1,
+            product_name: product.name || "N/A",
+            completed_quota: quota,
+            achievement_percentage: achievement,
+          };
+        });
+        setTopMovers(ranked);
+      } else {
+        setTopMovers([]);
+      }
+
+      if (inProgressResponse.ok) {
+        const stepRows = await inProgressResponse.json();
+        const grouped = new Map();
+
+        (Array.isArray(stepRows) ? stepRows : []).forEach((step) => {
+          const rpId = step.request_product_id || step.request_product || `${step.request_id || "no-request"}-${step.product_name || "no-product"}`;
+
+          if (!grouped.has(rpId)) {
+            grouped.set(rpId, {
+              request_id: step.request_id,
+              product_name: step.product_name,
+              due_date: step.deadline_extension || step.due_date,
+              total_quota: Number(step.total_quota) || 0,
+              completed_quota: 0,
+              defects: 0,
+              process_name: step.process_name,
+              progress: Number(step.overall_progress) || 0,
+              updated_at: step.updated_at,
+            });
+          }
+
+          const current = grouped.get(rpId);
+          const stepCompletedQuota = Number(step.completed_quota) || 0;
+          const stepDefects = sumDefectLogs(step.defect_logs) || (Number(step.defect_count) || 0);
+
+          current.completed_quota = Math.max(current.completed_quota, stepCompletedQuota);
+          current.defects += stepDefects;
+
+          if (step.overall_progress !== undefined && step.overall_progress !== null) {
+            current.progress = Number(step.overall_progress) || current.progress;
+          }
+
+          if (!current.process_name && step.process_name) {
+            current.process_name = step.process_name;
+          }
+
+          if (step.updated_at) {
+            current.updated_at = step.updated_at;
+          }
+        });
+
+        filteredInProgressRows = Array.from(grouped.values())
+          .sort((a, b) => Number(a.request_id || 0) - Number(b.request_id || 0));
+
+        setInProgressRows(filteredInProgressRows);
+      } else {
+        setInProgressRows([]);
+      }
+
+      if (cancelledResponse.ok) {
+        const cancelledData = await cancelledResponse.json();
+        filteredCancelledRows = Array.isArray(cancelledData.cancelled_requests)
+          ? cancelledData.cancelled_requests.filter((row) => isWithinSelectedMonth(row.updated_at))
+          : [];
+        setCancelledRows(filteredCancelledRows);
+      } else {
+        setCancelledRows([]);
+      }
+
+      setSummaryData({
+        totalCompleted,
+        totalDefects,
+        totalOutput: totalCompleted - totalDefects,
+        inProgressCount: filteredInProgressRows.length,
+        cancelledCount: filteredCancelledRows.length,
+      });
     } catch (err) {
-      console.warn("Error fetching report data, showing template mode:", err);
-      setReportData(null);
+      console.warn("Error fetching report data:", err);
+      setWeeklyRows([]);
       setTopMovers([]);
+      setInProgressRows([]);
+      setCancelledRows([]);
+      setSummaryData({
+        totalCompleted: 0,
+        totalDefects: 0,
+        totalOutput: 0,
+        inProgressCount: 0,
+        cancelledCount: 0,
+      });
     } finally {
       setLoading(false);
     }
@@ -101,11 +233,24 @@ function PrintableReport() {
   const monthName = new Date(year, month - 1).toLocaleString('default', { month: 'long' });
   
   const companyDetails = {
-    name: "TechTrack Manufacturing",
-    address: "1234 Industrial Way, San Francisco, CA 94105",
-    phone: "+1 (555) 123-4567",
-    email: "info@techtrack.com"
+    name: "WB Technologies Inc.",
+    tel: "(02) 994.9971",
+    mobile: "0922 823 7874",
+    address: "B2, L11, Greenland Bulihan Business Park",
+    email: "wbtechnologiesinc@yahoo.com / worksbellphiles@yahoo.com",
   };
+
+  const inProgressCount = inProgressRows.length;
+  const cancelledCount = cancelledRows.length;
+  const cancelledTotalQuantity = cancelledRows.reduce((sum, row) => sum + (Number(row.quantity) || 0), 0);
+  const cancelledWithIssuance = cancelledRows.filter((row) => !!row.request_id).length;
+  const cancelledDraftOrders = cancelledRows.filter((row) => !row.request_id).length;
+  const inProgressTotalQuantity = inProgressRows.reduce((sum, row) => sum + (Number(row.total_quota) || 0), 0);
+  const inProgressCompletedQuantity = inProgressRows.reduce((sum, row) => sum + (Number(row.completed_quota) || 0), 0);
+  const inProgressDefects = inProgressRows.reduce((sum, row) => sum + (Number(row.defects) || 0), 0);
+  const inProgressAverageProgress = inProgressCount > 0
+    ? (inProgressRows.reduce((sum, row) => sum + (Number(row.progress) || 0), 0) / inProgressCount)
+    : 0;
 
   return (
     <div className="printable-report-page">
@@ -158,8 +303,10 @@ function PrintableReport() {
             <div className="printable-header-left"></div>
             <div className="printable-header-center">
               <h1 className="printable-company-name">{companyDetails.name}</h1>
-              <p className="printable-company-info">{companyDetails.address}</p>
-              <p className="printable-company-info">{companyDetails.phone} | {companyDetails.email}</p>
+                <p className="printable-company-info"><strong>Tel:</strong> {companyDetails.tel}</p>
+                <p className="printable-company-info"><strong>Mobile:</strong> {companyDetails.mobile}</p>
+                <p className="printable-company-info"><strong>Address:</strong> {companyDetails.address}</p>
+                <p className="printable-company-info"><strong>Email:</strong> {companyDetails.email}</p>
             </div>
             <div className="printable-header-right">
               <img src="/Group 1.png" alt="Company Logo" className="printable-logo" />
@@ -168,20 +315,43 @@ function PrintableReport() {
 
           {/* Title Section */}
           <div className="report-title-section">
-            <h2>Monthly Production Report</h2>
+            <h2>System Summary Report</h2>
             <p className="report-subtitle">{monthName} {year}</p>
           </div>
 
           {/* Summary Line */}
-          <div className="summary-line">
-            <div className="summary-item">
-              <span className="label">Total Completed:</span>
-              <span className="value">{reportData?.total_completed || ""}</span>
-            </div>
-            <div className="summary-item">
-              <span className="label">Total Defects:</span>
-              <span className="value">{reportData?.total_defects || ""}</span>
-            </div>
+          <div className="table-section">
+            <h3>System Summary</h3>
+            <table className="production-table">
+              <thead>
+                <tr>
+                  <th>Metric</th>
+                  <th>Value</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Total Completed Quota</td>
+                  <td>{summaryData.totalCompleted}</td>
+                </tr>
+                <tr>
+                  <td>Total Defects</td>
+                  <td>{summaryData.totalDefects}</td>
+                </tr>
+                <tr>
+                  <td>Net Output</td>
+                  <td>{summaryData.totalOutput}</td>
+                </tr>
+                <tr>
+                  <td>In-Progress Task Products</td>
+                  <td>{inProgressCount}</td>
+                </tr>
+                <tr>
+                  <td>Cancelled Orders</td>
+                  <td>{cancelledCount}</td>
+                </tr>
+              </tbody>
+            </table>
           </div>
 
           {loading ? (
@@ -200,37 +370,29 @@ function PrintableReport() {
                     </tr>
                   </thead>
                   <tbody>
-                    <tr>
-                      <td className="week-label">Week 1</td>
-                      <td className="input-cell"></td>
-                      <td className="input-cell"></td>
-                    </tr>
-                    <tr>
-                      <td className="week-label">Week 2</td>
-                      <td className="input-cell"></td>
-                      <td className="input-cell"></td>
-                    </tr>
-                    <tr>
-                      <td className="week-label">Week 3</td>
-                      <td className="input-cell"></td>
-                      <td className="input-cell"></td>
-                    </tr>
-                    <tr>
-                      <td className="week-label">Week 4</td>
-                      <td className="input-cell"></td>
-                      <td className="input-cell"></td>
-                    </tr>
+                    {weeklyRows.length === 0 && (
+                      <tr>
+                        <td colSpan="3" style={{ textAlign: "center" }}>No production data for this period.</td>
+                      </tr>
+                    )}
+                    {weeklyRows.map((row) => (
+                      <tr key={row.week}>
+                        <td className="week-label">{row.week}</td>
+                        <td>{row.completed}</td>
+                        <td>{row.defects}</td>
+                      </tr>
+                    ))}
                     <tr className="total-row">
                       <td className="week-label"><strong>Total</strong></td>
-                      <td className="total-cell"></td>
-                      <td className="total-cell"></td>
+                      <td className="total-cell">{summaryData.totalCompleted}</td>
+                      <td className="total-cell">{summaryData.totalDefects}</td>
                     </tr>
                   </tbody>
                 </table>
               </div>
 
-              {/* Main Production Table */}
-              <div className="table-section">
+              {/* Top Movers Table */}
+              <div className="table-section keep-together">
                 <h3>Top 5 Product Movers</h3>
                 <table className="production-table">
                   <thead>
@@ -243,39 +405,96 @@ function PrintableReport() {
                     </tr>
                   </thead>
                   <tbody>
-                    {[1, 2, 3, 4, 5].map((rank) => {
-                      const mover = topMovers[rank - 1];
-                      return (
-                        <tr key={rank} className={rank === 1 ? "rank-1" : ""}>
-                          <td className="rank-col">{rank}</td>
-                          <td>{mover?.product_name || ""}</td>
-                          <td>{mover?.completed_quota || ""}</td>
-                          <td>{mover?.defect_count || ""}</td>
-                          <td>{mover?.achievement_percentage ? `${mover.achievement_percentage.toFixed(1)}%` : ""}</td>
-                        </tr>
-                      );
-                    })}
+                    {topMovers.length === 0 && (
+                      <tr>
+                        <td colSpan="5" style={{ textAlign: "center" }}>No top movers available for this period.</td>
+                      </tr>
+                    )}
+                    {topMovers.map((mover) => (
+                      <tr key={mover.rank} className={mover.rank === 1 ? "rank-1" : ""}>
+                        <td className="rank-col">{mover.rank}</td>
+                        <td>{mover.product_name}</td>
+                        <td>{mover.completed_quota}</td>
+                        <td>-</td>
+                        <td>{mover.achievement_percentage.toFixed(1)}%</td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               </div>
 
-              {/* Notes Section */}
-              <div className="notes-section">
-                <label>Notes / Comments:</label>
-                <div className="notes-box"></div>
+              {/* In-Progress Task Status Table */}
+              <div className="table-section">
+                <h3>Task Status In Progress</h3>
+                <table className="production-table">
+                  <thead>
+                    <tr>
+                      <th>Metric</th>
+                      <th>Value</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td>Total In-Progress Products</td>
+                      <td>{inProgressCount}</td>
+                    </tr>
+                    <tr>
+                      <td>Total Requested Quantity</td>
+                      <td>{inProgressTotalQuantity}</td>
+                    </tr>
+                    <tr>
+                      <td>Total Completed Quantity (Current Progress)</td>
+                      <td>{inProgressCompletedQuantity}</td>
+                    </tr>
+                    <tr>
+                      <td>Total Defects (In Progress)</td>
+                      <td>{inProgressDefects}</td>
+                    </tr>
+                    <tr>
+                      <td>Average Progress</td>
+                      <td>{inProgressAverageProgress.toFixed(1)}%</td>
+                    </tr>
+                  </tbody>
+                </table>
+
               </div>
 
-              {/* Footer - Signature Section */}
+              {/* Cancelled Orders Summary */}
+              <div className="table-section">
+                <h3>Cancelled Orders</h3>
+                <table className="production-table">
+                  <thead>
+                    <tr>
+                      <th>Metric</th>
+                      <th>Value</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td>Total Cancelled Orders</td>
+                      <td>{cancelledCount}</td>
+                    </tr>
+                    <tr>
+                      <td>Total Cancelled Quantity</td>
+                      <td>{cancelledTotalQuantity}</td>
+                    </tr>
+                    <tr>
+                      <td>Cancelled With Issuance No.</td>
+                      <td>{cancelledWithIssuance}</td>
+                    </tr>
+                    <tr>
+                      <td>Cancelled Order (No Issuance)</td>
+                      <td>{cancelledDraftOrders}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
               <div className="signature-section">
                 <div className="signature-block">
                   <label>Prepared by:</label>
                   <div className="signature-line"></div>
-                  <p className="signature-label">Name & Date</p>
-                </div>
-                <div className="signature-block">
-                  <label>Checked by:</label>
-                  <div className="signature-line"></div>
-                  <p className="signature-label">Name & Date</p>
+                  <p className="signature-label">Name & Signature over Printed Name</p>
                 </div>
               </div>
             </>

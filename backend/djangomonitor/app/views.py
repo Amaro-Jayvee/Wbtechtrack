@@ -55,6 +55,7 @@ from reportlab.lib.units import inch
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image
 from reportlab.lib import colors
 from django.http import FileResponse
+from django.core.files.storage import FileSystemStorage
 
 # Helper functions for API responses
 def error_response(message, code=400, detail=None):
@@ -67,6 +68,33 @@ def error_response(message, code=400, detail=None):
 def success_response(data, code=200):
     """Return a standardized success response"""
     return JsonResponse(data, status=code)
+
+
+def _format_cancelled_timestamp(value):
+    return value.isoformat() if value else None
+
+
+def _login_background_fallback_config_path():
+    return os.path.join(settings.MEDIA_ROOT, 'login_backgrounds', 'current_login_background.json')
+
+
+def _save_login_background_fallback_url(relative_url):
+    config_path = _login_background_fallback_config_path()
+    os.makedirs(os.path.dirname(config_path), exist_ok=True)
+    with open(config_path, 'w', encoding='utf-8') as config_file:
+        json.dump({'relative_url': relative_url}, config_file)
+
+
+def _read_login_background_fallback_url():
+    config_path = _login_background_fallback_config_path()
+    if not os.path.exists(config_path):
+        return None
+    try:
+        with open(config_path, 'r', encoding='utf-8') as config_file:
+            data = json.load(config_file)
+        return data.get('relative_url')
+    except Exception:
+        return None
 
 @ensure_csrf_cookie
 def csrf_token_view(request):
@@ -875,6 +903,8 @@ def requestAPI(request, id=0):
                     archived_at__isnull=True,
                     approval_status="approved",
                     request_status="new_request"
+                ).exclude(
+                    request_products__process_steps__isnull=False
                 ).distinct().order_by('-RequestID')
             else:
                 # For regular users (customers), show only non-archived requests
@@ -1131,6 +1161,17 @@ def _extract_process_details(process_name_str):
 def _auto_start_project_tasks(req, requesting_user):
     """Helper function to create ProductProcess tasks for a request (auto-called on request creation)"""
     try:
+        existing_request_tasks = ProductProcess.objects.filter(
+            request_product__request=req,
+            archived_at__isnull=True,
+        )
+
+        # If tasks already exist but status was not updated, fix it so the request
+        # does not come back to the purchase order list.
+        if existing_request_tasks.exists() and req.request_status != "active":
+            req.request_status = "active"
+            req.save(update_fields=["request_status"])
+
         # Get all RequestProducts for this request
         request_products = req.request_products.all()
         
@@ -1305,8 +1346,24 @@ def start_project(request, id=0):
         created_tasks = _auto_start_project_tasks(req, request.user)
         
         if not created_tasks:
+            existing_task_count = ProductProcess.objects.filter(
+                request_product__request=req,
+                archived_at__isnull=True,
+            ).count()
+
+            if existing_task_count > 0:
+                if req.request_status != "active":
+                    req.request_status = "active"
+                    req.save(update_fields=["request_status"])
+
+                return JsonResponse({
+                    "message": "Project already started. Request is active in Task Status.",
+                    "tasks_created": 0,
+                    "already_started": True,
+                }, status=200)
+
             return JsonResponse({
-                "error": "This project has already been started or no products found.",
+                "error": "No products found for this request.",
             }, status=400)
         
         # Prepare response message
@@ -3793,17 +3850,32 @@ def user_activity_logs(request):
         start_date_str = request.GET.get('start_date')
         end_date_str = request.GET.get('end_date')
         
-        # Build base queryset
-        logs_query = AuditLog.objects.select_related(
-            "request", "request_product", "performed_by"
-        ).filter(
-            # Actions performed by this user
-            Q(performed_by=user) |
-            # Actions on requests created by this user
-            Q(request__requester=user) |
-            # Actions on products related to this user's requests
-            Q(request_product__request__requester=user)
-        )
+        user_role = None
+        if hasattr(user, "userprofile"):
+            user_role = user.userprofile.role
+
+        # Build base queryset.
+        # Admin and production manager need broader activity history visibility,
+        # while customers should only see their own request-related activity.
+        if user_role in [Roles.ADMIN, Roles.PRODUCTION_MANAGER]:
+            logs_query = AuditLog.objects.select_related(
+                "request", "request_product", "performed_by"
+            ).filter(
+                Q(performed_by__isnull=False) |
+                Q(request__isnull=False) |
+                Q(request_product__isnull=False)
+            )
+        else:
+            logs_query = AuditLog.objects.select_related(
+                "request", "request_product", "performed_by"
+            ).filter(
+                # Actions performed by this user
+                Q(performed_by=user) |
+                # Actions on requests created by this user
+                Q(request__requester=user) |
+                # Actions on products related to this user's requests
+                Q(request_product__request__requester=user)
+            )
         
         # Apply date filters if provided
         if start_date_str:
@@ -4044,12 +4116,30 @@ def requestProductAPI(request, id=0):
 
             elif data.get('status') == 'cancelled':
                 from django.utils import timezone
+                cancelled_at = timezone.now()
                 request_product.status = 'cancelled'
-                request_product.cancelled_at = timezone.now()
+                request_product.cancelled_at = cancelled_at
+                request_product.archived_at = cancelled_at
+                request_product.restored_at = None
                 request_product.cancelled_by = request.user
                 request_product.cancellation_reason = data.get('cancellation_reason', 'Cancelled by production manager')
                 request_product.save()
                 print(f"   ✅ RequestProduct {id} cancelled successfully")
+
+                log_audit(
+                    request.user,
+                    'archive',
+                    request_obj=request_product.request,
+                    request_product_obj=request_product,
+                    old_value=json.dumps({
+                        'status': 'active',
+                        'product_name': request_product.product.prodName if request_product.product else None,
+                    }),
+                    new_value=json.dumps({
+                        'status': 'cancelled',
+                        'reason': request_product.cancellation_reason,
+                    })
+                )
                 
                 # Create notification for requester
                 try:
@@ -4057,9 +4147,9 @@ def requestProductAPI(request, id=0):
                     if req.requester:
                         create_notification(
                             user=req.requester,
-                            notification_type='product_completed',
-                            title=f'Product Completed: {request_product.product.prodName}',
-                            message=f'All production steps for {request_product.product.prodName} in Request #{req.RequestID} have been completed.',
+                            notification_type='task_status_updated',
+                            title=f'Product Cancelled: {request_product.product.prodName}',
+                            message=f'{request_product.product.prodName} from Request #{req.RequestID} was cancelled.',
                             related_request=req
                         )
                 except Exception as notif_err:
@@ -4072,9 +4162,9 @@ def requestProductAPI(request, id=0):
                     for admin_user in admin_users:
                         create_notification(
                             user=admin_user,
-                            notification_type='product_completed',
-                            title=f'Product Completed: {request_product.product.prodName}',
-                            message=f'{request_product.product.prodName} for Request #{req.RequestID} is now complete.',
+                            notification_type='task_status_updated',
+                            title=f'Product Cancelled: {request_product.product.prodName}',
+                            message=f'{request_product.product.prodName} from Request #{req.RequestID} was cancelled by {request.user.username}.',
                             related_request=req
                         )
                 except Exception as notif_err:
@@ -4300,20 +4390,19 @@ def customer_cancelled_requests_view(request):
                         print(f"[WARN] Could not get audit log for request {rp.request.RequestID}: {str(audit_err)}")
                 
                 cancelled_by_name = (cancelled_by_user.get_full_name() or cancelled_by_user.username) if cancelled_by_user else 'System'
-                
-                # Format dates
-                cancelled_at_str = rp.archived_at.isoformat() if rp.archived_at else None
+                deadline_value = rp.deadline_extension or rp.request.deadline
                 created_at_str = rp.request.created_at.strftime("%m/%d/%Y") if rp.request.created_at else "N/A"
                 
                 cancelled_requests.append({
                     'id': rp.id,
-                    'request_id': rp.request.RequestID,
+                    'request_id': None,
                     'product_name': rp.product.prodName,
                     'quantity': rp.quantity,
-                    'cancelled_at': cancelled_at_str,
+                    'deadline': deadline_value.strftime("%Y-%m-%d") if deadline_value else None,
                     'cancelled_by_name': cancelled_by_name,
                     'cancellation_reason': rp.cancellation_reason if rp.cancellation_reason else 'Cancelled',
                     'created_at': created_at_str,
+                    'updated_at': _format_cancelled_timestamp(rp.archived_at or rp.cancelled_at),
                 })
             except Exception as item_err:
                 print(f"[ERROR] Processing cancelled product {rp.id}: {str(item_err)}")
@@ -4624,29 +4713,35 @@ def get_settings(request):
             print(f"[GET_SETTINGS] Got settings object: {settings_obj}")
         except Exception as e:
             print(f"[GET_SETTINGS] ERROR getting settings object: {str(e)}")
+            fallback_relative_url = _read_login_background_fallback_url()
+            fallback_url = request.build_absolute_uri(fallback_relative_url) if fallback_relative_url else None
             # Return default settings if there's an issue
             return JsonResponse({
                 "enable_email_alerts": True,
                 "data_retention_days": 365,
                 "enable_audit_logs": True,
                 "session_timeout_minutes": 15,
-                "enable_session_timeout": True
+                "enable_session_timeout": True,
+                "login_background_image_url": fallback_url,
             }, status=200)
         
-        serializer = SystemSettingsSerializer(settings_obj)
+        serializer = SystemSettingsSerializer(settings_obj, context={'request': request})
         print(f"[GET_SETTINGS] Serialized settings successfully")
         return JsonResponse(serializer.data, status=200)
     except Exception as e:
         print(f"[ERROR] Error fetching settings: {str(e)}")
         import traceback
         traceback.print_exc()
+        fallback_relative_url = _read_login_background_fallback_url()
+        fallback_url = request.build_absolute_uri(fallback_relative_url) if fallback_relative_url else None
         # Return default settings instead of 500 error
         return JsonResponse({
             "enable_email_alerts": True,
             "data_retention_days": 365,
             "enable_audit_logs": True,
             "session_timeout_minutes": 15,
-            "enable_session_timeout": True
+            "enable_session_timeout": True,
+            "login_background_image_url": fallback_url,
         }, status=200)
 
 
@@ -4693,13 +4788,104 @@ def update_settings(request):
         except Exception as audit_err:
             print(f"[AUDIT] Failed to log settings update: {str(audit_err)}")
         
-        serializer = SystemSettingsSerializer(settings_obj)
+        serializer = SystemSettingsSerializer(settings_obj, context={'request': request})
         return JsonResponse(serializer.data, status=200)
     except json.JSONDecodeError:
         return JsonResponse({"detail": "Invalid JSON"}, status=400)
     except Exception as e:
         print(f"Error updating settings: {str(e)}")
         return JsonResponse({"detail": f"Server error: {str(e)}"}, status=500)
+
+
+@csrf_exempt
+@role_required('admin')
+@require_http_methods(["POST"])
+def upload_login_background(request):
+    """
+    Upload login page background image.
+    POST /app/settings/login-background/
+    Admin-only endpoint.
+    """
+    if not request.user.is_authenticated:
+        return JsonResponse({"detail": "Not authenticated"}, status=401)
+
+    uploaded_file = request.FILES.get('background_image')
+    if not uploaded_file:
+        return JsonResponse({"detail": "No image file provided."}, status=400)
+
+    content_type = getattr(uploaded_file, 'content_type', '') or ''
+    if not content_type.startswith('image/'):
+        return JsonResponse({"detail": "Only image files are allowed."}, status=400)
+
+    max_size = 10 * 1024 * 1024  # 10MB
+    if uploaded_file.size > max_size:
+        return JsonResponse({"detail": "Image is too large. Maximum size is 10MB."}, status=400)
+
+    try:
+        settings_obj = SystemSettings.get_settings()
+        old_url = settings_obj.login_background_image.url if settings_obj.login_background_image else None
+
+        # Replace old file with newly uploaded image.
+        if settings_obj.login_background_image:
+            settings_obj.login_background_image.delete(save=False)
+
+        settings_obj.login_background_image = uploaded_file
+        settings_obj.updated_by = request.user
+        settings_obj.save()
+
+        serializer = SystemSettingsSerializer(settings_obj, context={'request': request})
+
+        try:
+            log_audit(
+                user=request.user,
+                action_type="settings_update",
+                old_value=json.dumps({"login_background_image_url": old_url}),
+                new_value=json.dumps({"login_background_image_url": serializer.data.get('login_background_image_url')})
+            )
+        except Exception as audit_err:
+            print(f"[AUDIT] Failed to log login background update: {str(audit_err)}")
+
+        return JsonResponse(serializer.data, status=200)
+    except Exception as e:
+        print(f"[UPLOAD_LOGIN_BACKGROUND] Falling back to file storage due to settings table error: {str(e)}")
+
+        try:
+            storage_location = os.path.join(settings.MEDIA_ROOT, 'login_backgrounds')
+            storage = FileSystemStorage(
+                location=storage_location,
+                base_url=f"{settings.MEDIA_URL}login_backgrounds/"
+            )
+            saved_filename = storage.save(uploaded_file.name, uploaded_file)
+            relative_url = storage.url(saved_filename)
+            _save_login_background_fallback_url(relative_url)
+
+            return JsonResponse({
+                "login_background_image_url": request.build_absolute_uri(relative_url)
+            }, status=200)
+        except Exception as fallback_err:
+            print(f"[UPLOAD_LOGIN_BACKGROUND] Fallback save failed: {str(fallback_err)}")
+            return JsonResponse({"detail": f"Server error: {str(fallback_err)}"}, status=500)
+
+
+@require_http_methods(["GET"])
+def public_login_background(request):
+    """
+    Public endpoint to fetch login background image URL.
+    GET /app/public/login-background/
+    """
+    try:
+        settings_obj = SystemSettings.get_settings()
+        image_url = None
+        if settings_obj.login_background_image:
+            image_url = request.build_absolute_uri(settings_obj.login_background_image.url)
+        elif _read_login_background_fallback_url():
+            image_url = request.build_absolute_uri(_read_login_background_fallback_url())
+        return JsonResponse({"login_background_image_url": image_url}, status=200)
+    except Exception as e:
+        print(f"[PUBLIC_LOGIN_BACKGROUND] Error: {str(e)}")
+        fallback_relative_url = _read_login_background_fallback_url()
+        fallback_url = request.build_absolute_uri(fallback_relative_url) if fallback_relative_url else None
+        return JsonResponse({"login_background_image_url": fallback_url}, status=200)
 
 
 @csrf_exempt
@@ -5036,14 +5222,14 @@ def cancelled_requests_view(request):
         if user_role not in ['admin', 'production_manager']:
             return error_response("Unauthorized access", code=403)
         
-        # Get all archived request products (cancelled/archived)
+        # Include both legacy cancelled tasks and archived cancellations.
         cancelled_products = RequestProduct.objects.filter(
-            archived_at__isnull=False
+            Q(archived_at__isnull=False) | Q(status='cancelled')
         ).select_related(
             'request', 
             'product',
             'cancelled_by'
-        ).order_by('-archived_at')
+        ).order_by('-archived_at', '-cancelled_at')
         
         # Build response data
         cancelled_requests = []
@@ -5053,7 +5239,6 @@ def cancelled_requests_view(request):
                 if not rp.request or not rp.product:
                     continue
                 
-                requester_user = rp.request.requester if rp.request else None
                 cancelled_by_user = rp.cancelled_by
                 
                 # If cancelled_by is not set, try to get it from audit log
@@ -5069,24 +5254,52 @@ def cancelled_requests_view(request):
                         print(f"[WARN] Could not get audit log for request {rp.request.RequestID}: {str(audit_err)}")
                 
                 cancelled_by_name = (cancelled_by_user.get_full_name() or cancelled_by_user.username) if cancelled_by_user else 'System'
-                requester_name = (requester_user.get_full_name() or requester_user.username) if requester_user else None
+                deadline_value = rp.deadline_extension or rp.request.deadline
+                updated_timestamp = _format_cancelled_timestamp(rp.archived_at or rp.cancelled_at)
+                cancellation_reason = rp.cancellation_reason if rp.cancellation_reason else 'Archived'
+                cancellation_log = (
+                    f"Task cancellation from issuance #{rp.request.RequestID} by {cancelled_by_name}. "
+                    f"Reason: {cancellation_reason}"
+                )
 
                 cancelled_requests.append({
-                    'id': rp.id,
+                    'id': f"request-product-{rp.id}",
                     'request_id': rp.request.RequestID,
-                    'requester_name': requester_name,
                     'product_name': rp.product.prodName,
                     'quantity': rp.quantity,
-                    'cancelled_at': rp.archived_at.isoformat() if rp.archived_at else None,
+                    'deadline': deadline_value.strftime("%Y-%m-%d") if deadline_value else None,
                     'cancelled_by_name': cancelled_by_name,
-                    'cancellation_reason': rp.cancellation_reason if rp.cancellation_reason else 'Archived',
-                    'updated_at': rp.request.updated_at.isoformat() if rp.request.updated_at else None,
+                    'cancellation_reason': cancellation_reason,
+                    'cancellation_log': cancellation_log,
+                    'updated_at': updated_timestamp,
                 })
             except Exception as item_err:
                 print(f"[ERROR] Processing cancelled product {rp.id}: {str(item_err)}")
                 import traceback
                 traceback.print_exc()
                 continue
+
+        draft_cancellations = CancelledDraftProduct.objects.select_related('cancelled_by').all()
+        for draft in draft_cancellations:
+            cancelled_by_user = draft.cancelled_by
+            cancelled_by_name = (cancelled_by_user.get_full_name() or cancelled_by_user.username) if cancelled_by_user else 'System'
+            cancellation_reason = draft.cancellation_reason if draft.cancellation_reason else 'Cancelled before issuance'
+            cancelled_requests.append({
+                'id': f"draft-{draft.id}",
+                'request_id': None,
+                'product_name': draft.product_name,
+                'quantity': draft.quantity,
+                'deadline': draft.deadline.strftime("%Y-%m-%d") if draft.deadline else None,
+                'cancelled_by_name': cancelled_by_name,
+                'cancellation_reason': cancellation_reason,
+                'cancellation_log': f"Draft product cancellation (no issuance number) by {cancelled_by_name}. Reason: {cancellation_reason}",
+                'updated_at': _format_cancelled_timestamp(draft.updated_at),
+            })
+
+        cancelled_requests.sort(
+            key=lambda item: item.get('updated_at') or '',
+            reverse=True,
+        )
         
         return success_response({
             'cancelled_requests': cancelled_requests,
@@ -5098,6 +5311,106 @@ def cancelled_requests_view(request):
         import traceback
         traceback.print_exc()
         return error_response(f"Error fetching cancelled requests: {str(e)}", code=500)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@role_required('admin')
+def log_cancelled_draft_product(request):
+    try:
+        data = JSONParser().parse(request)
+
+        product_name = (data.get('product_name') or '').strip()
+        quantity = data.get('quantity')
+        deadline = data.get('deadline')
+        cancellation_reason = (data.get('cancellation_reason') or 'Cancelled before issuance').strip()
+
+        if not product_name:
+            return error_response('Product name is required', code=400)
+
+        if not quantity:
+            return error_response('Quantity is required', code=400)
+
+        cancelled_entry = CancelledDraftProduct.objects.create(
+            product_name=product_name,
+            quantity=int(quantity),
+            deadline=deadline or None,
+            cancelled_by=request.user,
+            cancellation_reason=cancellation_reason,
+        )
+
+        log_audit(
+            request.user,
+            'archive',
+            old_value=json.dumps({
+                'product_name': product_name,
+                'quantity': quantity,
+                'deadline': deadline,
+            }),
+            new_value=json.dumps({
+                'event_type': 'draft_product_cancelled',
+                'source': 'draft-product',
+                'cancelled_entry_id': cancelled_entry.id,
+                'product_name': product_name,
+                'quantity': int(quantity),
+                'deadline': deadline,
+                'reason': cancellation_reason,
+            })
+        )
+
+        # Create notifications for cancellation event (uses existing notification type choices).
+        try:
+            create_notification(
+                user=request.user,
+                notification_type='task_status_updated',
+                title='Product Cancelled Before Issuance',
+                message=f'You cancelled draft product {product_name} (Qty {int(quantity)}) before issuance.',
+                action_data={
+                    'event_type': 'draft_product_cancelled',
+                    'product_name': product_name,
+                    'quantity': int(quantity),
+                    'deadline': deadline,
+                    'reason': cancellation_reason,
+                }
+            )
+        except Exception as notif_err:
+            print(f"[NOTIFICATION] Failed to create self cancellation notification: {str(notif_err)}")
+
+        try:
+            recipients = User.objects.filter(
+                Q(userprofile__role__in=[Roles.ADMIN, Roles.PRODUCTION_MANAGER])
+            ).exclude(id=request.user.id)
+            for recipient in recipients:
+                create_notification(
+                    user=recipient,
+                    notification_type='task_status_updated',
+                    title='Draft Product Cancelled',
+                    message=f'{request.user.username} cancelled draft product {product_name} (Qty {int(quantity)}) before issuance.',
+                    action_data={
+                        'event_type': 'draft_product_cancelled',
+                        'product_name': product_name,
+                        'quantity': int(quantity),
+                        'deadline': deadline,
+                        'reason': cancellation_reason,
+                        'cancelled_by': request.user.username,
+                    }
+                )
+        except Exception as notif_err:
+            print(f"[NOTIFICATION] Failed to create cancellation notifications for management users: {str(notif_err)}")
+
+        return success_response({
+            'id': cancelled_entry.id,
+            'product_name': cancelled_entry.product_name,
+            'quantity': cancelled_entry.quantity,
+            'deadline': cancelled_entry.deadline.strftime('%Y-%m-%d') if cancelled_entry.deadline else None,
+            'cancelled_by_name': request.user.get_full_name() or request.user.username,
+            'updated_at': _format_cancelled_timestamp(cancelled_entry.updated_at),
+        }, code=201)
+    except ValueError:
+        return error_response('Quantity must be a valid number', code=400)
+    except Exception as e:
+        print(f"[ERROR] log_cancelled_draft_product error: {str(e)}")
+        return error_response(f"Error logging cancelled draft product: {str(e)}", code=500)
 
 
 @require_http_methods(["GET"])

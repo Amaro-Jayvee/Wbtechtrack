@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from app.models import *
-from datetime  import date, datetime
+from datetime  import date, datetime, timedelta
 from django.utils.timezone import localtime
 
 class WorkerSerializer(serializers.ModelSerializer):
@@ -239,6 +239,13 @@ class RequestProductSerializer(serializers.ModelSerializer):
             return localtime(obj.archived_at).strftime("%Y-%m-%d %H:%M:%S")
         return None
 
+    def validate_quantity(self, value):
+        if value < 1:
+            raise serializers.ValidationError("Quantity must be at least 1.")
+        if value > 50000:
+            raise serializers.ValidationError("Quantity cannot exceed 50,000 per product.")
+        return value
+
     class Meta:
         model = RequestProduct
         fields = [
@@ -266,6 +273,34 @@ class RequestSerializer(serializers.ModelSerializer):
     created_at = serializers.SerializerMethodField()
     archived_at = serializers.SerializerMethodField()
 
+    MAX_PRODUCT_QUANTITY = 50000
+
+    @staticmethod
+    def _required_lead_days_for_quantity(quantity):
+        # Balanced tier: production lead-time scales with order size.
+        if quantity <= 5000:
+            return 4
+        if quantity <= 15000:
+            return 7
+        if quantity <= 30000:
+            return 12
+        return 16
+
+    @staticmethod
+    def _coerce_date(value):
+        if value is None:
+            return None
+        if isinstance(value, date):
+            return value
+        if isinstance(value, datetime):
+            return value.date()
+        if isinstance(value, str):
+            try:
+                return datetime.strptime(value, "%Y-%m-%d").date()
+            except ValueError:
+                return None
+        return None
+
     def get_badge(self, obj):
         count = obj.request_products.count()
         if count == 0:
@@ -285,6 +320,67 @@ class RequestSerializer(serializers.ModelSerializer):
         if obj.archived_at:  # DateTimeField
             return localtime(obj.archived_at).strftime("%Y-%m-%d")
         return None
+
+    def validate(self, attrs):
+        products_data = attrs.get("request_products")
+        deadline = attrs.get("deadline")
+
+        # Support updates where request_products or deadline may be omitted.
+        if products_data is None and self.instance is not None:
+            return attrs
+
+        if products_data is None:
+            return attrs
+
+        if not isinstance(products_data, list) or len(products_data) == 0:
+            raise serializers.ValidationError({
+                "request_products": "At least one product is required."
+            })
+
+        effective_deadline = deadline or (self.instance.deadline if self.instance else None)
+        effective_deadline = self._coerce_date(effective_deadline)
+        if not effective_deadline:
+            raise serializers.ValidationError({
+                "deadline": "A shared deadline is required for this purchase order."
+            })
+
+        required_lead_days = 0
+        for index, item in enumerate(products_data):
+            quantity_raw = item.get("quantity")
+            try:
+                quantity = int(quantity_raw)
+            except (TypeError, ValueError):
+                raise serializers.ValidationError({
+                    "request_products": f"Product entry #{index + 1} has an invalid quantity."
+                })
+
+            if quantity < 1 or quantity > self.MAX_PRODUCT_QUANTITY:
+                raise serializers.ValidationError({
+                    "request_products": (
+                        f"Quantity for product entry #{index + 1} must be between 1 and "
+                        f"{self.MAX_PRODUCT_QUANTITY}."
+                    )
+                })
+
+            item_deadline = self._coerce_date(item.get("deadline_extension"))
+            if item_deadline and item_deadline != effective_deadline:
+                raise serializers.ValidationError({
+                    "deadline": "All products in a purchase order must use one shared deadline."
+                })
+
+            required_lead_days = max(required_lead_days, self._required_lead_days_for_quantity(quantity))
+
+        days_until_deadline = (effective_deadline - date.today()).days
+        if days_until_deadline < required_lead_days:
+            min_allowed = date.today() + timedelta(days=required_lead_days)
+            raise serializers.ValidationError({
+                "deadline": (
+                    f"Deadline is too early for this order size. Minimum allowed date is "
+                    f"{min_allowed.isoformat()} ({required_lead_days} day lead time)."
+                )
+            })
+
+        return attrs
 
     def create(self, validated_data):
         products_data = validated_data.pop('request_products', None)
@@ -307,10 +403,12 @@ class RequestSerializer(serializers.ModelSerializer):
             # Admin is creating request for a specific customer
             requester = validated_data.pop('requester')
             request_status = 'new_request'  # Mark as new request created by admin
+            approval_status = 'approved'    # Admin-created requests should be visible to PM immediately
         else:
             # Customer creating their own request
             requester = request_user
             request_status = 'active'  # Customer-created requests start as active
+            approval_status = validated_data.get('approval_status', 'pending')
             validated_data.pop('requester', None)  # Remove if present, use current user
         
         # Create the request
@@ -318,6 +416,7 @@ class RequestSerializer(serializers.ModelSerializer):
             created_by=request_user,
             requester=requester,
             request_status=request_status,
+            approval_status=approval_status,
             **validated_data
         )
         
@@ -333,8 +432,8 @@ class RequestSerializer(serializers.ModelSerializer):
                     # NOTE: Use 'product_id' (not 'product') to pass the FK ID directly
                     product_fields = {
                         'product_id': item.get('product'),
-                        'quantity': item.get('quantity'),
-                        'deadline_extension': item.get('deadline_extension'),
+                        'quantity': int(item.get('quantity', 0) or 0),
+                        'deadline_extension': request.deadline,
                         'extension_status': item.get('extension_status', 'pending'),
                     }
                     print(f"[CREATE_REQUEST] Product {index}: extracted fields = {product_fields}")
@@ -380,14 +479,17 @@ class RequestSerializer(serializers.ModelSerializer):
                     product = existing_products[product_id]
                     for attr, value in item.items():
                         if attr != 'product' and attr in ['quantity', 'deadline_extension', 'extension_status']:
-                            setattr(product, attr, value)
+                            if attr == 'deadline_extension':
+                                setattr(product, attr, instance.deadline)
+                            else:
+                                setattr(product, attr, value)
                     product.save()
                 else:
                     # Only include valid fields
                     product_fields = {
                         'product': item.get('product'),
                         'quantity': item.get('quantity'),
-                        'deadline_extension': item.get('deadline_extension'),
+                        'deadline_extension': instance.deadline,
                         'extension_status': item.get('extension_status', 'pending'),
                     }
                     try:
@@ -926,6 +1028,18 @@ class ProcessProgressSerializer(serializers.ModelSerializer):
 
 
 class SystemSettingsSerializer(serializers.ModelSerializer):
+    login_background_image_url = serializers.SerializerMethodField()
+
+    def get_login_background_image_url(self, obj):
+        if not obj.login_background_image:
+            return None
+
+        url = obj.login_background_image.url
+        request = self.context.get('request')
+        if request:
+            return request.build_absolute_uri(url)
+        return url
+
     class Meta:
         model = SystemSettings
         fields = [
@@ -937,6 +1051,7 @@ class SystemSettingsSerializer(serializers.ModelSerializer):
             'enable_email_alerts',
             'data_retention_days',
             'enable_audit_logs',
+            'login_background_image_url',
             'updated_at',
             'updated_by'
         ]

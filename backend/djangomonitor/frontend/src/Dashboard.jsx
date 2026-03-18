@@ -257,7 +257,7 @@ function Dashboard() {
                   onChange={(e) => setIncludeArchived(e.target.checked)}
                   className="checkbox-input"
                 />
-                <span className="checkbox-text">Include Cancelled</span>
+                <span className="checkbox-text">Include Cancelled Orders</span>
               </label>
             </div>
           </div>
@@ -352,19 +352,19 @@ function Dashboard() {
                           </div>
                           
                           {/* Legend for Top Movers */}
-                          <div className="top-movers-legend">
-                            {topMovers.products.map((product, index) => {
-                              const percentage = ((product.total_quota / total) * 100).toFixed(1);
-                              return (
-                                <div key={index} className="legend-item-top-movers">
-                                  <span className="legend-color-box" style={{ backgroundColor: colors[index % colors.length] }}></span>
-                                  <div className="legend-content-top-movers">
-                                    <div className="legend-product-name">{product.name}</div>
-                                    <div className="legend-product-stats">{product.total_quota} ({percentage}%)</div>
-                                  </div>
-                                </div>
-                              );
-                            })}
+                          <div className="top-movers-legend" style={{ display: 'flex', gap: '18px', marginTop: '18px', marginBottom: '8px' }}>
+                            <div className="legend-item-top-movers" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <span className="legend-color-box" style={{ backgroundColor: '#1f77b4', width: 16, height: 16, display: 'inline-block', borderRadius: 3 }}></span>
+                              <span style={{ fontWeight: 500, fontSize: 15 }}>In Progress</span>
+                            </div>
+                            <div className="legend-item-top-movers" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <span className="legend-color-box" style={{ backgroundColor: '#2FCC71', width: 16, height: 16, display: 'inline-block', borderRadius: 3 }}></span>
+                              <span style={{ fontWeight: 500, fontSize: 15 }}>Completed</span>
+                            </div>
+                            <div className="legend-item-top-movers" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <span className="legend-color-box" style={{ backgroundColor: '#E74C3C', width: 16, height: 16, display: 'inline-block', borderRadius: 3 }}></span>
+                              <span style={{ fontWeight: 500, fontSize: 15 }}>Defects</span>
+                            </div>
                           </div>
                         </>
                       );
@@ -383,10 +383,17 @@ function Dashboard() {
                 <h3 style={{ marginBottom: "20px" }}>Production Percentages Report</h3>
               {pieData && pieData.labels && pieData.data && pieData.data.length > 0 ? (
                 <>
+                  {(() => {
+                    const normalizedPieLabels = pieData.labels.map((label) =>
+                      String(label).toLowerCase().includes("rejected") ? "Defect" : label
+                    );
+
+                    return (
+                      <>
                   <div className="pie-chart-wrapper">
                     <Pie
                       data={{
-                        labels: pieData.labels,
+                        labels: normalizedPieLabels,
                         datasets: [
                           {
                             data: pieData.percentages,
@@ -455,6 +462,9 @@ function Dashboard() {
                     <span>Total Units: </span>
                     <strong>{pieData.total}</strong>
                   </div>
+                      </>
+                    );
+                  })()}
                 </>
               ) : (
                 <p style={{ color: "#999", textAlign: "center", padding: "30px" }}>

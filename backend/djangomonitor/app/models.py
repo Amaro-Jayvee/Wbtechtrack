@@ -6,6 +6,7 @@ from django.utils import timezone
 from django.utils.timezone import localtime
 from django.core.mail import send_mail
 from django.conf import settings
+from django.core.validators import MaxValueValidator, MinValueValidator
 # from django.db.models.signals import m2m_changed
 # from django.core.exceptions import ValidationError
 # from django.dispatch 
@@ -279,7 +280,12 @@ class RequestProduct(models.Model):
     
     request = models.ForeignKey(Requests, on_delete=models.CASCADE, related_name='request_products')
     product = models.ForeignKey('ProductName', on_delete=models.CASCADE, related_name='product_requests')
-    quantity = models.PositiveIntegerField()
+    quantity = models.PositiveIntegerField(
+        validators=[
+            MinValueValidator(1),
+            MaxValueValidator(50000),
+        ]
+    )
     deadline_extension = models.DateField("Deadline Extension", null=True, blank=True)
     extension_status = models.CharField(
         max_length=20,
@@ -294,6 +300,14 @@ class RequestProduct(models.Model):
     cancelled_at = models.DateTimeField("Cancelled At", null=True, blank=True)
     cancelled_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='cancelled_requests')
     cancellation_reason = models.TextField("Cancellation Reason", null=True, blank=True)
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(quantity__gte=1) & models.Q(quantity__lte=50000),
+                name="requestproduct_quantity_1_50000",
+            )
+        ]
 
     def __str__(self):
         return f"{self.product.name} x{self.quantity} for Request #{self.request.RequestID}"
@@ -588,6 +602,9 @@ class SystemSettings(models.Model):
     
     # Audit & Logging
     enable_audit_logs = models.BooleanField("Enable Audit Logs", default=True)
+
+    # Login page appearance
+    login_background_image = models.FileField(upload_to='login_backgrounds/', null=True, blank=True)
     
     # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)
@@ -638,3 +655,25 @@ class Notification(models.Model):
     
     def __str__(self):
         return f"{self.title} - {self.user.username}"
+
+
+class CancelledDraftProduct(models.Model):
+    product_name = models.CharField(max_length=100)
+    quantity = models.PositiveIntegerField()
+    deadline = models.DateField(null=True, blank=True)
+    cancelled_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='cancelled_draft_products'
+    )
+    cancellation_reason = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-updated_at']
+
+    def __str__(self):
+        return f"{self.product_name} x{self.quantity}"

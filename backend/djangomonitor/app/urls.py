@@ -121,6 +121,8 @@ urlpatterns = [
     # Settings endpoints
     path('settings/', get_settings, name='get-settings'),
     path('settings/update/', update_settings, name='update-settings'),
+    path('settings/login-background/', upload_login_background, name='upload-login-background'),
+    path('public/login-background/', public_login_background, name='public-login-background'),
 
     # Dashboard Report endpoints
     path('reports/bar-chart/', dashboard_bar_chart, name='dashboard-bar-chart'),
@@ -130,6 +132,7 @@ urlpatterns = [
 
     # Cancelled Requests endpoint
     path('cancelled-requests/', cancelled_requests_view, name='cancelled-requests'),
+    path('cancelled-draft-products/', log_cancelled_draft_product, name='cancelled-draft-products'),
     
     # Task History endpoint
     path('task-history/<int:request_product_id>/', task_history_view, name='task-history'),

@@ -67,7 +67,32 @@ function ActivityLogsPanel({ title = "Activity Logs", limit = 10 }) {
     return date.toLocaleDateString() + " " + date.toLocaleTimeString();
   };
 
-  const getActionLabel = (actionType) => {
+  const parseLogPayload = (value) => {
+    if (!value) return null;
+    if (typeof value === "object") return value;
+    if (typeof value !== "string") return null;
+    try {
+      return JSON.parse(value);
+    } catch {
+      return null;
+    }
+  };
+
+  const getActionLabel = (actionType, log) => {
+    const newData = parseLogPayload(log?.new_value);
+    if (newData?.event_type === "admin_request_created") {
+      return "Purchase Order Created";
+    }
+    if (newData?.event_type === "draft_product_cancelled") {
+      return "Product Cancelled";
+    }
+    if (newData?.event_type === "request_approved") {
+      return "Request Approved";
+    }
+    if (newData?.event_type === "request_declined") {
+      return "Request Declined";
+    }
+
     const labels = {
       login: "Login",
       logout: "Logout",
@@ -120,19 +145,47 @@ function ActivityLogsPanel({ title = "Activity Logs", limit = 10 }) {
   };
 
   const getActionDescription = (log) => {
-    let description = "";
-    
-    if (log.request && log.action_type.includes("request")) {
-      description = `Request #${log.request.RequestID}`;
+    const newData = parseLogPayload(log.new_value);
+    const actor = log.performed_by_username ? ` by ${log.performed_by_username}` : "";
+
+    if (newData?.event_type === "admin_request_created") {
+      const requestId = newData.request_id || log.request;
+      const customer = newData.requester_username || "customer";
+      const count = Number(newData.product_count || 0);
+      const deadline = newData.deadline ? ` (deadline ${newData.deadline})` : "";
+      return `Created purchase order #${requestId} for ${customer} with ${count} product${count === 1 ? "" : "s"}${deadline}${actor}`;
     }
-    if (log.request_product && log.request_product.product) {
-      description = `${log.request_product.product.prodName}`;
+
+    if (newData?.event_type === "draft_product_cancelled") {
+      const name = newData.product_name || "Unknown product";
+      const qty = newData.quantity != null ? `, qty ${newData.quantity}` : "";
+      const deadline = newData.deadline ? `, deadline ${newData.deadline}` : "";
+      const reason = newData.reason ? `, reason: ${newData.reason}` : "";
+      return `Cancelled draft product "${name}"${qty}${deadline}${reason}${actor}`;
     }
-    if (log.performed_by) {
-      description += ` by ${log.performed_by.username}`;
+
+    if (newData?.event_type === "request_approved") {
+      const requestId = newData.request_id || log.request;
+      const requester = newData.requester || "customer";
+      const notes = newData.approval_notes ? `, notes: ${newData.approval_notes}` : "";
+      return `Approved request #${requestId} for ${requester}${notes}${actor}`;
     }
-    
-    return description || "System action";
+
+    if (newData?.event_type === "request_declined") {
+      const requestId = newData.request_id || log.request;
+      const requester = newData.requester || "customer";
+      const reason = newData.reason ? `, reason: ${newData.reason}` : "";
+      return `Declined request #${requestId} for ${requester}${reason}${actor}`;
+    }
+
+    if (log.request) {
+      return `Request #${log.request}${actor}`;
+    }
+    if (log.request_product) {
+      return `Request product #${log.request_product}${actor}`;
+    }
+
+    return `System action${actor}`;
   };
 
   return (
@@ -254,7 +307,7 @@ function ActivityLogsPanel({ title = "Activity Logs", limit = 10 }) {
               </div>
               <div className="activity-log-content">
                 <div className="activity-log-action">
-                  {getActionLabel(log.action_type)}
+                  {getActionLabel(log.action_type, log)}
                 </div>
                 <div className="activity-log-description">
                   {getActionDescription(log)}

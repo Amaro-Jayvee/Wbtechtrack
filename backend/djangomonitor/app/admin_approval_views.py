@@ -103,8 +103,13 @@ def approve_customer_request(request):
         try:
             log_audit(
                 user=request.user,
-                action_type="request_approved",
+                action_type="update",
+                request_obj=customer_request,
+                old_value=json.dumps({
+                    "approval_status": "pending"
+                }),
                 new_value=json.dumps({
+                    "event_type": "request_approved",
                     "request_id": request_id,
                     "requester": customer_request.requester.username if customer_request.requester else "Unknown",
                     "approval_notes": approval_notes
@@ -218,8 +223,13 @@ def decline_customer_request(request):
         try:
             log_audit(
                 user=request.user,
-                action_type="request_declined",
+                action_type="update",
+                request_obj=customer_request,
+                old_value=json.dumps({
+                    "approval_status": "pending"
+                }),
                 new_value=json.dumps({
+                    "event_type": "request_declined",
                     "request_id": request_id,
                     "requester": customer_request.requester.username if customer_request.requester else "Unknown",
                     "reason": reason
@@ -528,12 +538,13 @@ def create_admin_request(request):
     POST /app/admin/create-request/
     {
         "requester_id": 5,
-        "deadline": "2025-01-15",
+        "deadline": "2025-01-20",
         "products": [
-            {"product": 1, "quantity": 10, "deadline_extension": "2025-01-20"},
-            {"product": 2, "quantity": 5, "deadline_extension": "2025-01-20"}
+            {"product": 1, "quantity": 10},
+            {"product": 2, "quantity": 5}
         ]
     }
+    Note: all products share the same order deadline.
     """
     try:
         if request.method != "POST":
@@ -580,10 +591,35 @@ def create_admin_request(request):
             created_request.request_status = 'new_request'  # Set to new_request - waiting to be started by production manager
             created_request.save()
             
-            # ===== NEW: Automatically create ProductProcess tasks from ProcessTemplate records =====
-            # This ensures the request appears in Task Status for the production manager
-            tasks_created = _create_product_process_tasks_from_templates(created_request)
-            print(f"[CREATE_REQUEST] Created {tasks_created} ProductProcess tasks for request {created_request.RequestID}")
+            # Keep this request in Purchase Order List first.
+            # Tasks will be created when production manager clicks Start Project.
+            tasks_created = 0
+
+            # Log specific admin creation activity for Activity Logs panel.
+            try:
+                created_products = [
+                    {
+                        "product_id": rp.product.ProdID if rp.product else None,
+                        "product_name": rp.product.prodName if rp.product else "Unknown",
+                        "quantity": rp.quantity,
+                    }
+                    for rp in created_request.request_products.select_related("product").all()
+                ]
+                log_audit(
+                    user=request.user,
+                    action_type="create",
+                    request_obj=created_request,
+                    new_value=json.dumps({
+                        "event_type": "admin_request_created",
+                        "request_id": created_request.RequestID,
+                        "requester_username": requester.username,
+                        "deadline": str(created_request.deadline) if created_request.deadline else None,
+                        "product_count": len(created_products),
+                        "products": created_products,
+                    })
+                )
+            except Exception as audit_error:
+                print(f"[AUDIT] Failed to log admin request creation: {str(audit_error)}")
             
             # Create notification for the customer
             try:
@@ -596,6 +632,18 @@ def create_admin_request(request):
                 )
             except Exception as notif_error:
                 print(f"[NOTIFICATION] Failed to create notification: {str(notif_error)}")
+
+            # Create notification for the admin who created the request (confirmation in bell).
+            try:
+                create_notification(
+                    user=request.user,
+                    notification_type='request_created',
+                    title='Purchase Order Created',
+                    message=f'You created request #{created_request.RequestID} for customer {requester.username}',
+                    related_request=created_request
+                )
+            except Exception as notif_error:
+                print(f"[NOTIFICATION] Failed to create creator notification: {str(notif_error)}")
             
             # Create notification for all admin users
             try:
@@ -612,10 +660,26 @@ def create_admin_request(request):
                     )
             except Exception as notif_error:
                 print(f"[NOTIFICATION] Failed to create admin notification: {str(notif_error)}")
+
+            # Create notification for production managers so they can pick up new orders quickly.
+            try:
+                production_managers = User.objects.filter(
+                    userprofile__role=Roles.PRODUCTION_MANAGER
+                )
+                for pm_user in production_managers:
+                    create_notification(
+                        user=pm_user,
+                        notification_type='request_created',
+                        title='New Purchase Order Created',
+                        message=f'Admin {request.user.username} created request #{created_request.RequestID} for customer {requester.username}',
+                        related_request=created_request
+                    )
+            except Exception as notif_error:
+                print(f"[NOTIFICATION] Failed to create production manager notification: {str(notif_error)}")
             
             return JsonResponse({
                 "success": True,
-                "message": f"Request #{created_request.RequestID} created and approved - {tasks_created} tasks ready for production",
+                "message": f"Request #{created_request.RequestID} created and approved",
                 "request_id": created_request.RequestID,
                 "requester": requester.username,
                 "tasks_created": tasks_created,

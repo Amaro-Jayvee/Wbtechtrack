@@ -28,7 +28,6 @@ function CustomerViewRequests() {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [requestStatusFilter, setRequestStatusFilter] = useState("active");
-  const [statusFilter, setStatusFilter] = useState("all");
   const [searchTerm, setSearchTerm] = useState("");
   const [sortBy, setSortBy] = useState("number");
   const [sortOrder, setSortOrder] = useState("asc");
@@ -377,27 +376,8 @@ function CustomerViewRequests() {
       });
     });
 
-  // Filter tasks
-  const filteredTasks = flattenedTasks.filter((task) => {
-    if (statusFilter === "all") return true;
-    
-    const normalizedStatus = task.status.toLowerCase();
-    const normalizedFilter = statusFilter.toLowerCase();
-    
-    // Handle status filters specifically to avoid substring matching issues
-    if (normalizedFilter === "not-started") {
-      // Match "⚪ not started", "🕒 not started"
-      return normalizedStatus.includes("not started");
-    }
-    
-    if (normalizedFilter === "started") {
-      // Match "🚀 started" only, NOT "not started"
-      return normalizedStatus.includes("🚀") && normalizedStatus.includes("started");
-    }
-    
-    // Handle other filters
-    return normalizedStatus.includes(normalizedFilter);
-  }) || [];
+  // Task status is now controlled by the top tabs only.
+  const filteredTasks = flattenedTasks || [];
   
   // Filter by search term
   const finalTasks = filteredTasks.filter((task) => {
@@ -971,7 +951,7 @@ function CustomerViewRequests() {
             flexWrap: "wrap",
           }}
         >
-          {/* Left Side - Status Filter */}
+          {/* Left Side - Sorting Controls */}
           <div
             style={{
               display: "flex",
@@ -980,32 +960,6 @@ function CustomerViewRequests() {
               flexWrap: "wrap",
             }}
           >
-            {/* Task Status Dropdown */}
-            <div>
-              <select
-                className="form-select form-select-sm"
-                style={{ 
-                  width: "150px", 
-                  height: "38px",
-                  padding: "8px 12px",
-                  fontSize: "14px",
-                  lineHeight: "1.5",
-                  verticalAlign: "middle",
-                }}
-                value={statusFilter}
-                onChange={(e) => {
-                  setStatusFilter(e.target.value);
-                  setCurrentPage(1);
-                }}
-              >
-                <option value="all">All Task Status</option>
-                <option value="completed">Completed</option>
-                <option value="progress">In Progress</option>
-                <option value="started">Started</option>
-                <option value="not-started">Not Started</option>
-              </select>
-            </div>
-
             {/* Sort By Dropdown */}
             <div>
               <select
@@ -1091,6 +1045,7 @@ function CustomerViewRequests() {
             padding: "12px 16px",
             display: "flex",
             gap: "8px",
+            flexWrap: "wrap",
             boxShadow: "0 2px 8px rgba(0,0,0,0.04)",
           }}
         >
@@ -1123,26 +1078,30 @@ function CustomerViewRequests() {
               }}
               style={{
                 padding: "12px 24px",
-                border: requestStatusFilter === tab.value ? "2px solid " + tab.color : "2px solid transparent",
+                border: requestStatusFilter === tab.value ? "2px solid " + tab.color : "1px solid " + tab.color + "55",
                 borderRadius: "8px",
-                backgroundColor: requestStatusFilter === tab.value ? "white" : "transparent",
-                color: requestStatusFilter === tab.value ? tab.color : "#6B7280",
+                background: requestStatusFilter === tab.value
+                  ? "linear-gradient(135deg, " + tab.color + " 0%, " + tab.color + "CC 100%)"
+                  : "linear-gradient(135deg, " + tab.color + "22 0%, " + tab.color + "14 100%)",
+                color: requestStatusFilter === tab.value ? "#ffffff" : tab.color,
                 fontWeight: requestStatusFilter === tab.value ? "700" : "600",
                 fontSize: "16px",
                 cursor: "pointer",
                 transition: "all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)",
-                boxShadow: requestStatusFilter === tab.value ? "0 4px 12px " + tab.color + "20" : "none",
+                boxShadow: requestStatusFilter === tab.value
+                  ? "0 8px 18px " + tab.color + "55"
+                  : "0 2px 6px " + tab.color + "22",
                 whiteSpace: "nowrap",
               }}
               onMouseEnter={(e) => {
                 if (requestStatusFilter !== tab.value) {
-                  e.currentTarget.style.borderColor = tab.color + "40";
+                  e.currentTarget.style.borderColor = tab.color + "88";
                   e.currentTarget.style.transform = "translateY(-1px)";
                 }
               }}
               onMouseLeave={(e) => {
                 if (requestStatusFilter !== tab.value) {
-                  e.currentTarget.style.borderColor = "transparent";
+                  e.currentTarget.style.borderColor = tab.color + "55";
                   e.currentTarget.style.transform = "translateY(0)";
                 }
               }}
@@ -1437,7 +1396,7 @@ function CustomerViewRequests() {
                   Page {currentPage} of {Math.ceil(sortedTasks.length / itemsPerPage)}
                 </span>
               </div>
-            )}}
+            )}
             </>
           )}
         </div>

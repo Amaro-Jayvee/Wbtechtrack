@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useUser } from "./UserContext.jsx";
 import "bootstrap/dist/css/bootstrap.min.css";
@@ -13,8 +13,29 @@ function Login() {
   });
   const [message, setMessage] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [loginBackgroundUrl, setLoginBackgroundUrl] = useState("");
   const navigate = useNavigate();
   const { refreshUserData, userData } = useUser();
+
+  useEffect(() => {
+    const fetchLoginBackground = async () => {
+      try {
+        const response = await fetch("http://localhost:8000/app/public/login-background/");
+        if (!response.ok) {
+          return;
+        }
+
+        const data = await response.json();
+        if (data.login_background_image_url) {
+          setLoginBackgroundUrl(data.login_background_image_url);
+        }
+      } catch (error) {
+        console.warn("Unable to load login background image:", error);
+      }
+    };
+
+    fetchLoginBackground();
+  }, []);
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -100,7 +121,10 @@ function Login() {
   // Login/Register Step
   return (
     <div className="login-page-wrapper">
-      <div className="login-hero">
+      <div
+        className="login-hero"
+        style={loginBackgroundUrl ? { backgroundImage: `url('${loginBackgroundUrl}')` } : undefined}
+      >
       <div className="login-container">
         {/* Left Side - Branding */}
         <div className="login-left">

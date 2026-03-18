@@ -17,9 +17,12 @@ function Settings() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
+  const [loginBackgroundFile, setLoginBackgroundFile] = useState(null);
+  const [loginBackgroundPreview, setLoginBackgroundPreview] = useState("");
+  const [uploadingLoginBackground, setUploadingLoginBackground] = useState(false);
 
   const [showRestoreModal, setShowRestoreModal] = useState(false);
-  const [restoreTargetId, setRestoreTargetId] = useState(null);
+  const [restoreTarget, setRestoreTarget] = useState(null);
 
   const [userProfile, setUserProfile] = useState({
     username: "",
@@ -71,6 +74,7 @@ function Settings() {
           data_retention_days: data.data_retention_days || 365,
           enable_audit_logs: data.enable_audit_logs ?? true,
         });
+        setLoginBackgroundPreview(data.login_background_image_url || "");
       }
     } catch (err) {
       console.error("Error fetching settings:", err);
@@ -262,15 +266,77 @@ function Settings() {
     setMessage("");
   };
 
-  const handleRestoreProduct = (productId) => {
-    setRestoreTargetId(productId);
+  const handleRestoreProduct = (requestProductId, issuanceNo) => {
+    setRestoreTarget({
+      requestProductId,
+      issuanceNo,
+    });
     setShowRestoreModal(true);
   };
 
+  const handleLoginBackgroundFileChange = (event) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    if (!file.type.startsWith("image/")) {
+      setMessage("Please select a valid image file.");
+      return;
+    }
+
+    setLoginBackgroundFile(file);
+    setMessage("");
+  };
+
+  const handleUploadLoginBackground = async () => {
+    if (!loginBackgroundFile) {
+      setMessage("Please choose an image before uploading.");
+      return;
+    }
+
+    setUploadingLoginBackground(true);
+    setMessage("");
+
+    try {
+      const formData = new FormData();
+      formData.append("background_image", loginBackgroundFile);
+
+      const response = await fetch("http://localhost:8000/app/settings/login-background/", {
+        method: "POST",
+        credentials: "include",
+        body: formData,
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        setMessage(data.detail || "Failed to upload login background.");
+        return;
+      }
+
+      setLoginBackgroundPreview(data.login_background_image_url || "");
+      setLoginBackgroundFile(null);
+      setMessage("Login background updated successfully!");
+      setTimeout(() => setMessage(""), 3000);
+    } catch (err) {
+      console.error("Error uploading login background:", err);
+      setMessage("Error uploading login background.");
+    } finally {
+      setUploadingLoginBackground(false);
+    }
+  };
+
   const confirmRestore = async () => {
-    const requestProductId = restoreTargetId;
+    const requestProductId = restoreTarget?.requestProductId;
+    if (!requestProductId) {
+      setMessage("❌ Restore target is missing. Please try again.");
+      setShowRestoreModal(false);
+      setRestoreTarget(null);
+      return;
+    }
+
     setShowRestoreModal(false);
-    setRestoreTargetId(null);
+    setRestoreTarget(null);
 
     try {
       const response = await fetch("/app/restore-request-product/", {
@@ -354,6 +420,15 @@ function Settings() {
       });
     }
 
+    if (userProfile && userProfile.role === "admin") {
+      items.push({
+        category: "Appearance",
+        items: [
+          { id: "login-background", label: "Login Background" },
+        ],
+      });
+    }
+
     return items;
   }, [userProfile]);
 
@@ -419,7 +494,7 @@ function Settings() {
                           <td>{req.archived_at || "-"}</td>
                           <td>
                             <button 
-                              onClick={() => handleRestoreProduct(productId)}
+                              onClick={() => handleRestoreProduct(productId, requestId)}
                               style={{ padding: "5px 10px", fontSize: "12px", color: "#0066cc", background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}
                               title="Restore this product"
                             >
@@ -450,7 +525,7 @@ function Settings() {
               View activity logs showing all changes, actions, and updates performed by users. Activity logs help maintain security, compliance, and provide a complete history of system operations.
             </p>
             <div className="settings-table-container">
-              <ActivityLogsPanel title="Your User Activity Logs" limit={10} />
+              <ActivityLogsPanel title="User Activity History" limit={10} />
             </div>
           </div>
         );
@@ -621,6 +696,63 @@ function Settings() {
           </div>
         );
 
+      case "login-background":
+        return (
+          <div className="settings-detail">
+            <h2>Login Background</h2>
+            <p className="settings-description">
+              Upload an image that will be used as the login page background. Only admin users can update this image.
+            </p>
+
+            {message && (
+              <div className={`alert mb-4 ${message.includes("Error") || message.includes("Failed") ? "alert-danger" : "alert-success"}`}>
+                {message}
+              </div>
+            )}
+
+            <div style={{ backgroundColor: "#fff", border: "1px solid #dee2e6", borderRadius: "8px", padding: "20px" }}>
+              <div style={{ marginBottom: "14px" }}>
+                <label className="settings-input-label" htmlFor="login-background-file">Select Background Image</label>
+                <input
+                  id="login-background-file"
+                  type="file"
+                  accept="image/*"
+                  onChange={handleLoginBackgroundFileChange}
+                  className="settings-input"
+                />
+                <small style={{ color: "#666" }}>Accepted formats: any image type. Maximum file size: 10MB.</small>
+              </div>
+
+              {loginBackgroundPreview && (
+                <div style={{ marginBottom: "14px" }}>
+                  <p style={{ fontWeight: 600, marginBottom: "8px" }}>Current Preview</p>
+                  <img
+                    src={loginBackgroundPreview}
+                    alt="Login background preview"
+                    style={{ width: "100%", maxWidth: "560px", borderRadius: "8px", border: "1px solid #ddd" }}
+                  />
+                </div>
+              )}
+
+              <button
+                onClick={handleUploadLoginBackground}
+                disabled={uploadingLoginBackground || !loginBackgroundFile}
+                style={{
+                  backgroundColor: uploadingLoginBackground || !loginBackgroundFile ? "#a0b4d1" : "#1D6AB7",
+                  color: "#fff",
+                  border: "none",
+                  borderRadius: "4px",
+                  padding: "10px 18px",
+                  cursor: uploadingLoginBackground || !loginBackgroundFile ? "not-allowed" : "pointer",
+                  fontWeight: 600,
+                }}
+              >
+                {uploadingLoginBackground ? "Uploading..." : "Upload Background"}
+              </button>
+            </div>
+          </div>
+        );
+
       default:
         return <div className="settings-detail"><h2>Select a setting</h2></div>;
     }
@@ -665,7 +797,10 @@ function Settings() {
       {/* Restore Confirmation Modal */}
       {showRestoreModal && (
         <div
-          onClick={() => setShowRestoreModal(false)}
+          onClick={() => {
+            setShowRestoreModal(false);
+            setRestoreTarget(null);
+          }}
           style={{
             position: "fixed", inset: 0,
             backgroundColor: "rgba(0,0,0,0.5)",
@@ -689,12 +824,15 @@ function Settings() {
               Restore Issuance
             </h4>
             <p style={{ margin: "0 0 24px", color: "#444", fontSize: "15px" }}>
-              Are you sure you want to restore <strong>Issuance #{restoreTargetId}</strong>?
+              Are you sure you want to restore <strong>Issuance #{restoreTarget?.issuanceNo ?? "-"}</strong>?
               It will be moved back to the active task list.
             </p>
             <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end" }}>
               <button
-                onClick={() => setShowRestoreModal(false)}
+                onClick={() => {
+                  setShowRestoreModal(false);
+                  setRestoreTarget(null);
+                }}
                 style={{
                   padding: "8px 20px", borderRadius: "6px",
                   border: "1px solid #ccc", background: "#f5f5f5",
