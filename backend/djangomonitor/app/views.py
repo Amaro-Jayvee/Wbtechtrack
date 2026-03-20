@@ -2851,7 +2851,7 @@ def get_bar_report_data(month, year, include_archived=False):
             request_product__completed_at__isnull=True
         )
 
-    print(f"[get_bar_report_data] Base query found {base_qs.count()} ProductProcess for {month}/{year}")
+    # Debug output disabled for production clarity
 
     # Group by week
     days_in_month = calendar.monthrange(year, month)[1]
@@ -2891,7 +2891,7 @@ def get_bar_report_data(month, year, include_archived=False):
                     if rp.product:
                         product_name = rp.product.prodName
                 except Exception as e:
-                    print(f"[get_bar_report_data] Error getting product name: {str(e)}")
+                    pass  # Error getting product name
                 
                 # Add the current step's data
                 weekly_data[week]["completed"] += current_step.completed_quota
@@ -2903,7 +2903,6 @@ def get_bar_report_data(month, year, include_archived=False):
                 
                 counted_request_products.add(rp_id)
 
-    print(f"[get_bar_report_data] Bar data: {weekly_data}")
     return weekly_data
 
 
@@ -4974,9 +4973,7 @@ def dashboard_top_movers(request):
         
         products = get_donut_top_products(month, year, limit, include_archived)
         
-        print(f"[DEBUG] dashboard_top_movers - Month: {month}, Year: {year}, Found {len(products)} products")
-        for p in products:
-            print(f"  - {p}")
+        # Debug output disabled for production clarity
         
         response_data = {
             "products": [
@@ -4992,9 +4989,6 @@ def dashboard_top_movers(request):
         
         return JsonResponse(response_data, status=200)
     except Exception as e:
-        print(f"Error in dashboard_top_movers: {str(e)}")
-        import traceback
-        traceback.print_exc()
         return JsonResponse({"detail": f"Error: {str(e)}"}, status=500)
 
 
