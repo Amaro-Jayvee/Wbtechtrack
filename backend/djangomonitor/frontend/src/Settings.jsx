@@ -192,7 +192,7 @@ function Settings() {
 
   const fetchArchivedRequests = async () => {
     try {
-      const response = await fetch("/app/archived-requests/", {
+      const response = await fetch("http://localhost:8000/app/archived-requests/", {
         method: "GET",
         credentials: "include",
       });
@@ -339,7 +339,7 @@ function Settings() {
     setRestoreTarget(null);
 
     try {
-      const response = await fetch("/app/restore-request-product/", {
+      const response = await fetch("http://localhost:8000/app/restore-request-product/", {
         method: "POST",
         credentials: "include",
         headers: {

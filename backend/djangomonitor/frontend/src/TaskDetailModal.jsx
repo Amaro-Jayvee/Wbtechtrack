@@ -491,7 +491,7 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
 
     try {
       const response = await fetch(
-        `/app/request-products/${requestProductId}/`,
+        `http://localhost:8000/app/request-products/${requestProductId}/`,
         {
           method: "PATCH",
           credentials: "include",
@@ -528,7 +528,7 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
     try {
       const productName = taskData?.product_name || `Product #${requestProductId}`;
       
-      const archiveRes = await fetch(`/app/request-products/${requestProductId}/`, {
+      const archiveRes = await fetch(`http://localhost:8000/app/request-products/${requestProductId}/`, {
         method: "PATCH",
         credentials: "include",
         headers: { "Content-Type": "application/json" },

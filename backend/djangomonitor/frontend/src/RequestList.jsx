@@ -57,7 +57,7 @@ function RequestList() {
       params.append("include_archived", "false");
 
       const response = await fetch(
-        `/app/request/?${params.toString()}`,
+        `http://localhost:8000/app/request/?${params.toString()}`,
         {
           method: "GET",
           credentials: "include",
@@ -176,7 +176,7 @@ function RequestList() {
     try {
       // Check if any ProductProcess tasks exist for this request's products
       const response = await fetch(
-        "/app/productprocess/",
+        "http://localhost:8000/app/productprocess/",
         {
           method: "GET",
           credentials: "include",
@@ -279,7 +279,7 @@ function RequestList() {
 
     try {
       const response = await fetch(
-        `/app/request/${selectedRequest.RequestID}/archive/`,
+        `http://localhost:8000/app/request/${selectedRequest.RequestID}/archive/`,
         {
           method: "PATCH",
           credentials: "include",
@@ -321,7 +321,7 @@ function RequestList() {
   const deleteRequest = async (requestId) => {
     try {
       const response = await fetch(
-        `/app/request/${requestId}/`,
+        `http://localhost:8000/app/request/${requestId}/`,
         {
           method: "DELETE",
           credentials: "include",
@@ -742,7 +742,7 @@ function RequestList() {
             <div className="modal-dialog" style={{ backgroundColor: "white", borderRadius: "8px", maxWidth: "600px", width: "90%", maxHeight: "85vh", display: "flex", flexDirection: "column", overflow: "hidden", boxShadow: "0 4px 20px rgba(0,0,0,0.15)" }} onClick={e => e.stopPropagation()}>
               {/* Header */}
               <div className="modal-header" style={{ backgroundColor: "#9BC284", padding: "1.5rem", borderBottom: "2px solid #fff", color: "white", display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0, gap: "1rem" }}>
-                <h5 className="modal-title" style={{ color: "white", marginBottom: 0, flex: 1, fontSize: "0.6rem", fontWeight: "600" }}>ISSUANCE #{selectedRequest.RequestID}</h5>
+                <h5 className="modal-title" style={{ color: "white", marginBottom: 0, flex: 1, fontSize: "1.4rem", fontWeight: "800", letterSpacing: "0.5px" }}>ISSUANCE #{selectedRequest.RequestID}</h5>
                 <button
                   type="button"
                   onClick={() => setShowDetailsModal(false)}

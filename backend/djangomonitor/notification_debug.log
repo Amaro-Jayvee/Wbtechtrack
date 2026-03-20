@@ -494,3 +494,43 @@
 [CREATE_NOTIF] OK Created notification ID: 832
 [CREATE_NOTIF] User: prodmanager, Type: task_status_updated, Title: Task Updated
 [CREATE_NOTIF] OK Created notification ID: 833
+[CREATE_NOTIF] User: Jayveeamaro, Type: request_created, Title: New Request Assigned
+[CREATE_NOTIF] OK Created notification ID: 834
+[CREATE_NOTIF] User: testadmin, Type: request_created, Title: New Request Created by Admin
+[CREATE_NOTIF] OK Created notification ID: 835
+[CREATE_NOTIF] User: Jayveeamaro, Type: request_created, Title: New Request Assigned
+[CREATE_NOTIF] OK Created notification ID: 836
+[CREATE_NOTIF] User: testadmin, Type: request_created, Title: New Request Created by Admin
+[CREATE_NOTIF] OK Created notification ID: 837
+[CREATE_NOTIF] User: Jayveeamaro, Type: project_started, Title: Project Started for Request #93
+[CREATE_NOTIF] OK Created notification ID: 838
+[CREATE_NOTIF] User: prodmanager, Type: project_started, Title: Project Started for Request #93
+[CREATE_NOTIF] OK Created notification ID: 839
+[CREATE_NOTIF] User: admin_user, Type: project_started, Title: Project Started for Request #93
+[CREATE_NOTIF] OK Created notification ID: 840
+[CREATE_NOTIF] User: testadmin, Type: project_started, Title: Project Started for Request #93
+[CREATE_NOTIF] OK Created notification ID: 841
+[CREATE_NOTIF] User: Jayveeamaro, Type: request_created, Title: New Request Assigned
+[CREATE_NOTIF] OK Created notification ID: 842
+[CREATE_NOTIF] User: testadmin, Type: request_created, Title: New Request Created by Admin
+[CREATE_NOTIF] OK Created notification ID: 843
+[CREATE_NOTIF] User: isuzu_ph, Type: request_created, Title: New Request Assigned
+[CREATE_NOTIF] OK Created notification ID: 845
+[CREATE_NOTIF] User: admin_user, Type: request_created, Title: Purchase Order Created
+[CREATE_NOTIF] OK Created notification ID: 846
+[CREATE_NOTIF] User: testadmin, Type: request_created, Title: New Request Created by Admin
+[CREATE_NOTIF] OK Created notification ID: 847
+[CREATE_NOTIF] User: prodmanager, Type: request_created, Title: New Purchase Order Created
+[CREATE_NOTIF] OK Created notification ID: 848
+[CREATE_NOTIF] User: isuzu_ph, Type: project_started, Title: Project Started for Request #95
+[CREATE_NOTIF] OK Created notification ID: 849
+[CREATE_NOTIF] User: prodmanager, Type: project_started, Title: Project Started for Request #95
+[CREATE_NOTIF] OK Created notification ID: 850
+[CREATE_NOTIF] User: admin_user, Type: project_started, Title: Project Started for Request #95
+[CREATE_NOTIF] OK Created notification ID: 851
+[CREATE_NOTIF] User: testadmin, Type: project_started, Title: Project Started for Request #95
+[CREATE_NOTIF] OK Created notification ID: 852
+[CREATE_NOTIF] User: isuzu_ph, Type: task_status_updated, Title: Task Status Updated
+[CREATE_NOTIF] OK Created notification ID: 853
+[CREATE_NOTIF] User: prodmanager, Type: task_status_updated, Title: Task Updated
+[CREATE_NOTIF] OK Created notification ID: 854

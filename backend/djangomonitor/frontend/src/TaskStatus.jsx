@@ -186,7 +186,7 @@ function TaskStatus() {
 
       // Fetch ProductProcess (steps) data
       const response = await fetch(
-        `/app/product/?${params.toString()}`,
+        `http://localhost:8000/app/product/?${params.toString()}`,
         {
           method: "GET",
           credentials: "include",

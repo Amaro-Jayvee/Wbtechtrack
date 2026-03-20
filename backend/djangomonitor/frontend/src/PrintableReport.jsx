@@ -24,8 +24,8 @@
  * - Professional print styling: No dashboard UI elements
  * 
  * Data Sources:
- * - /app/reports/bar-chart/ → monthly statistics
- * - /app/reports/top-movers/ → top 5 products
+ * - http://localhost:8000/app/reports/bar-chart/ → monthly statistics
+ * - http://localhost:8000/app/reports/top-movers/ → top 5 products
  */
 
 import React, { useState, useEffect } from "react";

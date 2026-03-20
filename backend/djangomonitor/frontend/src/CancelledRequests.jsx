@@ -36,7 +36,7 @@ function CancelledRequests() {
     setLoading(true);
     try {
       const response = await fetch(
-        `/app/cancelled-requests/`,
+        `http://localhost:8000/app/cancelled-requests/`,
         {
           method: "GET",
           credentials: "include",
@@ -434,35 +434,38 @@ function CancelledRequests() {
                     style={{
                       width: "100%",
                       maxWidth: "760px",
-                      background: "linear-gradient(145deg, #0f172a 0%, #172554 52%, #1e293b 100%)",
-                      border: "1px solid rgba(125, 211, 252, 0.26)",
+                      background: "linear-gradient(135deg, #eef7ff 0%, #dceeff 100%)",
+                      border: "1px solid rgba(29, 106, 183, 0.35)",
                       borderRadius: "14px",
-                      boxShadow: "0 24px 54px rgba(2, 6, 23, 0.58)",
+                      boxShadow: "0 20px 45px rgba(29, 106, 183, 0.2)",
                       overflow: "hidden",
+                      maxHeight: "75vh",
+                      display: "flex",
+                      flexDirection: "column",
                     }}
                   >
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "16px 18px", borderBottom: "1px solid rgba(125, 211, 252, 0.22)" }}>
-                      <h5 style={{ margin: 0, color: "#f8fafc", fontSize: "1.05rem", fontWeight: "800", letterSpacing: "0.02em" }}>Cancellation Log Details</h5>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "16px 18px", borderBottom: "1px solid rgba(29, 106, 183, 0.25)", background: "linear-gradient(135deg, #e0efff 0%, #d5e9ff 100%)", position: "sticky", top: 0, zIndex: 10 }}>
+                      <h5 style={{ margin: 0, color: "#1d6ab7", fontSize: "1.05rem", fontWeight: "800", letterSpacing: "0.02em" }}>Cancellation Log Details</h5>
                       <button
                         type="button"
                         onClick={closeLogModal}
-                        style={{ border: "1px solid rgba(148, 163, 184, 0.45)", background: "rgba(15, 23, 42, 0.65)", color: "#cbd5e1", width: "34px", height: "34px", borderRadius: "9px", fontSize: "19px", lineHeight: 1, cursor: "pointer" }}
+                        style={{ border: "1px solid rgba(29, 106, 183, 0.35)", background: "rgba(29, 106, 183, 0.1)", color: "#1d6ab7", width: "34px", height: "34px", borderRadius: "9px", fontSize: "19px", lineHeight: 1, cursor: "pointer" }}
                       >
                         ×
                       </button>
                     </div>
-                    <div style={{ padding: "18px" }}>
-                      <div style={{ display: "grid", gridTemplateColumns: "170px 1fr", rowGap: "12px", columnGap: "12px", fontSize: "0.93rem", color: "#e2e8f0" }}>
-                        <strong style={{ color: "#93c5fd" }}>Issuance No.</strong>
+                    <div style={{ padding: "18px", overflowY: "auto", flex: 1 }}>
+                      <div style={{ display: "grid", gridTemplateColumns: "170px 1fr", rowGap: "12px", columnGap: "12px", fontSize: "0.93rem", color: "#1e40af" }}>
+                        <strong style={{ color: "#1d6ab7" }}>Issuance No.</strong>
                         <span>{formatIssuanceLabel(selectedLogItem)}</span>
 
-                        <strong style={{ color: "#93c5fd" }}>Product Name</strong>
+                        <strong style={{ color: "#1d6ab7" }}>Product Name</strong>
                         <span>{selectedLogItem.product_name || "N/A"}</span>
 
-                        <strong style={{ color: "#93c5fd" }}>Quantity</strong>
+                        <strong style={{ color: "#1d6ab7" }}>Quantity</strong>
                         <span>{selectedLogItem.quantity || 0}</span>
 
-                        <strong style={{ color: "#93c5fd" }}>Deadline</strong>
+                        <strong style={{ color: "#1d6ab7" }}>Deadline</strong>
                         <span>
                           {selectedLogItem.deadline
                             ? new Date(selectedLogItem.deadline).toLocaleDateString("en-US", {
@@ -473,17 +476,17 @@ function CancelledRequests() {
                             : "N/A"}
                         </span>
 
-                        <strong style={{ color: "#93c5fd" }}>Cancelled By</strong>
+                        <strong style={{ color: "#1d6ab7" }}>Cancelled By</strong>
                         <span>{selectedLogItem.cancelled_by_name || "—"}</span>
 
-                        <strong style={{ color: "#93c5fd" }}>Reason</strong>
+                        <strong style={{ color: "#1d6ab7" }}>Reason</strong>
                         <span>{selectedLogItem.cancellation_reason || "—"}</span>
 
-                        <strong style={{ color: "#93c5fd" }}>Last Update</strong>
+                        <strong style={{ color: "#1d6ab7" }}>Last Update</strong>
                         <span>{formatDateTime(selectedLogItem.updated_at)}</span>
 
-                        <strong style={{ color: "#93c5fd" }}>Log Details</strong>
-                        <div style={{ whiteSpace: "pre-wrap", lineHeight: 1.45, background: "rgba(15, 23, 42, 0.62)", border: "1px solid rgba(148, 163, 184, 0.28)", borderRadius: "10px", padding: "10px 12px", color: "#e2e8f0" }}>
+                        <strong style={{ color: "#1d6ab7" }}>Log Details</strong>
+                        <div style={{ whiteSpace: "pre-wrap", lineHeight: 1.45, background: "rgba(29, 106, 183, 0.08)", border: "1px solid rgba(29, 106, 183, 0.2)", borderRadius: "10px", padding: "10px 12px", color: "#1e40af" }}>
                           {getCleanLogDetails(selectedLogItem)}
                         </div>
                       </div>
