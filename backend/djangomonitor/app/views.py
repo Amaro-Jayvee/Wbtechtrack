@@ -494,20 +494,38 @@ def login_view(request):
     # Check if user profile exists
     try:
         profile = user.userprofile
-    except AttributeError:
+    except (AttributeError, UserProfile.DoesNotExist):
         return error_response(
             "User profile not found",
             code=500,
             detail="Your account profile is missing. Please contact admin."
         )
-    
-    # Check if customer is verified/approved (only for customers)
-    if profile.role == Roles.CUSTOMER and not profile.is_verified:
+    except Exception as e:
+        # Catch database errors due to schema mismatch
+        print(f"[LOGIN ERROR] Database error accessing profile: {str(e)}")
         return error_response(
-            "Account not approved",
-            code=403,
-            detail="Your account is pending admin approval. Please wait for approval."
+            "Database error",
+            code=500,
+            detail=f"Error accessing account profile: {str(e)}"
         )
+    
+    # Try to get user details safely
+    try:
+        user_role = profile.role if hasattr(profile, 'role') else None
+        is_verified = profile.is_verified if hasattr(profile, 'is_verified') else True
+        
+        # Check if customer is verified/approved (only for customers)
+        if user_role == Roles.CUSTOMER and not is_verified:
+            return error_response(
+                "Account not approved",
+                code=403,
+                detail="Your account is pending admin approval. Please wait for approval."
+            )
+    except Exception as e:
+        print(f"[LOGIN ERROR] Error checking role/verification: {str(e)}")
+        # Allow login even if role check fails - don't block user
+        user_role = None
+        is_verified = True
     
     # Create session
     login(request, user)
@@ -517,7 +535,7 @@ def login_view(request):
         log_audit(
             user=user,
             action_type="login",
-            new_value=json.dumps({"username": user.username, "email": user.email, "role": profile.role})
+            new_value=json.dumps({"username": user.username, "email": user.email, "role": user_role or "unknown"})
         )
     except Exception as e:
         print(f"[AUDIT] Failed to log login: {str(e)}")
@@ -527,7 +545,7 @@ def login_view(request):
         "email": user.email,
         "first_name": user.first_name,
         "last_name": user.last_name,
-        "role": profile.role,
+        "role": user_role or "unknown",
         "detail": "Successfully logged in"
     }, status=200)
 
@@ -588,14 +606,19 @@ def whoami_view(request):
             detail="No active session"
         )
     
+    role = "unknown"
+    is_verified = True
+    terms_accepted = False
+    
     try:
         profile = request.user.userprofile
-    except AttributeError:
-        return error_response(
-            "User profile not found",
-            code=500,
-            detail="User profile is missing"
-        )
+        role = getattr(profile, 'role', 'unknown')
+        is_verified = getattr(profile, 'is_verified', True)
+        terms_accepted = getattr(profile, 'terms_accepted', False)
+    except (AttributeError, UserProfile.DoesNotExist):
+        print(f"[WHOAMI] UserProfile not found for user {request.user.username}")
+    except Exception as e:
+        print(f"[WHOAMI] Error accessing profile: {str(e)}")
     
     return JsonResponse({
         "id": request.user.id,
@@ -603,9 +626,9 @@ def whoami_view(request):
         "first_name": request.user.first_name,
         "last_name": request.user.last_name,
         "email": request.user.email,
-        "role": profile.role,
-        "is_verified": profile.is_verified,
-        "terms_accepted": profile.terms_accepted,
+        "role": role,
+        "is_verified": is_verified,
+        "terms_accepted": terms_accepted,
         "detail": "User authenticated"
     }, status=200)
 

@@ -6,8 +6,9 @@ name = "pypi"
 [packages]
 djangorestframework = "*"
 django = "*"
-reportlab = "*"
 mysqlclient = "*"
+python-dotenv = "*"
+cors-headers = "*"
 
 [dev-packages]
 

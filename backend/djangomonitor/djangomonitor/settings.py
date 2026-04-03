@@ -91,7 +91,7 @@ CORS_ALLOWED_ORIGINS = [
     "http://127.0.0.1:5174"
 ]
 
-ALLOWED_HOSTS = ["localhost", "127.0.0.1"]
+ALLOWED_HOSTS = ["localhost", "127.0.0.1", "testserver"]
 
 
 CORS_ALLOW_CREDENTIALS = True
@@ -107,7 +107,7 @@ ROOT_URLCONF = 'djangomonitor.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [BASE_DIR.joinpath('frontend')],
+        'DIRS': [BASE_DIR.parent.parent.joinpath('frontend')],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -193,7 +193,7 @@ SESSION_COOKIE_HTTPONLY = True
 # SESSION_COOKIE_HTTPONLY = True
 
 STATICFILE_DIRS = (
-    BASE_DIR.joinpath('frontend', 'dist'),
+    BASE_DIR.parent.parent.joinpath('frontend', 'dist'),
 
 )
 
