@@ -255,6 +255,15 @@ function TaskStatus() {
             return sum + stepDefects;
           }, 0);
           
+          // Sum OT quota and OT defects from all steps
+          const totalOTQuota = product.steps.reduce((sum, step) => sum + (step.ot_quota || 0), 0);
+          const totalOTDefects = product.steps.reduce((sum, step) => {
+            const stepOTDefects = step.ot_defect_logs && step.ot_defect_logs.length > 0
+              ? step.ot_defect_logs.reduce((logSum, log) => logSum + (log.defect_count || 0), 0)
+              : 0;
+            return sum + stepOTDefects;
+          }, 0);
+          
           // Collect all unique defect types from all steps (from defect_logs array)
           const defectTypes = new Set();
           product.steps.forEach(step => {
@@ -267,6 +276,16 @@ function TaskStatus() {
             // Fallback to old defect_type field for backward compatibility
             if (step.defect_type) {
               defectTypes.add(step.defect_type);
+            }
+          });
+          
+          // Collect all unique OT defect types from all steps
+          const otDefectTypes = new Set();
+          product.steps.forEach(step => {
+            if (step.ot_defect_logs && step.ot_defect_logs.length > 0) {
+              step.ot_defect_logs.forEach(log => {
+                otDefectTypes.add(log.defect_type);
+              });
             }
           });
           
@@ -288,6 +307,9 @@ function TaskStatus() {
             defect_type: step.defect_type,
             defect_description: step.defect_description,
             defect_logs: step.defect_logs || [],
+            is_overtime: step.is_overtime || false,
+            ot_quota: step.ot_quota || 0,
+            ot_defect_logs: step.ot_defect_logs || [],
             workers: step.worker_names || [],
             is_pst_01: step.is_pst_01
           }));
@@ -296,6 +318,9 @@ function TaskStatus() {
             completed_summary: `${product.total_quota}/${product.total_quota}`,
             defect_count: totalDefects,
             defect_types: Array.from(defectTypes),
+            ot_quota: totalOTQuota,
+            ot_defect_count: totalOTDefects,
+            ot_defect_types: Array.from(otDefectTypes),
             worker_names: Array.from(allWorkers),
             process_name: `All Steps (${totalSteps})`,
             updated_at: product.steps[totalSteps - 1]?.updated_at || "—",

@@ -7,6 +7,7 @@ import csv
 import datetime
 import calendar
 import os
+import sys
 from rest_framework.parsers import JSONParser
 from django.contrib.auth import authenticate, login, logout
 from django.http import JsonResponse, HttpResponse
@@ -2564,6 +2565,20 @@ def productProcessAPI(request, id=0):
         try:
             data = JSONParser().parse(request)
             step = ProductProcess.objects.get(id=id)
+            
+            # DEBUG: Log incoming data to see what we're receiving
+            print(f"\n{'='*80}", flush=True)
+            print(f"[PATCH /app/product/{id}/] INCOMING REQUEST DATA", flush=True)
+            print(f"{'='*80}", flush=True)
+            print(f"All keys in data: {list(data.keys())}", flush=True)
+            print(f"  completed_quota: {data.get('completed_quota')} (type: {type(data.get('completed_quota')).__name__})", flush=True)
+            print(f"  is_overtime: {data.get('is_overtime')} (type: {type(data.get('is_overtime')).__name__})", flush=True)
+            print(f"  ot_quota: {data.get('ot_quota')} (type: {type(data.get('ot_quota')).__name__})", flush=True)
+            print(f"  ot_defect_logs: {data.get('ot_defect_logs')} (type: {type(data.get('ot_defect_logs')).__name__})", flush=True)
+            print(f"  defect_logs: {data.get('defect_logs')}", flush=True)
+            print(f"  workers: {data.get('workers')}", flush=True)
+            print(f"{'='*80}\n", flush=True)
+            sys.stdout.flush()
 
             # Check if this is a template record (no request_product assigned)
             if not step.request_product:
@@ -2659,7 +2674,64 @@ def productProcessAPI(request, id=0):
                 from django.utils import timezone
                 step.quota_updated_at = timezone.now()
                 step.quota_updated_by = request.user
+                
+                # FORCE PRINT WITH FLUSH
+                print(f"\n{'='*80}", flush=True)
+                print(f"[PATCH OT SAVE] 📝 OVERTIME DATA RECEIVED AND SAVING", flush=True)
+                print(f"{'='*80}", flush=True)
+                print(f"  Task ID: {id}", flush=True)
+                print(f"  is_overtime: {data.get('is_overtime')}", flush=True)
+                print(f"  ot_quota: {data.get('ot_quota')} units", flush=True)
+                print(f"  ot_defect_logs count: {len(data.get('ot_defect_logs', []))}", flush=True)
+                if data.get('ot_defect_logs'):
+                    for idx, defect in enumerate(data.get('ot_defect_logs', [])):
+                        print(f"    Defect {idx+1}: {defect.get('defect_type')} (count: {defect.get('defect_count')})", flush=True)
+                print(f"  completed_quota: {data.get('completed_quota')} units", flush=True)
+                sys.stdout.flush()
+                
+                print(f"\n[PATCH OT SAVE] BEFORE DATABASE SAVE:", flush=True)
+                print(f"  step.is_overtime: {step.is_overtime}", flush=True)
+                print(f"  step.ot_quota: {step.ot_quota}", flush=True)
+                print(f"  step.ot_defect_logs: {step.ot_defect_logs}", flush=True)
+                print(f"  step.completed_quota: {step.completed_quota}", flush=True)
+                sys.stdout.flush()
+                
                 step.save(update_fields=['is_overtime', 'ot_quota', 'ot_defect_logs', 'quota_updated_at', 'quota_updated_by'])
+                step.refresh_from_db()
+                
+                print(f"\n[PATCH OT SAVE] ✅ AFTER DATABASE SAVE AND REFRESH:", flush=True)
+                print(f"  step.is_overtime: {step.is_overtime}", flush=True)
+                print(f"  step.ot_quota: {step.ot_quota}", flush=True)
+                print(f"  step.ot_defect_logs: {step.ot_defect_logs}", flush=True)
+                print(f"  quota_updated_at: {step.quota_updated_at}", flush=True)
+                print(f"  quota_updated_by: {step.quota_updated_by}", flush=True)
+                sys.stdout.flush()
+                
+                # 🔴 CRITICAL: Check if regular quota + OT quota meets requirement
+                total_completed = (step.completed_quota or 0) + (step.ot_quota or 0)
+                required_quota = (request_product.quantity or 0) if request_product else 0
+                
+                print(f"\n[PATCH OT COMPLETION CHECK] 📊 QUOTA ANALYSIS:", flush=True)
+                print(f"  Regular completed_quota: {step.completed_quota} units", flush=True)
+                print(f"  OT ot_quota: {step.ot_quota} units", flush=True)
+                print(f"  Total completed: {total_completed} units (Regular: {step.completed_quota} + OT: {step.ot_quota})", flush=True)
+                print(f"  Required quota: {required_quota} units", flush=True)
+                print(f"  Quota gap: {required_quota - total_completed} units", flush=True)
+                sys.stdout.flush()
+                
+                if total_completed >= required_quota:
+                    print(f"  ✅ QUOTA MET! Task will be marked as COMPLETED!", flush=True)
+                    # Call mark_completed_if_ready to ensure all logic is applied
+                    was_marked_complete = step.mark_completed_if_ready()
+                    if was_marked_complete:
+                        print(f"  ✅✅✅ TASK MARKED AS IS_COMPLETED = TRUE ✅✅✅", flush=True)
+                        step.refresh_from_db()
+                    print(f"  Final is_completed: {step.is_completed}", flush=True)
+                else:
+                    print(f"  ⏳ Quota not met yet. Need {required_quota - total_completed} more units", flush=True)
+                    print(f"  Final is_completed: {step.is_completed}", flush=True)
+                sys.stdout.flush()
+                print(f"{'='*80}\n", flush=True)
 
             # Handle defect_count and defect tracking (legacy - fallback for single defect)
             elif 'defect_count' in data or 'defect_type' in data or 'defect_description' in data:
@@ -2695,12 +2767,14 @@ def productProcessAPI(request, id=0):
                 except Exception as e:
                     raise
 
-            # Update the remaining fields via serializer (excluding workers and defect_logs since we handled them)
-            data_for_serializer = {k: v for k, v in data.items() if k not in ['workers', 'defect_logs']}
+            # Update the remaining fields via serializer (excluding workers, defect_logs, and OT fields since we handled them)
+            data_for_serializer = {k: v for k, v in data.items() if k not in ['workers', 'defect_logs', 'is_overtime', 'ot_quota', 'ot_defect_logs']}
             
             serializer = ProductProcessSerializer(step, data=data_for_serializer, partial=True)
             if serializer.is_valid():
                 updated_step = serializer.save()
+                # Refresh to ensure we have all fields including OT data from database
+                updated_step.refresh_from_db()
 
                 # Audit log entry
                 try:
@@ -2761,6 +2835,30 @@ def productProcessAPI(request, id=0):
                     "message": "Step updated successfully!",
                     "updated_step": ProductProcessSerializer(updated_step).data
                 }, status=200)
+            
+            # DEBUG: Log response data with OT details
+            serialized_data = ProductProcessSerializer(updated_step).data
+            print(f"\n{'='*80}", flush=True)
+            print(f"[PATCH RESPONSE] 📤 RESPONSE BEING SENT TO FRONTEND", flush=True)
+            print(f"{'='*80}", flush=True)
+            print(f"  Status: 200 OK ✅", flush=True)
+            print(f"  Task ID: {id}", flush=True)
+            print(f"  updated_step.completed_quota: {serialized_data.get('completed_quota')} units", flush=True)
+            print(f"  updated_step.is_overtime: {serialized_data.get('is_overtime')}", flush=True)
+            print(f"  updated_step.ot_quota: {serialized_data.get('ot_quota')} units", flush=True)
+            print(f"  updated_step.ot_defect_logs: {serialized_data.get('ot_defect_logs')}", flush=True)
+            print(f"  updated_step.is_completed: {serialized_data.get('is_completed')}", flush=True)
+            
+            # Show OT defects detail if available
+            ot_defects = serialized_data.get('ot_defect_logs', [])
+            if ot_defects:
+                print(f"  OT Defects Detail:", flush=True)
+                for idx, defect in enumerate(ot_defects):
+                    print(f"    {idx+1}. {defect.get('defect_type', 'Unknown')} - Count: {defect.get('defect_count', 0)}", flush=True)
+            
+            print(f"{'='*80}\n", flush=True)
+            sys.stdout.flush()
+            
             return JsonResponse(serializer.errors, status=400)
         
         except ProductProcess.DoesNotExist:

@@ -343,6 +343,7 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
   };
 
   const handleSave = async () => {
+    console.log("\n🔥🔥🔥 handleSave CALLED 🔥🔥🔥");
     if (!taskData) return;
     
     // Validate that completed_quota is not decreased
@@ -400,6 +401,15 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
         workers: formData.workers
       };
 
+      console.log("\n================================");
+      console.log("🚀 BEFORE SENDING PATCH REQUEST");
+      console.log("================================");
+      console.log("Task ID:", productProcessId);
+      console.log("Current taskData.is_overtime:", taskData?.is_overtime);
+      console.log("Current taskData.ot_quota:", taskData?.ot_quota);
+      console.log("Payload to send:", JSON.stringify(savePayload, null, 2));
+      console.log("================================\n");
+
       const response = await fetch(
         `http://localhost:8000/app/product/${productProcessId}/`,
         {
@@ -414,7 +424,65 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
 
       const responseData = await response.json();
       
+      console.log("\n================================");
+      console.log("📥 AFTER RECEIVING RESPONSE");
+      console.log("================================");
+      console.log("Response Status:", response.status);
+      console.log("Full Response:", JSON.stringify(responseData, null, 2));
+      
+      if (responseData.updated_step) {
+        console.log("\n📊 UPDATED STEP DATA:");
+        console.log("  is_overtime:", responseData.updated_step.is_overtime);
+        console.log("  ot_quota:", responseData.updated_step.ot_quota);
+        console.log("  ot_defect_logs:", responseData.updated_step.ot_defect_logs);
+        console.log("  completed_quota:", responseData.updated_step.completed_quota);
+      }
+      console.log("================================\n");
+      
       if (response.ok) {
+        console.log("\n✅ RESPONSE OK - UPDATING STATE");
+        
+        // CRITICAL: Update taskData with the response from backend
+        const updatedStep = responseData.updated_step;
+        console.log("📦 updatedStep object:", updatedStep);
+        
+        setTaskData(updatedStep);
+        console.log("✔️ Called setTaskData()");
+        
+        // Convert defect_logs from backend format to frontend format
+        const frontendDefectLogs = (updatedStep.defect_logs || []).map(log => ({
+          defect_type: log.defect_type,
+          defect_count: log.defect_count
+        }));
+        console.log("📋 Converted defectLogs:", frontendDefectLogs);
+        
+        // Also update formData to reflect the saved state
+        setFormData(prevData => {
+          const newFormData = {
+            ...prevData,
+            completed_quota: updatedStep.completed_quota || 0,
+            is_overtime: updatedStep.is_overtime || false,
+            ot_quota: updatedStep.ot_quota || 0,
+            ot_defectLogs: updatedStep.ot_defect_logs || [],
+            defectLogs: frontendDefectLogs
+          };
+          console.log("📝 New FormData set:", newFormData);
+          return newFormData;
+        });
+        
+        console.log("\n🎯 STATE UPDATE SUMMARY:");
+        console.log("  - taskData.is_overtime: TRUE → should be", updatedStep.is_overtime);
+        console.log("  - taskData.ot_quota:", updatedStep.ot_quota);
+        console.log("  - taskData.ot_defect_logs:", updatedStep.ot_defect_logs);
+        console.log("  - taskData.is_completed:", updatedStep.is_completed);
+        
+        // Check if task is now completed (either regular or with OT)
+        if (updatedStep.is_completed) {
+          console.log("✅✅✅ TASK MARKED AS COMPLETED! ✅✅✅");
+        }
+        
+        console.log("✅ STATE UPDATE COMPLETE\n");
+        
         // Determine save type: regular quota save or OT save
         const isSavingOT = formData.is_overtime && !taskData.is_overtime; // Newly enabling OT
         
@@ -422,11 +490,13 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
           // Mark OT as saved
           setHasOTBeenSaved(true);
           setSaveReminderType('ot');
+          console.log("🎯 OT enabled and saved!");
         } else {
           // Regular quota save
           setHasAlreadyBeenSaved(true);
           setSaveCount(prevCount => prevCount + 1);
           setSaveReminderType('regular');
+          console.log("✅ Regular quota saved!");
         }
         
         // Show the one-time save reminder modal
@@ -436,7 +506,7 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
         window.dispatchEvent(new Event('refreshNotifications'));
       } else {
         const errorMsg = responseData.detail || responseData.error || JSON.stringify(responseData);
-        console.error(`Save failed:`, errorMsg);
+        console.error(`❌ Save failed:`, errorMsg);
         setErrorMessage(`Error saving changes: ${errorMsg}`);
         setShowErrorModal(true);
       }
@@ -604,22 +674,46 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
     // Create new window for printing
     const printWindow = window.open('', '_blank');
     
+    console.log('🖨️ ========== PRINT DEBUG START ==========');
+    console.log('🖨️ [PRINT] Full data object:', data);
+    console.log('🖨️ [PRINT] data.ot_quota:', data?.ot_quota);
+    console.log('🖨️ [PRINT] data.ot_defect_count:', data?.ot_defect_count);
+    console.log('🖨️ [PRINT] data.completed_quota:', data?.completed_quota);
+    console.log('🖨️ [PRINT] data.total_quota:', data?.total_quota);
+    console.log('🖨️ [PRINT] Steps array:', data?.steps);
+    if (data?.steps && data.steps.length > 0) {
+      console.log('🖨️ [PRINT] First step:', data.steps[0]);
+      console.log('🖨️ [PRINT] First step ot_quota:', data.steps[0]?.ot_quota);
+      console.log('🖨️ [PRINT] First step ot_defectLogs:', data.steps[0]?.ot_defectLogs);
+    }
+    console.log('🖨️ ========== PRINT DEBUG END ==========');
+    
     // Build steps HTML
     let stepsHTML = '';
+    let totalOTQuota = data?.ot_quota || 0; // Use top-level OT quota
+    let totalOTDefects = data?.ot_defect_count || 0; // Use top-level OT defect count
+
     if (data?.steps && data.steps.length > 0) {
       stepsHTML = data.steps.map((step, idx) => {
         const isPST01 = step.is_pst_01 || (step.process_name && step.process_name.toUpperCase().includes("WITHDRAWAL"));
+        
+        // Check for per-step OT data (from API: ot_defect_logs is snake_case)
+        const stepOTQuota = (step.is_overtime && step.ot_quota) ? Number(step.ot_quota) : 0;
+        const stepOTDefects = (step.is_overtime && step.ot_defect_logs && step.ot_defect_logs.length > 0)
+          ? step.ot_defect_logs.reduce((sum, log) => sum + (Number(log.defect_count) || 0), 0)
+          : 0;
+
         if (isPST01) {
-          return `<tr style="border-bottom: 1px solid #ddd;"><td style="padding: 8px; padding-left: 0; text-align: left;">Step ${step.step_order}: ${step.process_name}</td><td style="padding: 8px; text-align: center;">✓ Completed</td><td style="padding: 8px; text-align: center;">N/A</td></tr>`;
+          return `<tr style="border-bottom: 1px solid #ddd;"><td style="padding: 8px; padding-left: 0; text-align: left;">Step ${step.step_order}: ${step.process_name}</td><td style="padding: 8px; text-align: center;">✓ Completed</td><td style="padding: 8px; text-align: center;">N/A</td><td style="padding: 8px; text-align: center;">-</td><td style="padding: 8px; text-align: center;">-</td></tr>`;
         } else {
           const defects = step.defect_logs && step.defect_logs.length > 0 
-            ? step.defect_logs.reduce((sum, log) => sum + log.defect_count, 0)
-            : (step.defect_count || 0);
-          return `<tr style="border-bottom: 1px solid #ddd;"><td style="padding: 8px; padding-left: 0; text-align: left;">Step ${step.step_order}: ${step.process_name}</td><td style="padding: 8px; text-align: center;">${step.completed_quota}/${step.total_quota}</td><td style="padding: 8px; text-align: center;">${defects}</td></tr>`;
+            ? step.defect_logs.reduce((sum, log) => sum + (Number(log.defect_count) || 0), 0)
+            : (Number(step.defect_count) || 0);
+          return `<tr style="border-bottom: 1px solid #ddd;"><td style="padding: 8px; padding-left: 0; text-align: left;">Step ${step.step_order}: ${step.process_name}</td><td style="padding: 8px; text-align: center;">${step.completed_quota}/${step.total_quota}</td><td style="padding: 8px; text-align: center;">${defects}</td><td style="padding: 8px; text-align: center;">${stepOTQuota > 0 ? stepOTQuota : '-'}</td><td style="padding: 8px; text-align: center;">${stepOTDefects > 0 ? stepOTDefects : '-'}</td></tr>`;
         }
       }).join('');
     } else {
-      stepsHTML = '<tr><td colspan="3" style="padding: 8px; text-align: center; color: #999;">No steps data</td></tr>';
+      stepsHTML = '<tr><td colspan="5" style="padding: 8px; text-align: center; color: #999;">No steps data</td></tr>';
     }
 
     const html = `
@@ -684,15 +778,19 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
           <!-- SUMMARY -->
           <div style="margin-bottom: 30px; display: table; width: 100%; font-size: 11px;">
             <div style="display: table-row; margin-bottom: 12px;">
-              <div style="display: table-cell; width: 33.33%; padding: 12px; background-color: #f5f5f5; border: 1px solid #ddd; border-right: none;">
-                <div style="font-weight: bold; color: #666;">Total Quota</div>
-                <div style="font-size: 14px; font-weight: bold; color: #1d6ab7;">${data?.total_quota || 0} units</div>
+              <div style="display: table-cell; width: 25%; padding: 12px; background-color: #f5f5f5; border: 1px solid #ddd; border-right: none;">
+                <div style="font-weight: bold; color: #666;">Regular Quota</div>
+                <div style="font-size: 14px; font-weight: bold; color: #1d6ab7;">${data?.completed_quota || 0}/${data?.total_quota || 0}</div>
               </div>
-              <div style="display: table-cell; width: 33.33%; padding: 12px; background-color: #f5f5f5; border: 1px solid #ddd; border-right: none;">
+              <div style="display: table-cell; width: 25%; padding: 12px; background-color: ${(data?.ot_quota || 0) > 0 ? '#fef3c7' : '#f5f5f5'}; border: 1px solid ${(data?.ot_quota || 0) > 0 ? '#f59e0b' : '#ddd'}; border-right: none;">
+                <div style="font-weight: bold; color: #666;">OT Quota</div>
+                <div style="font-size: 14px; font-weight: bold; color: ${(data?.ot_quota || 0) > 0 ? '#f59e0b' : '#999'};">${data?.ot_quota || 0}</div>
+              </div>
+              <div style="display: table-cell; width: 25%; padding: 12px; background-color: #f5f5f5; border: 1px solid #ddd; border-right: none;">
                 <div style="font-weight: bold; color: #666;">Total Defects</div>
                 <div style="font-size: 14px; font-weight: bold; color: #d32f2f;">${data?.defect_count || 0}</div>
               </div>
-              <div style="display: table-cell; width: 33.33%; padding: 12px; background-color: #f5f5f5; border: 1px solid #ddd;">
+              <div style="display: table-cell; width: 25%; padding: 12px; background-color: #f5f5f5; border: 1px solid #ddd;">
                 <div style="font-weight: bold; color: #666;">Status</div>
                 <div style="font-size: 14px; font-weight: bold; color: #22c55e;">✓ Completed</div>
               </div>
@@ -708,6 +806,8 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
                   <th style="padding: 8px; text-align: left; font-weight: bold; padding-left: 0;">Step & Process</th>
                   <th style="padding: 8px; text-align: center; font-weight: bold; width: 100px;">Quota</th>
                   <th style="padding: 8px; text-align: center; font-weight: bold; width: 80px;">Defects</th>
+                  <th style="padding: 8px; text-align: center; font-weight: bold; width: 80px;">OT Quota</th>
+                  <th style="padding: 8px; text-align: center; font-weight: bold; width: 80px;">OT Defects</th>
                 </tr>
               </thead>
               <tbody>
@@ -715,6 +815,23 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
               </tbody>
             </table>
           </div>
+
+          ${totalOTQuota > 0 ? `
+          <!-- OVERTIME SUMMARY -->
+          <div style="margin-bottom: 30px; padding: 15px; background-color: #fef3c7; border: 1px solid #f59e0b; border-radius: 4px; font-size: 11px;">
+            <h4 style="color: #d97706; margin-bottom: 10px; font-weight: bold;">⏱️ Overtime (OT) Summary</h4>
+            <div style="display: table; width: 100%;">
+              <div style="display: table-row;">
+                <div style="display: table-cell; width: 50%; padding: 8px;">
+                  <strong>Total OT Quota Completed:</strong> <span style="color: #f59e0b; font-weight: bold;">${totalOTQuota} units</span>
+                </div>
+                <div style="display: table-cell; width: 50%; padding: 8px;">
+                  <strong>OT-Related Defects:</strong> <span style="color: #d32f2f; font-weight: bold;">${totalOTDefects}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          ` : ''}
 
           <!-- FOOTER -->
           <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #ddd; font-size: 9px; color: #999;">
@@ -1032,6 +1149,41 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
                   <p style={{ fontSize: "14px", color: "#666" }}>{completedProductData.completed_at || "N/A"}</p>
                 </div>
               </div>
+
+              {/* OT (Overtime) Section */}
+              {(completedProductData.ot_quota > 0 || completedProductData.ot_defect_count > 0) && (
+                <div style={{ marginBottom: "30px" }}>
+                  <h5 style={{ color: "#d97706", marginBottom: "15px", fontSize: "15px", display: "flex", alignItems: "center", gap: "8px" }}>
+                    ⏱️ Overtime (OT) Information
+                  </h5>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px", backgroundColor: "#fffbeb", padding: "15px", borderRadius: "8px", border: "1px solid #fcd34d" }}>
+                    <div>
+                      <label style={{ fontWeight: "600", color: "#333" }}>OT Quota</label>
+                      <p style={{ fontSize: "16px", color: "#d97706", fontWeight: "600" }}>{completedProductData.ot_quota || 0} units</p>
+                    </div>
+                    
+                    <div>
+                      <label style={{ fontWeight: "600", color: "#333" }}>OT Defects</label>
+                      <div style={{ fontSize: "14px", color: "#666" }}>
+                        <div style={{ fontWeight: "600" }}>{completedProductData.ot_defect_count || 0}</div>
+                        {completedProductData.ot_defect_types && completedProductData.ot_defect_types.length > 0 && (
+                          <div style={{ fontSize: "12px", color: "#999", marginTop: "4px" }}>
+                            Types: {completedProductData.ot_defect_types.map(type => {
+                              const typeLabels = {
+                                'dimension': 'Dimension',
+                                'thickness': 'Thickness',
+                                'rush': 'Rush',
+                                'other': 'Other'
+                              };
+                              return typeLabels[type] || type;
+                            }).join(', ')}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Steps Breakdown */}
               {completedProductData.steps && completedProductData.steps.length > 0 && (
@@ -1864,13 +2016,12 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
             disabled={
               !taskData || 
               formData.completed_quota < taskData.completed_quota || 
-              formData.defect_count < taskData.defect_count ||
               (formData.is_overtime ? hasOTBeenSaved : hasAlreadyBeenSaved)
             }
             style={{
               margin: 0,
-              opacity: (!taskData || formData.completed_quota < taskData.completed_quota || formData.defect_count < taskData.defect_count || (formData.is_overtime ? hasOTBeenSaved : hasAlreadyBeenSaved)) ? 0.5 : 1,
-              cursor: (!taskData || formData.completed_quota < taskData.completed_quota || formData.defect_count < taskData.defect_count || (formData.is_overtime ? hasOTBeenSaved : hasAlreadyBeenSaved)) ? 'not-allowed' : 'pointer',
+              opacity: (!taskData || formData.completed_quota < taskData.completed_quota || (formData.is_overtime ? hasOTBeenSaved : hasAlreadyBeenSaved)) ? 0.5 : 1,
+              cursor: (!taskData || formData.completed_quota < taskData.completed_quota || (formData.is_overtime ? hasOTBeenSaved : hasAlreadyBeenSaved)) ? 'not-allowed' : 'pointer',
               position: 'relative'
             }}
             title={
@@ -1880,8 +2031,6 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
                 ? `⛔ This task has already been saved once. One-time save rule: Only one save per task for accountability.` 
                 : formData.completed_quota < taskData.completed_quota 
                 ? `Quota cannot decrease (was ${taskData.completed_quota})` 
-                : formData.defect_count < taskData.defect_count 
-                ? `Defects cannot decrease (was ${taskData.defect_count})`
                 : formData.is_overtime 
                 ? '💾 Save OT changes (⚠️ WARNING: Can only save ONE TIME for OT)'
                 : '💾 Save changes (⚠️ WARNING: Can only save ONE TIME per task for accountability)'
