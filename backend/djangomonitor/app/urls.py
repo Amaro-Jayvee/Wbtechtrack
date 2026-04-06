@@ -1,6 +1,11 @@
 from django.urls import path
 from .views import *
-from .views import login_view, logout_view, session_view, whoami_view, accept_terms_view, user_activity_logs, archived_requests_view, task_update_logs_view, task_update_log_delete_view, restore_request_view, restore_request_product_view, csrf_token_view
+from .views import (
+    login_view, logout_view, session_view, whoami_view, accept_terms_view, 
+    user_activity_logs, archived_requests_view, task_update_logs_view, 
+    task_update_log_delete_view, restore_request_view, restore_request_product_view, 
+    csrf_token_view, forgot_password_request, verify_reset_token, reset_password, test_email_debug
+)
 from .admin_approval_views import (
     get_pending_customer_requests,
     approve_customer_request,
@@ -26,6 +31,12 @@ urlpatterns = [
     path('whoami/', whoami_view, name='api_whoami'),
     path('accept-terms/', accept_terms_view, name='api_accept_terms'),
     path('csrf-token/', csrf_token_view, name='csrf-token'),
+    
+    # New forgot password API endpoints
+    path('forgot-password/request/', forgot_password_request, name='forgot_password_request'),
+    path('forgot-password/verify-token/', verify_reset_token, name='verify_reset_token'),
+    path('forgot-password/reset/', reset_password, name='reset_password'),
+    path('test-email/', test_email_debug, name='test_email_debug'),
 
     path('reset_password/', auth_views.PasswordResetView.as_view(), name='reset_password'),
     path('reset_password_sent/', auth_views.PasswordResetDoneView.as_view(), name='password_reset_done'),

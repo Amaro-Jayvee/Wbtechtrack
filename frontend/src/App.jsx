@@ -11,6 +11,7 @@ import Settings from "./Settings";
 import CustomerViewRequests from "./CustomerViewRequests";
 import CustomerSettings from "./CustomerSettings";
 import PrintableReport from "./PrintableReport";
+import ResetPassword from "./ResetPassword";
 import { UserProvider } from "./UserContext.jsx";
 
 function App() {
@@ -19,6 +20,7 @@ function App() {
       <UserProvider>
         <Routes>
           <Route path="/login" element={<Login />} />
+          <Route path="/reset-password/:token" element={<ResetPassword />} />
           <Route path="/" element={<Navigate to="/login" replace />} />
           <Route path="/accounts" element={<Accounts />} />
           <Route path="/request" element={<Request />} />

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
 import SidebarLayout from "./SidebarLayout";
+import CancellationReportModal from "./CancellationReportModal";
 import "./Dashboard.css";
 import { useUser } from "./UserContext.jsx";
 
@@ -231,6 +232,7 @@ function CancelledRequests() {
                   <th style={{ width: "120px", textAlign: "left" }}>Issuance No.</th>
                   <th style={{ width: "210px", textAlign: "left" }}>Product Name</th>
                   <th style={{ width: "90px", textAlign: "center" }}>Quantity</th>
+                  <th style={{ width: "120px", textAlign: "center" }}>Progress @ Cancel</th>
                   <th style={{ width: "95px", textAlign: "left" }}>Deadline</th>
                   <th style={{ width: "105px", textAlign: "left" }}>Cancelled By</th>
                   <th style={{ width: "210px", textAlign: "left" }}>Reason</th>
@@ -252,6 +254,27 @@ function CancelledRequests() {
                       </div>
                     </td>
                     <td style={{ textAlign: "center", verticalAlign: "middle" }}>{item.quantity || 0}</td>
+                    <td style={{ textAlign: "center", verticalAlign: "middle", fontSize: "13px" }}>
+                      {item.cancellation_progress ? (
+                        <div>
+                          <div style={{ fontWeight: "600", color: "#1D6AB7" }}>
+                            {item.cancellation_progress.completed_quota || 0} / {item.cancellation_progress.total_quota || 0}
+                          </div>
+                          <div style={{ fontSize: "11px", color: "#666" }}>
+                            {item.cancellation_progress.total_quota > 0 
+                              ? ((item.cancellation_progress.completed_quota / item.cancellation_progress.total_quota) * 100).toFixed(1)
+                              : 0}%
+                          </div>
+                          {item.cancellation_progress.defects > 0 && (
+                            <div style={{ fontSize: "11px", color: "#d32f2f", marginTop: "4px" }}>
+                              Defects: {item.cancellation_progress.defects}
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <span style={{ color: "#999" }}>—</span>
+                      )}
+                    </td>
                     <td style={{ whiteSpace: "nowrap", verticalAlign: "middle" }}>
                       {item.deadline
                         ? new Date(item.deadline).toLocaleDateString('en-US', {
@@ -413,87 +436,6 @@ function CancelledRequests() {
                   Last ▶▶
                 </button>
 
-
-              {showLogModal && selectedLogItem && (
-                <div
-                  onClick={closeLogModal}
-                  style={{
-                    position: "fixed",
-                    inset: 0,
-                    background: "radial-gradient(circle at top, rgba(30, 58, 138, 0.32), rgba(2, 6, 23, 0.78))",
-                    display: "flex",
-                    justifyContent: "center",
-                    alignItems: "center",
-                    zIndex: 1050,
-                    padding: "16px",
-                    backdropFilter: "blur(4px)",
-                  }}
-                >
-                  <div
-                    onClick={(e) => e.stopPropagation()}
-                    style={{
-                      width: "100%",
-                      maxWidth: "760px",
-                      background: "linear-gradient(135deg, #eef7ff 0%, #dceeff 100%)",
-                      border: "1px solid rgba(29, 106, 183, 0.35)",
-                      borderRadius: "14px",
-                      boxShadow: "0 20px 45px rgba(29, 106, 183, 0.2)",
-                      overflow: "hidden",
-                      maxHeight: "75vh",
-                      display: "flex",
-                      flexDirection: "column",
-                    }}
-                  >
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "16px 18px", borderBottom: "1px solid rgba(29, 106, 183, 0.25)", background: "linear-gradient(135deg, #e0efff 0%, #d5e9ff 100%)", position: "sticky", top: 0, zIndex: 10 }}>
-                      <h5 style={{ margin: 0, color: "#1d6ab7", fontSize: "1.05rem", fontWeight: "800", letterSpacing: "0.02em" }}>Cancellation Log Details</h5>
-                      <button
-                        type="button"
-                        onClick={closeLogModal}
-                        style={{ border: "1px solid rgba(29, 106, 183, 0.35)", background: "rgba(29, 106, 183, 0.1)", color: "#1d6ab7", width: "34px", height: "34px", borderRadius: "9px", fontSize: "19px", lineHeight: 1, cursor: "pointer" }}
-                      >
-                        ×
-                      </button>
-                    </div>
-                    <div style={{ padding: "18px", overflowY: "auto", flex: 1 }}>
-                      <div style={{ display: "grid", gridTemplateColumns: "170px 1fr", rowGap: "12px", columnGap: "12px", fontSize: "0.93rem", color: "#1e40af" }}>
-                        <strong style={{ color: "#1d6ab7" }}>Issuance No.</strong>
-                        <span>{formatIssuanceLabel(selectedLogItem)}</span>
-
-                        <strong style={{ color: "#1d6ab7" }}>Product Name</strong>
-                        <span>{selectedLogItem.product_name || "N/A"}</span>
-
-                        <strong style={{ color: "#1d6ab7" }}>Quantity</strong>
-                        <span>{selectedLogItem.quantity || 0}</span>
-
-                        <strong style={{ color: "#1d6ab7" }}>Deadline</strong>
-                        <span>
-                          {selectedLogItem.deadline
-                            ? new Date(selectedLogItem.deadline).toLocaleDateString("en-US", {
-                                year: "numeric",
-                                month: "2-digit",
-                                day: "2-digit",
-                              })
-                            : "N/A"}
-                        </span>
-
-                        <strong style={{ color: "#1d6ab7" }}>Cancelled By</strong>
-                        <span>{selectedLogItem.cancelled_by_name || "—"}</span>
-
-                        <strong style={{ color: "#1d6ab7" }}>Reason</strong>
-                        <span>{selectedLogItem.cancellation_reason || "—"}</span>
-
-                        <strong style={{ color: "#1d6ab7" }}>Last Update</strong>
-                        <span>{formatDateTime(selectedLogItem.updated_at)}</span>
-
-                        <strong style={{ color: "#1d6ab7" }}>Log Details</strong>
-                        <div style={{ whiteSpace: "pre-wrap", lineHeight: 1.45, background: "rgba(29, 106, 183, 0.08)", border: "1px solid rgba(29, 106, 183, 0.2)", borderRadius: "10px", padding: "10px 12px", color: "#1e40af" }}>
-                          {getCleanLogDetails(selectedLogItem)}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
                 <span style={{ color: "#666", fontSize: "12px", marginLeft: "10px" }}>
                   Page {currentPage} of {Math.ceil(sortedRequests.length / itemsPerPage)}
                 </span>
@@ -514,6 +456,10 @@ function CancelledRequests() {
               </>
             )}
           </div>
+        )}
+
+        {showLogModal && selectedLogItem && (
+          <CancellationReportModal item={selectedLogItem} onClose={closeLogModal} />
         )}
       </div>
     </SidebarLayout>

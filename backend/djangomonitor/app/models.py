@@ -300,6 +300,7 @@ class RequestProduct(models.Model):
     cancelled_at = models.DateTimeField("Cancelled At", null=True, blank=True)
     cancelled_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='cancelled_requests')
     cancellation_reason = models.TextField("Cancellation Reason", null=True, blank=True)
+    cancellation_progress = models.JSONField("Cancellation Progress", null=True, blank=True, help_text="Progress snapshot at time of cancellation")
 
     class Meta:
         constraints = [
@@ -444,6 +445,11 @@ class ProductProcess(models.Model):
     defect_description = models.TextField("Defect Description", null=True, blank=True)
     defect_updated_at = models.DateTimeField("Defect Last Updated", null=True, blank=True)
     defect_updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='defect_updates')
+
+    # Overtime (OT) tracking fields
+    is_overtime = models.BooleanField("Is Overtime", default=False)
+    ot_quota = models.PositiveIntegerField("OT Completed Quota", default=0)
+    ot_defect_logs = models.JSONField("OT Defect Logs", default=list, blank=True, help_text="JSON array of OT defect logs: [{defect_type: '', defect_count: 0}]")
 
     # deadline_extension = models.DateField("Deadline Extension", null=True, blank=True)
     # extension_status = models.CharField(
@@ -677,3 +683,39 @@ class CancelledDraftProduct(models.Model):
 
     def __str__(self):
         return f"{self.product_name} x{self.quantity}"
+
+
+class PasswordResetToken(models.Model):
+    """
+    Store password reset tokens with expiration.
+    One active token per user at a time.
+    """
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='password_reset_tokens')
+    token = models.CharField(max_length=255, unique=True, db_index=True)
+    email = models.EmailField()  # Store email used for reset
+    is_used = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()  # Token expiration time
+    
+    class Meta:
+        ordering = ['-created_at']
+    
+    def __str__(self):
+        return f"Reset token for {self.user.username}"
+    
+    @staticmethod
+    def generate_token(length=32):
+        """Generate a secure random token"""
+        import secrets
+        import string
+        characters = string.ascii_letters + string.digits
+        return ''.join(secrets.choice(characters) for i in range(length))
+    
+    def is_valid(self):
+        """Check if token is still valid (not expired and not used)"""
+        return not self.is_used and timezone.now() < self.expires_at
+    
+    def mark_used(self):
+        """Mark token as used"""
+        self.is_used = True
+        self.save()

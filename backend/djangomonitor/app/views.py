@@ -583,6 +583,304 @@ def logout_view(request):
             detail=str(e)
         )
 
+@csrf_exempt
+@require_http_methods(["POST"])
+def forgot_password_request(request):
+    """
+    Request password reset by email.
+    Frontend sends email, backend verifies email exists and sends reset link.
+    
+    POST /app/forgot-password/request/
+    {
+        "email": "user@example.com"
+    }
+    """
+    try:
+        data = JSONParser().parse(request)
+        email = data.get("email", "").strip().lower()
+        
+        if not email:
+            return error_response("Email is required", code=400)
+        
+        # Check if user with this email exists
+        try:
+            user = User.objects.get(email=email)
+        except User.DoesNotExist:
+            # For security, don't reveal if email exists
+            return success_response({
+                "detail": "If an account exists with this email, a password reset link has been sent.",
+                "email": email
+            }, code=200)
+        
+        # Check if user profile exists
+        try:
+            profile = user.userprofile
+        except UserProfile.DoesNotExist:
+            return error_response("User profile not found", code=500)
+        
+        # Generate reset token
+        token = PasswordResetToken.generate_token()
+        expires_at = timezone.now() + timezone.timedelta(hours=24)  # 24-hour expiration
+        
+        # Delete any existing valid tokens for this user
+        PasswordResetToken.objects.filter(user=user, is_used=False).delete()
+        
+        # Create new token
+        reset_token = PasswordResetToken.objects.create(
+            user=user,
+            token=token,
+            email=email,
+            expires_at=expires_at
+        )
+        
+        # Send email with reset link
+        reset_url = f"http://localhost:5174/reset-password/{token}"
+        subject = "Password Reset Request - TechTrack"
+        message = f"""Hello {profile.full_name},
+
+You requested to reset your password. Click the link below to proceed:
+
+{reset_url}
+
+This link will expire in 24 hours.
+
+If you didn't request this, please ignore this email.
+
+Best regards,
+TechTrack Team"""
+        
+        try:
+            print(f"[DEBUG] Attempting to send email to {email}")
+            print(f"[DEBUG] Email Host: {settings.EMAIL_HOST}")
+            print(f"[DEBUG] Email Port: {settings.EMAIL_PORT}")
+            print(f"[DEBUG] Email User: {settings.EMAIL_HOST_USER}")
+            
+            sent = send_mail(
+                subject,
+                message,
+                settings.EMAIL_HOST_USER,
+                [email],
+                fail_silently=False,
+            )
+            
+            print(f"[DEBUG] Email sent successfully. Result: {sent}")
+            
+            return success_response({
+                "detail": "Password reset link has been sent to your email.",
+                "email": email
+            }, code=200)
+            
+        except Exception as e:
+            print(f"[ERROR] Error sending reset email to {email}: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return error_response(f"Failed to send reset email: {str(e)}", code=500)
+        
+    except Exception as e:
+        print(f"[FORGOT PASSWORD] Error: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return error_response("An error occurred", code=500, detail=str(e))
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def verify_reset_token(request):
+    """
+    Verify if reset token is valid.
+    
+    POST /app/forgot-password/verify-token/
+    {
+        "token": "reset_token_string"
+    }
+    """
+    try:
+        data = JSONParser().parse(request)
+        token = data.get("token", "").strip()
+        
+        if not token:
+            return error_response("Token is required", code=400)
+        
+        # Find the token
+        try:
+            reset_token = PasswordResetToken.objects.get(token=token)
+        except PasswordResetToken.DoesNotExist:
+            return error_response("Invalid or expired token", code=401)
+        
+        # Check if token is valid
+        if not reset_token.is_valid():
+            return error_response("Token has expired or already used", code=401)
+        
+        return success_response({
+            "detail": "Token is valid",
+            "email": reset_token.email,
+            "is_valid": True
+        }, code=200)
+        
+    except Exception as e:
+        print(f"[VERIFY TOKEN] Error: {str(e)}")
+        return error_response("An error occurred", code=500, detail=str(e))
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def reset_password(request):
+    """
+    Reset password using token.
+    
+    POST /app/forgot-password/reset/
+    {
+        "token": "reset_token_string",
+        "new_password": "new_password_here",
+        "confirm_password": "new_password_here"
+    }
+    """
+    try:
+        data = JSONParser().parse(request)
+        token = data.get("token", "").strip()
+        new_password = data.get("new_password", "").strip()
+        confirm_password = data.get("confirm_password", "").strip()
+        
+        # Validate inputs
+        if not token:
+            return error_response("Token is required", code=400)
+        
+        if not new_password:
+            return error_response("New password is required", code=400)
+        
+        if new_password != confirm_password:
+            return error_response("Passwords do not match", code=400)
+        
+        if len(new_password) < 6:
+            return error_response("Password must be at least 6 characters", code=400)
+        
+        # Find the token
+        try:
+            reset_token = PasswordResetToken.objects.get(token=token)
+        except PasswordResetToken.DoesNotExist:
+            return error_response("Invalid token", code=401)
+        
+        # Check if token is valid
+        if not reset_token.is_valid():
+            return error_response("Token has expired or already used", code=401)
+        
+        # Update user password
+        user = reset_token.user
+        user.set_password(new_password)
+        user.save()
+        
+        # Mark token as used
+        reset_token.mark_used()
+        
+        # Send confirmation email
+        try:
+            profile = user.userprofile
+            send_mail(
+                subject="Password Changed Successfully - TechTrack",
+                message=f"""Hello {profile.full_name},
+
+Your password has been successfully changed.
+
+If you didn't make this change, please contact support immediately.
+
+Best regards,
+TechTrack Team""",
+                from_email=settings.EMAIL_HOST_USER,
+                recipient_list=[user.email],
+                fail_silently=True,
+            )
+        except Exception as e:
+            print(f"Error sending confirmation email: {str(e)}")
+        
+        return success_response({
+            "detail": "Password has been successfully reset. You can now login with your new password.",
+        }, code=200)
+        
+    except Exception as e:
+        print(f"[RESET PASSWORD] Error: {str(e)}")
+        return error_response("An error occurred", code=500, detail=str(e))
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def test_email_debug(request):
+    """
+    Test email sending - DEBUG ONLY
+    POST /app/test-email/
+    {
+        "email": "your-email@gmail.com"
+    }
+    """
+    try:
+        data = JSONParser().parse(request)
+        email = data.get("email", "").strip().lower()
+        
+        if not email:
+            return error_response("Email is required", code=400)
+        
+        print(f"\n[TEST EMAIL] Attempting to send test email to: {email}")
+        print(f"[TEST EMAIL] Email Configuration:")
+        print(f"  - EMAIL_BACKEND: {settings.EMAIL_BACKEND}")
+        print(f"  - EMAIL_HOST: {settings.EMAIL_HOST}")
+        print(f"  - EMAIL_PORT: {settings.EMAIL_PORT}")
+        print(f"  - EMAIL_USE_TLS: {settings.EMAIL_USE_TLS}")
+        print(f"  - EMAIL_HOST_USER: {settings.EMAIL_HOST_USER}")
+        
+        subject = "Test Email - TechTrack"
+        message = f"""This is a test email sent from TechTrack backend.
+
+Time: {timezone.now()}
+To verify this email reached you.
+
+If you see this, the email system is working correctly!
+
+Best regards,
+TechTrack Team"""
+        
+        try:
+            print(f"[TEST EMAIL] Sending email...")
+            sent = send_mail(
+                subject=subject,
+                message=message,
+                from_email=settings.EMAIL_HOST_USER,
+                recipient_list=[email],
+                fail_silently=False,
+            )
+            
+            print(f"[TEST EMAIL] Email sent successfully! Result: {sent}")
+            
+            return success_response({
+                "detail": f"Test email sent successfully to {email}",
+                "debug_info": {
+                    "email_host": settings.EMAIL_HOST,
+                    "email_port": settings.EMAIL_PORT,
+                    "email_use_tls": settings.EMAIL_USE_TLS,
+                    "from_email": settings.EMAIL_HOST_USER,
+                    "to_email": email,
+                }
+            }, code=200)
+            
+        except Exception as e:
+            print(f"[TEST EMAIL] FAILED - Error: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            
+            return error_response(
+                f"Failed to send test email: {str(e)}", 
+                code=500,
+                detail={
+                    "error": str(e),
+                    "hint": "Check terminal output for detailed error information"
+                }
+            )
+            
+    except Exception as e:
+        print(f"[TEST EMAIL] Exception: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return error_response("An error occurred", code=500, detail=str(e))
+
+
 @ensure_csrf_cookie
 def session_view(request):
     if not request.user.is_authenticated:
@@ -2339,6 +2637,29 @@ def productProcessAPI(request, id=0):
                 step.quota_updated_at = timezone.now()
                 step.quota_updated_by = request.user
                 step.save()
+
+            # Handle OT fields - overtime tracking
+            if 'is_overtime' in data:
+                step.is_overtime = data.get('is_overtime', False)
+                
+            if 'ot_quota' in data:
+                step.ot_quota = data.get('ot_quota', 0)
+                
+            if 'ot_defect_logs' in data:
+                ot_defect_logs_data = data.get('ot_defect_logs', [])
+                # Filter out empty entries
+                valid_ot_defects = [
+                    log for log in ot_defect_logs_data 
+                    if log.get('defect_type')
+                ]
+                step.ot_defect_logs = valid_ot_defects
+                
+            # Save OT updates if any were made
+            if any(key in data for key in ['is_overtime', 'ot_quota', 'ot_defect_logs']):
+                from django.utils import timezone
+                step.quota_updated_at = timezone.now()
+                step.quota_updated_by = request.user
+                step.save(update_fields=['is_overtime', 'ot_quota', 'ot_defect_logs', 'quota_updated_at', 'quota_updated_by'])
 
             # Handle defect_count and defect tracking (legacy - fallback for single defect)
             elif 'defect_count' in data or 'defect_type' in data or 'defect_description' in data:
@@ -4145,8 +4466,21 @@ def requestProductAPI(request, id=0):
                 request_product.restored_at = None
                 request_product.cancelled_by = request.user
                 request_product.cancellation_reason = data.get('cancellation_reason', 'Cancelled by production manager')
+                
+                # Store cancellation progress snapshot
+                cancellation_progress = data.get('cancellation_progress', {})
+                print(f"[DEBUG] Received cancellation data:")
+                print(f"   Raw request data: {data}")
+                print(f"   Extracted cancellation_progress: {cancellation_progress}")
+                if cancellation_progress:
+                    request_product.cancellation_progress = cancellation_progress
+                    print(f"   ✅ Stored cancellation_progress on RequestProduct: {request_product.cancellation_progress}")
+                else:
+                    print(f"   ⚠️ No cancellation_progress data received or empty")
+                
                 request_product.save()
                 print(f"   ✅ RequestProduct {id} cancelled successfully")
+                print(f"   Final cancellation_progress in DB: {request_product.cancellation_progress}")
 
                 log_audit(
                     request.user,
@@ -4423,6 +4757,7 @@ def customer_cancelled_requests_view(request):
                     'deadline': deadline_value.strftime("%Y-%m-%d") if deadline_value else None,
                     'cancelled_by_name': cancelled_by_name,
                     'cancellation_reason': rp.cancellation_reason if rp.cancellation_reason else 'Cancelled',
+                    'cancellation_progress': rp.cancellation_progress or {},
                     'created_at': created_at_str,
                     'updated_at': _format_cancelled_timestamp(rp.archived_at or rp.cancelled_at),
                 })
@@ -5288,6 +5623,7 @@ def cancelled_requests_view(request):
                     'cancelled_by_name': cancelled_by_name,
                     'cancellation_reason': cancellation_reason,
                     'cancellation_log': cancellation_log,
+                    'cancellation_progress': rp.cancellation_progress or {},
                     'updated_at': updated_timestamp,
                 })
             except Exception as item_err:

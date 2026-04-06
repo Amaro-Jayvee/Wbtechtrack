@@ -4,9 +4,11 @@ import { useUser } from "./UserContext.jsx";
 import "bootstrap/dist/css/bootstrap.min.css";
 import "./login.css";
 import SignupForm from "./SignupForm";
+import ForgotPasswordModal from "./ForgotPasswordModal";
 
 function Login() {
   const [isRegister, setIsRegister] = useState(false);
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [formData, setFormData] = useState({
     username: "",
     password: "",
@@ -179,10 +181,25 @@ function Login() {
 
                 <hr className="my-separator" />
 
-                <div className="text-center">
-                  <a href="http://localhost:8000/app/reset_password/" className="forgot-password">
+                <div className="text-center" style={{marginBottom: "12px"}}>
+                  <button
+                    type="button"
+                    className="forgot-password"
+                    onClick={() => setShowForgotPassword(true)}
+                    style={{
+                      background: "none",
+                      border: "none",
+                      color: "#007bff",
+                      cursor: "pointer",
+                      textDecoration: "underline",
+                      padding: "0 8px",
+                      font: "inherit",
+                      fontSize: "14px",
+                      display: "inline-block"
+                    }}
+                  >
                     Forgot password?
-                  </a>
+                  </button>
                 </div>
 
                 {message && (
@@ -263,6 +280,12 @@ We are not doing him a favor serving him. He is doing us a favor by giving us op
           </div>
         </div>
       </footer>
+
+      {/* Forgot Password Modal */}
+      <ForgotPasswordModal
+        isOpen={showForgotPassword}
+        onClose={() => setShowForgotPassword(false)}
+      />
     </div>
   );
 }

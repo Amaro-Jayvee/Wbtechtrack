@@ -228,6 +228,7 @@ class RequestProductSerializer(serializers.ModelSerializer):
     requested_at = serializers.SerializerMethodField()
     request_id = serializers.CharField(source='request.RequestID', read_only=True)
     archived_at = serializers.SerializerMethodField()
+    cancelled_by_name = serializers.SerializerMethodField()
 
     def get_requested_at(self, obj):
         if obj.requested_at:  # DateTimeField
@@ -237,6 +238,13 @@ class RequestProductSerializer(serializers.ModelSerializer):
     def get_archived_at(self, obj):
         if obj.archived_at:
             return localtime(obj.archived_at).strftime("%Y-%m-%d %H:%M:%S")
+        return None
+
+    def get_cancelled_by_name(self, obj):
+        if obj.cancelled_by:
+            if hasattr(obj.cancelled_by, 'userprofile'):
+                return obj.cancelled_by.userprofile.full_name or obj.cancelled_by.username
+            return obj.cancelled_by.username
         return None
 
     def validate_quantity(self, value):
@@ -259,6 +267,11 @@ class RequestProductSerializer(serializers.ModelSerializer):
             'requested_at',
             'archived_at',
             'completed_at',
+            'status',
+            'cancelled_at',
+            'cancelled_by',
+            'cancellation_reason',
+            'cancellation_progress',
         ]
 
 
@@ -785,7 +798,7 @@ class ProductProcessSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = ProductProcess
-        fields = ['id', 'request_product', 'workers', 'process', 'process_number', 'step_order', 'completed_quota', 'defect_count', 'is_completed', 'production_date', 'created_at', 'updated_at', 'archived_at', 'progress', 'completed_summary', 'request_id', 'requester_name', 'request_product_id', 'request_product_archived_at', 'request_product_completed_at', 'total_quota', 'total_steps', 'process_name', 'product_name', 'worker_names', 'due_date', 'deadline_extension', 'production_date_formatted', 'is_pst_01', 'overall_progress', 'quota_updated_at', 'quota_updated_by', 'quota_updated_by_name', 'defect_type', 'defect_description', 'defect_updated_at', 'defect_updated_by', 'defect_updated_by_name', 'defect_logs']
+        fields = ['id', 'request_product', 'workers', 'process', 'process_number', 'step_order', 'completed_quota', 'defect_count', 'is_completed', 'production_date', 'created_at', 'updated_at', 'archived_at', 'progress', 'completed_summary', 'request_id', 'requester_name', 'request_product_id', 'request_product_archived_at', 'request_product_completed_at', 'total_quota', 'total_steps', 'process_name', 'product_name', 'worker_names', 'due_date', 'deadline_extension', 'production_date_formatted', 'is_pst_01', 'overall_progress', 'quota_updated_at', 'quota_updated_by', 'quota_updated_by_name', 'defect_type', 'defect_description', 'defect_updated_at', 'defect_updated_by', 'defect_updated_by_name', 'defect_logs', 'is_overtime', 'ot_quota', 'ot_defect_logs']
 
 class ProcessTemplateSerializer(serializers.ModelSerializer):
     process_name = serializers.CharField(source='process.name', read_only=True)

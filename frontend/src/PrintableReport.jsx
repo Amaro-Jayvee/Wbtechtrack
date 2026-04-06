@@ -37,6 +37,9 @@ function PrintableReport() {
     totalOutput: 0,
     inProgressCount: 0,
     cancelledCount: 0,
+    otCount: 0,
+    otTotalQuota: 0,
+    otTotalDefects: 0,
   });
   const [topMovers, setTopMovers] = useState([]);
   const [inProgressRows, setInProgressRows] = useState([]);
@@ -139,6 +142,10 @@ function PrintableReport() {
         const stepRows = await inProgressResponse.json();
         const grouped = new Map();
 
+        let otTaskCount = 0;
+        let otTotalQuota = 0;
+        let otTotalDefects = 0;
+
         (Array.isArray(stepRows) ? stepRows : []).forEach((step) => {
           const rpId = step.request_product_id || step.request_product || `${step.request_id || "no-request"}-${step.product_name || "no-product"}`;
 
@@ -153,6 +160,9 @@ function PrintableReport() {
               process_name: step.process_name,
               progress: Number(step.overall_progress) || 0,
               updated_at: step.updated_at,
+              is_overtime: false,
+              ot_quota: 0,
+              ot_defects: 0,
             });
           }
 
@@ -162,6 +172,18 @@ function PrintableReport() {
 
           current.completed_quota = Math.max(current.completed_quota, stepCompletedQuota);
           current.defects += stepDefects;
+
+          // Track OT data
+          if (step.is_overtime) {
+            current.is_overtime = true;
+            current.ot_quota = Math.max(current.ot_quota, Number(step.ot_quota) || 0);
+            const stepOTDefects = sumDefectLogs(step.ot_defect_logs) || 0;
+            current.ot_defects += stepOTDefects;
+            
+            otTaskCount += 1;
+            otTotalQuota += Number(step.ot_quota) || 0;
+            otTotalDefects += stepOTDefects;
+          }
 
           if (step.overall_progress !== undefined && step.overall_progress !== null) {
             current.progress = Number(step.overall_progress) || current.progress;
@@ -200,6 +222,9 @@ function PrintableReport() {
         totalOutput: totalCompleted - totalDefects,
         inProgressCount: filteredInProgressRows.length,
         cancelledCount: filteredCancelledRows.length,
+        otCount: otTaskCount,
+        otTotalQuota: otTotalQuota,
+        otTotalDefects: otTotalDefects,
       });
     } catch (err) {
       console.warn("Error fetching report data:", err);
@@ -213,6 +238,9 @@ function PrintableReport() {
         totalOutput: 0,
         inProgressCount: 0,
         cancelledCount: 0,
+        otCount: 0,
+        otTotalQuota: 0,
+        otTotalDefects: 0,
       });
     } finally {
       setLoading(false);
@@ -611,6 +639,42 @@ function PrintableReport() {
                 </tbody>
               </table>
             </div>
+
+            {/* OVERTIME SUMMARY */}
+            {summaryData.otCount > 0 && (
+              <div style={{ marginBottom: "30px" }}>
+                <h3 style={{ color: "#f59e0b", marginBottom: "15px", fontSize: "13px", fontWeight: "bold" }}>
+                  ⏱️ Overtime (OT) Production Summary
+                </h3>
+                <table style={{
+                  width: "100%",
+                  borderCollapse: "collapse",
+                  fontSize: "10px",
+                  backgroundColor: "white"
+                }}>
+                  <thead>
+                    <tr style={{ backgroundColor: "#fef3c7", borderBottom: "2px solid #f59e0b" }}>
+                      <th style={{ padding: "10px", textAlign: "left", fontWeight: "bold" }}>Metric</th>
+                      <th style={{ padding: "10px", textAlign: "center", fontWeight: "bold" }}>Value</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr style={{ borderBottom: "1px solid #ddd" }}>
+                      <td style={{ padding: "10px" }}>Tasks with Overtime Enabled</td>
+                      <td style={{ padding: "10px", textAlign: "center", fontWeight: "bold", color: "#f59e0b" }}>{summaryData.otCount}</td>
+                    </tr>
+                    <tr style={{ borderBottom: "1px solid #ddd" }}>
+                      <td style={{ padding: "10px" }}>Total OT Quota Completed</td>
+                      <td style={{ padding: "10px", textAlign: "center", fontWeight: "bold" }}>{summaryData.otTotalQuota}</td>
+                    </tr>
+                    <tr style={{ backgroundColor: "#fff3cd", fontWeight: "bold", borderTop: "2px solid #f59e0b" }}>
+                      <td style={{ padding: "10px" }}>OT-Related Defects</td>
+                      <td style={{ padding: "10px", textAlign: "center", color: "#d32f2f" }}>{summaryData.otTotalDefects}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            )}
 
             {/* CANCELLED ORDERS */}
             <div style={{ marginBottom: "30px" }}>

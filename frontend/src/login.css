@@ -336,7 +336,7 @@ body {
   flex-direction: column;
   gap: clamp(5px, 1.3vw, 9px);
   align-items: stretch;
-  margin: 0;
+  margin: 0 auto;
   padding: clamp(14px, 2.2vw, 32px);
   padding-top: clamp(12px, 1.8vw, 25px);
 }
@@ -411,7 +411,8 @@ body {
 
 /* Button Styling */
 .btn-primary {
-  background-color: #3388DD;
+  background: #3388DD !important;
+  background-color: #3388DD !important;
   border-color: #3388DD;
   border-radius: clamp(5px, 0.8vw, 7px);
   font-weight: 700;
@@ -431,7 +432,8 @@ body {
 }
 
 .btn-primary:hover {
-  background-color: #2563eb;
+  background: #2563eb !important;
+  background-color: #2563eb !important;
   border-color: #2563eb;
   transform: translateY(-2px);
   box-shadow: 0 8px 20px rgba(51, 136, 221, 0.4);

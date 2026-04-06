@@ -1,0 +1,22 @@
+/* CancellationReportModal.css */
+
+/* This file is prepared for any additional modal-specific styles if needed */
+/* Most styling is handled inline in the component for flexibility */
+
+/* Optional: Add custom scrollbar styling if desired */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f1f1;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #1d6ab7;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #0d4a8f;
+}

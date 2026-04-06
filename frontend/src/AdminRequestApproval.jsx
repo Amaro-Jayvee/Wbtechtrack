@@ -649,8 +649,8 @@ function AdminRequestApproval() {
 
   const adminFormTheme = {
     panelBackground: "linear-gradient(145deg, #edf7ff 0%, #dff0ff 52%, #d2e9ff 100%)",
-    panelBorder: "2px solid rgba(87, 168, 249, 0.8)",
-    panelOutline: "0 0 0 4px rgba(87, 168, 249, 0.22)",
+    panelBorder: "none",
+    panelOutline: "none",
     fieldBackground: "#ffffff",
     fieldBorder: "1px solid rgba(87, 168, 249, 0.45)",
     fieldText: "#1e3a5f",
@@ -658,7 +658,7 @@ function AdminRequestApproval() {
     accentBlue: "#1d6ab7",
     accentViolet: "#3388dd",
     accentAmber: "#fbbf24",
-    panelShadow: "0 20px 46px rgba(29, 106, 183, 0.2)",
+    panelShadow: "none",
   };
 
   const darkFieldStyle = {
@@ -666,7 +666,7 @@ function AdminRequestApproval() {
     color: adminFormTheme.fieldText,
     border: adminFormTheme.fieldBorder,
     borderRadius: "8px",
-    boxShadow: "inset 0 1px 0 rgba(87, 168, 249, 0.12)",
+    boxShadow: "none",
   };
 
   return (

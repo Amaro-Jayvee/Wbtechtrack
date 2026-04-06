@@ -1,0 +1,104 @@
+# Python cache and environment
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+.venv
+venv/
+ENV/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Node modules and build
+node_modules/
+dist/
+build/
+coverage/
+.cache/
+
+# Environment files (don't commit secrets)
+.env
+.env.local
+.env.*.local
+
+# Database
+*.sqlite3
+db.sqlite3
+*.db
+
+# Logs
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+
+# Docker
+.docker/
+docker-compose.override.yml
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Package managers
+package-lock.json
+Pipfile.lock
+
+# IDE User settings
+.vscode/settings.json
+.idea/workspace.xml
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*~
+
+# Mac specific
+.AppleDouble
+.LSOverride
+
+# Windows specific
+desktop.ini
+$RECYCLE.BIN/
+
+# Virtual environments in subdirectories
+backend/venv/
+frontend/node_modules/
