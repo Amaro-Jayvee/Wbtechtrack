@@ -477,8 +477,28 @@ class ProductProcess(models.Model):
             if not self.is_completed:
                 self.is_completed = True
                 self.save(update_fields=['is_completed', 'updated_at'])
+                # CRITICAL FIX: Set completed_at on RequestProduct when all steps are done
+                self.check_and_mark_request_product_completed()
             return True
         return False
+    
+    def check_and_mark_request_product_completed(self):
+        """Check if all steps for this request product are completed, and mark it as completed"""
+        if not self.request_product:
+            return
+        
+        # Check if all product process steps are completed
+        all_steps = self.request_product.process_steps.all()
+        if not all_steps.exists():
+            return
+        
+        all_completed = all_steps.filter(is_completed=True).count() == all_steps.count()
+        
+        if all_completed and not self.request_product.completed_at:
+            from django.utils import timezone
+            self.request_product.completed_at = timezone.now()
+            self.request_product.save(update_fields=['completed_at'])
+            print(f"[COMPLETE] RequestProduct {self.request_product.id} marked as completed at {self.request_product.completed_at}")
 
     def can_enable_ot_today(self):
         """Check if OT can be enabled today (once per day rule)"""

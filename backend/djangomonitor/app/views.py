@@ -4905,6 +4905,95 @@ def customer_cancelled_requests_view(request):
         }, status=500)
 
 
+@csrf_exempt
+@require_http_methods(["GET"])
+@role_required('admin', 'production_manager', 'customer')
+def completed_requests_view(request):
+    """
+    Returns a list of all completed (not cancelled/archived) request products.
+    Shows tasks marked as is_completed=True on all their ProductProcess steps.
+    """
+    try:
+        from django.utils import timezone
+        from django.db.models import Q, Count
+        
+        user_role = request.user.userprofile.role if hasattr(request.user, 'userprofile') else None
+        
+        # Get all RequestProducts that have all their steps completed and are NOT cancelled/archived
+        completed_products = RequestProduct.objects.filter(
+            Q(completed_at__isnull=False) | Q(process_steps__is_completed=True),  # completed_at set OR all steps done
+            archived_at__isnull=True,  # NOT archived
+            status__ne='cancelled'  # NOT cancelled
+        ).select_related('request', 'product').annotate(
+            completed_steps=Count('process_steps', filter=Q(process_steps__is_completed=True)),
+            total_steps=Count('process_steps')
+        ).distinct()
+        
+        # Further filter: keep only those where ALL steps are completed
+        completed_products_list = []
+        for rp in completed_products:
+            all_steps = rp.process_steps.all()
+            if all_steps.count() > 0:
+                all_completed = all_steps.filter(is_completed=True).count() == all_steps.count()
+                if all_completed:
+                    completed_products_list.append(rp)
+        
+        # Build response data
+        response_data = []
+        for rp in completed_products_list:
+            try:
+                if not rp.request or not rp.product:
+                    continue
+                
+                # Get completion timestamp
+                completion_timestamp = rp.completed_at
+                if completion_timestamp:
+                    if timezone.is_naive(completion_timestamp):
+                        completion_timestamp = timezone.make_aware(completion_timestamp)
+                    completed_at_str = completion_timestamp.isoformat()
+                else:
+                    # Use the latest ProductProcess updated_at if completed_at not set yet
+                    latest_step = rp.process_steps.order_by('-updated_at').first()
+                    if latest_step and latest_step.updated_at:
+                        completed_at_str = latest_step.updated_at.isoformat()
+                    else:
+                        completed_at_str = None
+                
+                deadline_value = rp.deadline_extension or rp.request.deadline
+                
+                response_data.append({
+                    'id': f"request-product-{rp.id}",
+                    'request_id': rp.request.RequestID,
+                    'product_name': rp.product.prodName,
+                    'quantity': rp.quantity,
+                    'deadline': deadline_value.strftime("%Y-%m-%d") if deadline_value else None,
+                    'completed_at': completed_at_str,
+                    'status': 'completed'
+                })
+            except Exception as item_err:
+                print(f"[ERROR] Processing completed product {rp.id}: {str(item_err)}")
+                import traceback
+                traceback.print_exc()
+                continue
+        
+        # Sort by completion date, newest first
+        response_data.sort(
+            key=lambda item: item.get('completed_at') or '',
+            reverse=True,
+        )
+        
+        return success_response({
+            'completed_requests': response_data,
+            'count': len(response_data)
+        })
+        
+    except Exception as e:
+        print(f"[ERROR] Completed requests error: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return error_response(f"Error fetching completed requests: {str(e)}", code=500)
+
+
 # @csrf_exempt
 # @role_required('admin', 'manager')
 # def processProgressAPI(request, id=0):
@@ -5729,7 +5818,16 @@ def cancelled_requests_view(request):
                 
                 cancelled_by_name = (cancelled_by_user.get_full_name() or cancelled_by_user.username) if cancelled_by_user else 'System'
                 deadline_value = rp.deadline_extension or rp.request.deadline
-                updated_timestamp = _format_cancelled_timestamp(rp.archived_at or rp.cancelled_at)
+                # CRITICAL FIX: Use cancelled_at if available (takes precedence), then archived_at, format properly
+                cancellation_date = rp.cancelled_at or rp.archived_at
+                if cancellation_date:
+                    from django.utils import timezone
+                    # Ensure it's timezone-aware and format as ISO string
+                    if timezone.is_naive(cancellation_date):
+                        cancellation_date = timezone.make_aware(cancellation_date)
+                    updated_timestamp = cancellation_date.isoformat()
+                else:
+                    updated_timestamp = None
                 cancellation_reason = rp.cancellation_reason if rp.cancellation_reason else 'Archived'
                 cancellation_log = (
                     f"Task cancellation from issuance #{rp.request.RequestID} by {cancelled_by_name}. "

@@ -2,7 +2,7 @@ from django.urls import path
 from .views import *
 from .views import (
     login_view, logout_view, session_view, whoami_view, accept_terms_view, 
-    user_activity_logs, archived_requests_view, task_update_logs_view, 
+    user_activity_logs, archived_requests_view, completed_requests_view, task_update_logs_view, 
     task_update_log_delete_view, restore_request_view, restore_request_product_view, 
     csrf_token_view, forgot_password_request, verify_reset_token, reset_password, test_email_debug
 )
@@ -91,6 +91,7 @@ urlpatterns = [
     path('request/<int:id>/unarchive/', unarchive_request, name='unarchive-request'),
     path('request/<int:id>/start-project/', start_project, name='start-project'),
     path('archived-requests/', archived_requests_view, name='archived-requests'),
+    path('completed-requests/', completed_requests_view, name='completed-requests'),
     path('restore-request/', restore_request_view, name='restore-request'),
     path('restore-request-product/', restore_request_product_view, name='restore-request-product'),
     path('task-update-logs/', task_update_logs_view, name='task-update-logs'),
