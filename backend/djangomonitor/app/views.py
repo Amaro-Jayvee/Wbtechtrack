@@ -2655,6 +2655,24 @@ def productProcessAPI(request, id=0):
 
             # Handle OT fields - overtime tracking
             if 'is_overtime' in data:
+                # Check if trying to enable OT
+                if data.get('is_overtime', False) and not step.is_overtime:
+                    # Validate that regular quota has been saved first
+                    if (step.completed_quota or 0) == 0:
+                        return error_response(
+                            "Regular quota must be saved before enabling OT. Please enter and save the regular completed quota first.",
+                            code=400
+                        )
+                    
+                    # OT is being enabled for the first time today
+                    if not step.can_enable_ot_today():
+                        from django.utils import timezone
+                        today = timezone.now().date()
+                        return error_response(
+                            f"OT has already been enabled for this task today ({today}). You can enable OT again tomorrow.",
+                            code=400
+                        )
+                
                 step.is_overtime = data.get('is_overtime', False)
                 
             if 'ot_quota' in data:
@@ -2672,6 +2690,11 @@ def productProcessAPI(request, id=0):
             # Save OT updates if any were made
             if any(key in data for key in ['is_overtime', 'ot_quota', 'ot_defect_logs']):
                 from django.utils import timezone
+                
+                # If OT is being enabled, set the date
+                if data.get('is_overtime') and step.is_overtime:
+                    step.ot_enabled_date = timezone.now().date()
+                
                 step.quota_updated_at = timezone.now()
                 step.quota_updated_by = request.user
                 
@@ -2696,7 +2719,7 @@ def productProcessAPI(request, id=0):
                 print(f"  step.completed_quota: {step.completed_quota}", flush=True)
                 sys.stdout.flush()
                 
-                step.save(update_fields=['is_overtime', 'ot_quota', 'ot_defect_logs', 'quota_updated_at', 'quota_updated_by'])
+                step.save(update_fields=['is_overtime', 'ot_quota', 'ot_defect_logs', 'ot_enabled_date', 'quota_updated_at', 'quota_updated_by'])
                 step.refresh_from_db()
                 
                 print(f"\n[PATCH OT SAVE] ✅ AFTER DATABASE SAVE AND REFRESH:", flush=True)
@@ -2770,96 +2793,97 @@ def productProcessAPI(request, id=0):
             # Update the remaining fields via serializer (excluding workers, defect_logs, and OT fields since we handled them)
             data_for_serializer = {k: v for k, v in data.items() if k not in ['workers', 'defect_logs', 'is_overtime', 'ot_quota', 'ot_defect_logs']}
             
-            serializer = ProductProcessSerializer(step, data=data_for_serializer, partial=True)
-            if serializer.is_valid():
-                updated_step = serializer.save()
-                # Refresh to ensure we have all fields including OT data from database
-                updated_step.refresh_from_db()
+            # Only call serializer if there are fields to update (avoid empty serializer calls)
+            if data_for_serializer:
+                serializer = ProductProcessSerializer(step, data=data_for_serializer, partial=True)
+                if serializer.is_valid():
+                    updated_step = serializer.save()
+                    # Refresh to ensure we have all fields including OT data from database
+                    updated_step.refresh_from_db()
+                else:
+                    return JsonResponse(serializer.errors, status=400)
+            else:
+                # No other fields to update via serializer, so just use the current step
+                # Make sure it's refreshed to get any OT updates from database
+                step.refresh_from_db()
+                updated_step = step
 
-                # Audit log entry
-                try:
-                    AuditLog.objects.create(
-                        request=request_instance,
-                        request_product=request_product,
-                        action_type="update",
-                        old_value=json.dumps(old_snapshot),
-                        new_value=json.dumps(ProductProcessSerializer(updated_step).data),
-                        performed_by=request.user
-                    )
-                except Exception as audit_err:
-                    pass
-
-                # Create notification for the customer (requester) about task status update
-                try:
-                    if request_instance.requester:
-                        task_status = request_product.task_status()
-                        create_notification(
-                            user=request_instance.requester,
-                            notification_type='task_status_updated',
-                            title='Task Status Updated',
-                            message=f'Task status for {request_product.product.prodName} has been updated to {task_status}',
-                            related_request=request_instance
-                        )
-                except Exception as notif_err:
-                    pass
+            # Audit log entry - detect if this is an edit (re-saving already saved data)
+            try:
+                # Check if this is an edit: looking for evidence of a previous save
+                is_edit = False
                 
-                # Create notification for the user who updated the task
-                try:
+                # If old_snapshot has quota_updated_at or quota_updated_by, it means data was previously saved
+                if old_snapshot:
+                    prev_quota_updated_at = old_snapshot.get('quota_updated_at')
+                    prev_defect_updated_at = old_snapshot.get('defect_updated_at')
+                    
+                    # If there's a previous update timestamp and we're changing the same fields, it's an edit
+                    new_data_has_quota = 'completed_quota' in data or 'defect_logs' in data
+                    prev_has_updates = prev_quota_updated_at or prev_defect_updated_at
+                    
+                    if prev_has_updates and new_data_has_quota:
+                        is_edit = True
+                
+                action_type = "edit" if is_edit else "update"
+                
+                AuditLog.objects.create(
+                    request=request_instance,
+                    request_product=request_product,
+                    action_type=action_type,
+                    old_value=json.dumps(old_snapshot),
+                    new_value=json.dumps(ProductProcessSerializer(updated_step).data),
+                    performed_by=request.user
+                )
+            except Exception as audit_err:
+                pass
+
+            # Create notification for the customer (requester) about task status update
+            try:
+                if request_instance.requester:
                     task_status = request_product.task_status()
                     create_notification(
-                        user=request.user,
+                        user=request_instance.requester,
                         notification_type='task_status_updated',
-                        title='Task Updated',
-                        message=f'You updated task for {request_product.product.prodName} to {task_status}',
+                        title='Task Status Updated',
+                        message=f'Task status for {request_product.product.prodName} has been updated to {task_status}',
                         related_request=request_instance
                     )
-                except Exception as notif_err:
-                    pass
-                
-                # Create notification for all admin/manager users about task update
-                try:
-                    admin_users = User.objects.filter(Q(is_staff=True) | Q(is_superuser=True)).exclude(id=request.user.id)
-                    for admin_user in admin_users:
-                        task_status = request_product.task_status()
-                        create_notification(
-                            user=admin_user,
-                            notification_type='task_status_updated',
-                            title='Task Progress Updated',
-                            message=f'Task for {request_product.product.prodName} (Request #{request_instance.RequestID}) has been updated to {task_status}',
-                            related_request=request_instance
-                        )
-                except Exception as notif_err:
-                    pass
+            except Exception as notif_err:
+                pass
+            
+            # Create notification for the user who updated the task
+            try:
+                task_status = request_product.task_status()
+                create_notification(
+                    user=request.user,
+                    notification_type='task_status_updated',
+                    title='Task Updated',
+                    message=f'You updated task for {request_product.product.prodName} to {task_status}',
+                    related_request=request_instance
+                )
+            except Exception as notif_err:
+                pass
+            
+            # Create notification for all admin/manager users about task update
+            try:
+                admin_users = User.objects.filter(Q(is_staff=True) | Q(is_superuser=True)).exclude(id=request.user.id)
+                for admin_user in admin_users:
+                    task_status = request_product.task_status()
+                    create_notification(
+                        user=admin_user,
+                        notification_type='task_status_updated',
+                        title='Task Progress Updated',
+                        message=f'Task for {request_product.product.prodName} (Request #{request_instance.RequestID}) has been updated to {task_status}',
+                        related_request=request_instance
+                    )
+            except Exception as notif_err:
+                pass
 
-                return JsonResponse({
-                    "message": "Step updated successfully!",
-                    "updated_step": ProductProcessSerializer(updated_step).data
-                }, status=200)
-            
-            # DEBUG: Log response data with OT details
-            serialized_data = ProductProcessSerializer(updated_step).data
-            print(f"\n{'='*80}", flush=True)
-            print(f"[PATCH RESPONSE] 📤 RESPONSE BEING SENT TO FRONTEND", flush=True)
-            print(f"{'='*80}", flush=True)
-            print(f"  Status: 200 OK ✅", flush=True)
-            print(f"  Task ID: {id}", flush=True)
-            print(f"  updated_step.completed_quota: {serialized_data.get('completed_quota')} units", flush=True)
-            print(f"  updated_step.is_overtime: {serialized_data.get('is_overtime')}", flush=True)
-            print(f"  updated_step.ot_quota: {serialized_data.get('ot_quota')} units", flush=True)
-            print(f"  updated_step.ot_defect_logs: {serialized_data.get('ot_defect_logs')}", flush=True)
-            print(f"  updated_step.is_completed: {serialized_data.get('is_completed')}", flush=True)
-            
-            # Show OT defects detail if available
-            ot_defects = serialized_data.get('ot_defect_logs', [])
-            if ot_defects:
-                print(f"  OT Defects Detail:", flush=True)
-                for idx, defect in enumerate(ot_defects):
-                    print(f"    {idx+1}. {defect.get('defect_type', 'Unknown')} - Count: {defect.get('defect_count', 0)}", flush=True)
-            
-            print(f"{'='*80}\n", flush=True)
-            sys.stdout.flush()
-            
-            return JsonResponse(serializer.errors, status=400)
+            return JsonResponse({
+                "message": "Step updated successfully!",
+                "updated_step": ProductProcessSerializer(updated_step).data
+            }, status=200)
         
         except ProductProcess.DoesNotExist:
             return JsonResponse(
@@ -5958,19 +5982,43 @@ def task_history_view(request, request_product_id):
                     old_quota = old_data.get('completed_quota')
                     new_quota = new_data.get('completed_quota')
                     if old_quota != new_quota:
-                        detailed_changes.append(f"Saved total quota: {new_quota or 0}")
+                        if log.action_type == 'edit':
+                            detailed_changes.append(f"Edit quantity: {old_quota or 0} → {new_quota or 0}")
+                        else:
+                            detailed_changes.append(f"Saved total quota: {new_quota or 0}")
                     
                     # Track defect changes
                     old_defects = old_data.get('defect_count')
                     new_defects = new_data.get('defect_count')
                     if old_defects != new_defects:
-                        detailed_changes.append(f"Saved defect: {new_defects or 0}")
+                        if log.action_type == 'edit':
+                            detailed_changes.append(f"Edit defect: {old_defects or 0} → {new_defects or 0}")
+                        else:
+                            detailed_changes.append(f"Saved defect: {new_defects or 0}")
                     
                     # Track defect type changes
                     old_defect_type = old_data.get('defect_type')
                     new_defect_type = new_data.get('defect_type')
                     if old_defect_type != new_defect_type and new_defect_type:
                         detailed_changes.append(f"Defect type: {new_defect_type}")
+                    
+                    # Track OT (Overtime) changes
+                    old_is_ot = old_data.get('is_overtime')
+                    new_is_ot = new_data.get('is_overtime')
+                    if old_is_ot != new_is_ot:
+                        if new_is_ot:
+                            detailed_changes.append("OT enabled")
+                        else:
+                            detailed_changes.append("OT disabled")
+                    
+                    # Track OT quota changes
+                    old_ot_quota = old_data.get('ot_quota')
+                    new_ot_quota = new_data.get('ot_quota')
+                    if old_ot_quota != new_ot_quota and new_ot_quota:
+                        if log.action_type == 'edit':
+                            detailed_changes.append(f"Edit OT Quota: {old_ot_quota or 0} → {new_ot_quota}")
+                        else:
+                            detailed_changes.append(f"OT Quota: {new_ot_quota}")
                     
                     # Track is_completed status
                     old_completed = old_data.get('is_completed')

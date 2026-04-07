@@ -345,11 +345,12 @@ class RequestProduct(models.Model):
         
         # Calculate based on:
         # - Percentage of steps already fully done
-        # - Plus progress on current step
+        # - Plus progress on current step (including both regular and OT quota)
         if current_step:
             # Weight: each completed step = 1/total_steps of the quantity
             completed_from_prev_steps = (completed_before_count / total_steps) * quantity
-            current_progress = current_step.completed_quota or 0
+            # CRITICAL: Include both regular quota AND OT quota for accurate progress
+            current_progress = (current_step.completed_quota or 0) + (current_step.ot_quota or 0)
             total_completed = completed_from_prev_steps + current_progress
         else:
             # Shouldn't reach here, but safety check
@@ -450,6 +451,7 @@ class ProductProcess(models.Model):
     is_overtime = models.BooleanField("Is Overtime", default=False)
     ot_quota = models.PositiveIntegerField("OT Completed Quota", default=0)
     ot_defect_logs = models.JSONField("OT Defect Logs", default=list, blank=True, help_text="JSON array of OT defect logs: [{defect_type: '', defect_count: 0}]")
+    ot_enabled_date = models.DateField("OT Enabled Date", null=True, blank=True, help_text="Date when OT was last enabled for this task - used to track daily reset")
 
     # deadline_extension = models.DateField("Deadline Extension", null=True, blank=True)
     # extension_status = models.CharField(
@@ -467,12 +469,32 @@ class ProductProcess(models.Model):
         return f"{self.process.name} for Request #{self.request.RequestID}"
 
     def mark_completed_if_ready(self):
-        if self.completed_quota >= self.request_product.quantity:
+        """Check if task is complete based on total quota (regular + OT)"""
+        total_completed = (self.completed_quota or 0) + (self.ot_quota or 0)
+        required_quota = self.request_product.quantity if self.request_product else 0
+        
+        if total_completed >= required_quota:
             if not self.is_completed:
                 self.is_completed = True
                 self.save(update_fields=['is_completed', 'updated_at'])
             return True
         return False
+
+    def can_enable_ot_today(self):
+        """Check if OT can be enabled today (once per day rule)"""
+        from django.utils import timezone
+        today = timezone.now().date()
+        
+        # If OT has never been enabled or it was enabled on a different day, allow it
+        if self.ot_enabled_date is None:
+            return True
+        
+        # If OT was enabled today, don't allow it again
+        if self.ot_enabled_date == today:
+            return False
+        
+        # If OT was enabled on a previous day, allow it again today
+        return True
 
     def progress_summary(self):
         request_qty = self.request_product.quantity if self.request_product else 0
@@ -520,6 +542,7 @@ class AuditLog(models.Model):
         ("logout", "Logout"),
         ("create", "Create"),
         ("update", "Update"),
+        ("edit", "Edited"),
         ("delete", "Delete"),
         ("archive", "Archive"),
         ("restore", "Restore"),

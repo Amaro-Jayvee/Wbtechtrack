@@ -127,6 +127,31 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
       setTaskData(data);
       setRequestProductId(data.request_product_id);
       
+      // If task is completed, prepare data for completed view summary with proper defect separation
+      if (data.is_completed) {
+        const regularDefectCount = (data.defect_logs && data.defect_logs.length > 0) 
+          ? data.defect_logs.reduce((sum, log) => sum + (log.defect_count || 0), 0)
+          : 0;
+        
+        const otDefectCount = (data.ot_defect_logs && data.ot_defect_logs.length > 0)
+          ? data.ot_defect_logs.reduce((sum, log) => sum + (log.defect_count || 0), 0)
+          : 0;
+        
+        const regularDefectTypes = (data.defect_logs && data.defect_logs.length > 0)
+          ? [...new Set(data.defect_logs.map(log => log.defect_type))]
+          : [];
+        
+        const otDefectTypes = (data.ot_defect_logs && data.ot_defect_logs.length > 0)
+          ? [...new Set(data.ot_defect_logs.map(log => log.defect_type))]
+          : [];
+        
+        // Update the data object with calculated defect info for completed view
+        data.defect_count = regularDefectCount;
+        data.ot_defect_count = otDefectCount;
+        data.defect_types = regularDefectTypes;
+        data.ot_defect_types = otDefectTypes;
+      }
+      
       // Check if task has already been saved (persistent across sessions)
       if (data.quota_updated_at && data.quota_updated_by) {
         setHasAlreadyBeenSaved(true);
@@ -309,6 +334,16 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
   // OT Modal Handler
   const handleOTCheckboxClick = (e) => {
     e.preventDefault();
+    
+    // Check if regular quota has been saved first
+    if (!hasAlreadyBeenSaved || formData.completed_quota === 0) {
+      setErrorMessage(
+        "You must save regular quota first before enabling OT.\n\nPlease enter and save the regular completed quota, then you can enable OT."
+      );
+      setShowErrorModal(true);
+      return;
+    }
+    
     setOtCheckboxPending(!otCheckboxPending);
     if (!otCheckboxPending) {
       // Checkbox being enabled  
@@ -504,6 +539,12 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
         
         // Refresh notifications
         window.dispatchEvent(new Event('refreshNotifications'));
+        
+        // CRITICAL: Call onSave callback to notify parent to refresh task list
+        if (onSave) {
+          console.log("📢 Calling onSave callback to refresh parent component");
+          onSave();
+        }
       } else {
         const errorMsg = responseData.detail || responseData.error || JSON.stringify(responseData);
         console.error(`❌ Save failed:`, errorMsg);
@@ -1351,7 +1392,10 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
   // For PST-01, use overall_progress from backend; otherwise calculate based on current step
   let progress = 0;
   
-  if (taskData?.is_pst_01 && taskData?.overall_progress !== undefined) {
+  // CRITICAL: If task is marked as completed, show 100%
+  if (taskData?.is_completed) {
+    progress = 100;
+  } else if (taskData?.is_pst_01 && taskData?.overall_progress !== undefined) {
     // PST-01: use overall progress calculated by backend
     progress = taskData.overall_progress;
   } else if (taskData?.overall_progress !== undefined) {
@@ -1359,12 +1403,15 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
     progress = taskData.overall_progress;
   } else {
     // Fallback: calculate based on current step position
+    // CRITICAL: Include both regular quota AND OT quota when calculating progress
     const totalQty = taskData?.total_quota || 1;
-    const completed = formData.completed_quota || 0;
+    const regularCompleted = formData.completed_quota || 0;
+    const otCompleted = formData.ot_quota || 0;
+    const totalCompleted = regularCompleted + otCompleted;
     const currentStep = taskData?.step_order || 1;
     const totalSteps = taskData?.total_steps || 1;
     const maxProgressForStep = (currentStep / totalSteps) * 100;
-    const progressInStep = Math.min((completed / totalQty) * maxProgressForStep, maxProgressForStep);
+    const progressInStep = Math.min((totalCompleted / totalQty) * maxProgressForStep, maxProgressForStep);
     progress = Math.round(progressInStep);
   }
 
@@ -1549,6 +1596,10 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
                           max={taskData.total_quota - (taskData.completed_quota || 0)}
                           placeholder="0"
                           style={{ textAlign: "center" }}
+                          disabled={hasAlreadyBeenSaved}
+                          title={hasAlreadyBeenSaved ? "Quantity already saved. Use Edit Quantity button to modify." : ""}
+                          disabled={hasAlreadyBeenSaved}
+                          title={hasAlreadyBeenSaved ? "Quantity already saved. Use Edit button below to modify." : ""}
                         />
                       </div>
                       <span style={{ color: "#666" }}>=</span>
@@ -1588,6 +1639,8 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
                         onChange={(e) => updateDefectLog(index, 'defect_type', e.target.value)}
                         className="input-text"
                         style={{ cursor: "pointer" }}
+                        disabled={hasAlreadyBeenSaved}
+                        title={hasAlreadyBeenSaved ? "Defects already saved. Use Edit button to modify." : ""}
                       >
                         <option value="">Select defect type</option>
                         <option value="dimension">Dimension problem</option>
@@ -1606,6 +1659,8 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
                           className="input-text"
                           min="0"
                           placeholder="Count"
+                          disabled={hasAlreadyBeenSaved}
+                          title={hasAlreadyBeenSaved ? "Defects already saved. Use Edit button to modify." : ""}
                         />
                       </div>
                     )}
@@ -1613,13 +1668,14 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
                     {formData.defectLogs.length > 1 && (
                       <button
                         onClick={() => removeDefectLog(index)}
+                        disabled={hasAlreadyBeenSaved}
                         style={{
-                          background: 'transparent',
-                          color: '#E01818',
+                          background: hasAlreadyBeenSaved ? '#ddd' : 'transparent',
+                          color: hasAlreadyBeenSaved ? '#999' : '#E01818',
                           border: 'none',
                           padding: '8px 10px',
                           borderRadius: '4px',
-                          cursor: 'pointer',
+                          cursor: hasAlreadyBeenSaved ? 'not-allowed' : 'pointer',
                           marginLeft: '8px',
                           minWidth: 'auto',
                           height: '38px',
@@ -1633,16 +1689,20 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
                           alignSelf: 'flex-end'
                         }}
                         onMouseEnter={(e) => {
-                          e.target.style.backgroundColor = 'rgba(224, 24, 24, 0.1)';
-                          e.target.style.color = '#A01010';
-                          e.target.style.transform = 'scale(1.15)';
+                          if (!hasAlreadyBeenSaved) {
+                            e.target.style.backgroundColor = 'rgba(224, 24, 24, 0.1)';
+                            e.target.style.color = '#A01010';
+                            e.target.style.transform = 'scale(1.15)';
+                          }
                         }}
                         onMouseLeave={(e) => {
-                          e.target.style.backgroundColor = 'transparent';
-                          e.target.style.color = '#E01818';
-                          e.target.style.transform = 'scale(1)';
+                          if (!hasAlreadyBeenSaved) {
+                            e.target.style.backgroundColor = 'transparent';
+                            e.target.style.color = '#E01818';
+                            e.target.style.transform = 'scale(1)';
+                          }
                         }}
-                        title="Remove defect"
+                        title={hasAlreadyBeenSaved ? "Defects saved. Use Edit button to modify." : "Remove defect"}
                       >
                         ×
                       </button>
@@ -1654,16 +1714,19 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
                 {formData.defectLogs[0]?.defect_type && (
                   <button
                     onClick={addDefectLog}
+                    disabled={hasAlreadyBeenSaved}
                     style={{
-                      background: '#007bff',
+                      background: hasAlreadyBeenSaved ? '#ccc' : '#007bff',
                       color: 'white',
                       border: 'none',
                       padding: '8px 16px',
                       borderRadius: '4px',
-                      cursor: 'pointer',
+                      cursor: hasAlreadyBeenSaved ? 'not-allowed' : 'pointer',
                       marginTop: '10px',
-                      fontSize: '14px'
+                      fontSize: '14px',
+                      opacity: hasAlreadyBeenSaved ? 0.6 : 1
                     }}
+                    title={hasAlreadyBeenSaved ? "Defects saved. Use Edit button to add more." : ""}
                   >
                     + Add Defect Type
                   </button>
@@ -1944,56 +2007,55 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
 
         {/* Footer */}
         <div style={{ display: 'flex', padding: '12px 20px', borderTop: '1px solid #e0e0e0', alignItems: 'center', flexShrink: 0, justifyContent: 'space-between' }}>
-          {/* Left Side: Log History */}
-          <button 
-            className="btn-icon" 
-            title="View update history"
-            onClick={() => setShowHistoryModal(true)}
-            style={{ color: "white", backgroundColor: "#1D6AB7", border: "1px solid #155a9c", padding: "0.4rem 0.8rem", borderRadius: "4px", cursor: "pointer", fontSize: "0.95rem", fontWeight: "500", transition: "all 0.2s ease" }}
-            onMouseEnter={(e) => {
-              e.target.style.backgroundColor = "#155a9c";
-              e.target.style.borderColor = "#104a82";
-            }}
-            onMouseLeave={(e) => {
-              e.target.style.backgroundColor = "#1D6AB7";
-              e.target.style.borderColor = "#155a9c";
-            }}
-          >
-            <i className="bi bi-clock-history" style={{ marginRight: "6px" }}></i>
-            Log History
-          </button>
+          {/* Left Side: Log History & Edit */}
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <button 
+              className="btn-icon" 
+              title="View update history"
+              onClick={() => setShowHistoryModal(true)}
+              style={{ color: "white", backgroundColor: "#1D6AB7", border: "1px solid #155a9c", padding: "0.4rem 0.8rem", borderRadius: "4px", cursor: "pointer", fontSize: "0.95rem", fontWeight: "500", transition: "all 0.2s ease" }}
+              onMouseEnter={(e) => {
+                e.target.style.backgroundColor = "#155a9c";
+                e.target.style.borderColor = "#104a82";
+              }}
+              onMouseLeave={(e) => {
+                e.target.style.backgroundColor = "#1D6AB7";
+                e.target.style.borderColor = "#155a9c";
+              }}
+            >
+              <i className="bi bi-clock-history" style={{ marginRight: "6px" }}></i>
+              Log History
+            </button>
+            
+            {hasAlreadyBeenSaved && (
+              <button 
+                className="btn-icon" 
+                title="Edit the saved quantity and defects if entered incorrectly"
+                onClick={() => {
+                  setHasAlreadyBeenSaved(false);
+                  setFormData({
+                    ...formData,
+                    completed_quota: taskData.completed_quota || 0
+                  });
+                }}
+                style={{ color: "white", backgroundColor: "#ff9800", border: "1px solid #f57f17", padding: "0.4rem 0.8rem", borderRadius: "4px", cursor: "pointer", fontSize: "0.95rem", fontWeight: "500", transition: "all 0.2s ease" }}
+                onMouseEnter={(e) => {
+                  e.target.style.backgroundColor = "#f57f17";
+                  e.target.style.borderColor = "#e65100";
+                }}
+                onMouseLeave={(e) => {
+                  e.target.style.backgroundColor = "#ff9800";
+                  e.target.style.borderColor = "#f57f17";
+                }}
+              >
+                <i className="bi bi-pencil" style={{ marginRight: "6px" }}></i>
+                Edit
+              </button>
+            )}
+          </div>
           
           {/* Right Side: Action Buttons */}
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-          {taskData?.is_pst_01 ? (
-            // PST-01: Simple Next button without validation
-            <button 
-              className="btn-primary" 
-              onClick={handleNext}
-              style={{ padding: '0.5rem 1.5rem', fontSize: '15px', fontWeight: '600', margin: 0 }}
-              title="This is PST-01 (Withdrawal). Click Next to proceed to the next process."
-            >
-              <i className="bi bi-arrow-right me-2"></i>
-              Next Step
-            </button>
-          ) : (
-            // Other processes: Require quota completion
-            <button 
-              className="btn-primary" 
-              onClick={handleNext}
-              disabled={
-                formData.completed_quota < (taskData.total_quota || 0)
-              }
-              style={{ margin: 0 }}
-              title={
-                formData.completed_quota < (taskData.total_quota || 0)
-                  ? `Complete this step first: ${formData.completed_quota}/${taskData.total_quota}`
-                  : "Proceed to next step"
-              }
-            >
-              Next ({formData.completed_quota}/{taskData.total_quota || 0})
-            </button>
-          )}
           <button 
             className="btn-icon" 
             title="Cancel this product request"
@@ -2226,7 +2288,7 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
     {/* OT Confirmation Modal */}
     {showOTConfirmModal && (
       <div className="modal-overlay" onClick={cancelOT}>
-        <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "500px" }}>
+        <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "600px" }}>
           <div style={{
             padding: "20px",
             borderBottom: "2px solid #ff9800",
@@ -2236,7 +2298,7 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
             alignItems: "center"
           }}>
             <h3 style={{ margin: 0, color: "#f57f17", fontSize: "18px", fontWeight: "600" }}>
-              ⏱️ Overtime Confirmation
+              Enable OT for Today
             </h3>
             <button
               className="btn-close"
@@ -2254,34 +2316,40 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
             </button>
           </div>
 
-          <div style={{ padding: "25px" }}>
-            <div style={{ backgroundColor: "#fff3e0", padding: "16px", borderRadius: "6px", marginBottom: "20px", borderLeft: "4px solid #ff9800" }}>
-              <p style={{ margin: "0 0 12px 0", fontSize: "14px", color: "#333", fontWeight: "600" }}>
-                ⚠️ Important Notice
+          <div style={{ padding: "25px", overflowY: "auto", maxHeight: "calc(90vh - 180px)" }}>
+            <div style={{ backgroundColor: "#e3f2fd", padding: "16px", borderRadius: "6px", marginBottom: "20px", borderLeft: "4px solid #1976d2" }}>
+              <p style={{ margin: "0 0 12px 0", fontSize: "14px", color: "#1565c0", fontWeight: "600" }}>
+                Prerequisite: Regular Quota Must Be Saved
               </p>
-              <ul style={{ margin: "0", paddingLeft: "20px", fontSize: "13px", color: "#555", lineHeight: "1.8" }}>
-                <li>You are enabling <strong>Overtime (OT)</strong> tracking for this task</li>
-                <li>OT quota will be tracked separately from regular quota</li>
-                <li>OT defects will be reported differently for payroll and accounting</li>
-                <li><strong>✏️ Once enabled and saved, OT details cannot be changed</strong></li>
+              <p style={{ margin: "0", fontSize: "13px", color: "#1565c0", lineHeight: "1.6" }}>
+                Before enabling OT, you must first enter and save the regular completed quota for this task. OT is only for additional work beyond the regular quota.
+              </p>
+            </div>
+
+            <div style={{ backgroundColor: "#e8f5e9", padding: "16px", borderRadius: "6px", marginBottom: "20px", borderLeft: "4px solid #4caf50" }}>
+              <p style={{ margin: "0 0 12px 0", fontSize: "14px", color: "#2e7d32", fontWeight: "600" }}>
+                How Daily OT Works
+              </p>
+              <ul style={{ margin: "0", paddingLeft: "20px", fontSize: "13px", color: "#2e7d32", lineHeight: "1.8" }}>
+                <li>This enables OT tracking <strong>for TODAY ONLY</strong></li>
+                <li>OT quota is tracked separately from regular quota</li>
+                <li>OT defects reported differently for payroll and accounting</li>
+                <li><strong>Tomorrow you can enable OT again</strong> if the task continues</li>
+                <li>This is a <strong>recurring daily action</strong>, not permanent</li>
               </ul>
             </div>
 
-            <div style={{ backgroundColor: "#ffebee", padding: "16px", borderRadius: "6px", marginBottom: "20px", borderLeft: "4px solid #d32f2f" }}>
-              <p style={{ margin: "0", fontSize: "13px", color: "#c62828", lineHeight: "1.6", fontWeight: "600" }}>
-                🔒 ONE-TIME OT RULE: OT can only be added once per task. Please verify all OT details before confirming.
+            <div style={{ backgroundColor: "#fff3cd", padding: "16px", borderRadius: "6px", marginBottom: "20px", borderLeft: "4px solid #ffc107" }}>
+              <p style={{ margin: "0", fontSize: "13px", color: "#856404", lineHeight: "1.6", fontWeight: "600" }}>
+                DAILY LIMIT: You can only enable OT <strong>ONCE per day</strong> for this task. If you enable it now, you must wait until tomorrow to enable it again. Please verify all OT details before confirming.
               </p>
             </div>
 
             <div style={{ backgroundColor: "#e3f2fd", padding: "16px", borderRadius: "6px", marginBottom: "20px", borderLeft: "4px solid #1D6AB7" }}>
               <p style={{ margin: "0", fontSize: "13px", color: "#1565c0", lineHeight: "1.6" }}>
-                <strong>📊 Complete Record includes:</strong> Regular Quota + OT Quota + OT Defects
+                <strong>Complete Record includes:</strong> Regular Quota + OT Quota + OT Defects
               </p>
             </div>
-
-            <p style={{ color: "#666", fontSize: "14px", lineHeight: "1.6", margin: "0" }}>
-              Are you sure you want to enable Overtime tracking for this task? Different rates and reporting rules will apply, and this action cannot be reversed.
-            </p>
           </div>
 
           <div style={{ padding: "15px 25px", display: "flex", gap: "10px", justifyContent: "flex-end", borderTop: "1px solid #e0e0e0" }}>
