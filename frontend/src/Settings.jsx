@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import SidebarLayout from "./SidebarLayout";
 import ActivityLogsPanel from "./ActivityLogsPanel";
 import TaskUpdateLogsPanel from "./TaskUpdateLogsPanel";
+import ProductsStepsSettings from "./ProductsStepsSettings";
 import "./Dashboard.css";
 
 function Settings() {
@@ -420,6 +421,16 @@ function Settings() {
       });
     }
 
+    // Show Products Management for admin and production managers
+    if (userProfile && (userProfile.role === "admin" || userProfile.role === "production_manager")) {
+      items.push({
+        category: "Product Management",
+        items: [
+          { id: "products-steps", label: "Products & Steps" },
+        ],
+      });
+    }
+
     if (userProfile && userProfile.role === "admin") {
       items.push({
         category: "Appearance",
@@ -693,6 +704,13 @@ function Settings() {
                 className="settings-input"
               />
             </div>
+          </div>
+        );
+
+      case "products-steps":
+        return (
+          <div className="settings-detail">
+            <ProductsStepsSettings />
           </div>
         );
 

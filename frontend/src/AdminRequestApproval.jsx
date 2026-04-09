@@ -78,16 +78,14 @@ function AdminRequestApproval() {
           </div>
 
           <!-- REQUEST DETAILS -->
-          <div style="margin-bottom: 30px; font-size: 11px; display: table; width: 100%;">
-            <div style="display: table-row; margin-bottom: 15px;">
-              <div style="display: table-cell; width: 50%; padding-bottom: 12px;">
-                <div style="font-weight: bold; color: #666;">Customer Name</div>
-                <div style="font-size: 12px;">${data?.requester || 'N/A'}</div>
-              </div>
-              <div style="display: table-cell; width: 50%; padding-bottom: 12px;">
-                <div style="font-weight: bold; color: #666;">PO Number</div>
-                <div style="font-size: 14px; font-weight: bold; color: #1d6ab7;">PO-${data?.requestId || 'N/A'}</div>
-              </div>
+          <div style="margin-bottom: 30px; font-size: 11px; display: flex; justify-content: flex-start; gap: 40px; align-items: flex-start;">
+            <div style="flex: 1;">
+              <div style="font-weight: bold; color: #666; margin-bottom: 6px; line-height: 1.2;">Customer Name</div>
+              <div style="font-size: 12px;">${data?.requester || 'N/A'}</div>
+            </div>
+            <div style="flex: 1; text-align: center;">
+              <div style="font-weight: bold; color: #666; margin-bottom: 6px; line-height: 1.2;">PO Number</div>
+              <div style="font-size: 14px; font-weight: bold; color: #1d6ab7;">PO-${data?.requestId || 'N/A'}</div>
             </div>
           </div>
 
@@ -471,6 +469,9 @@ function AdminRequestApproval() {
     setCancelProductLoading(true);
     let cancelSucceeded = false;
     try {
+      // Get today's date as the issuance_date (when the PO would have been issued if it wasn't cancelled)
+      const today = new Date().toISOString().split('T')[0];
+      
       const response = await fetch("http://localhost:8000/app/cancelled-draft-products/", {
         method: "POST",
         credentials: "include",
@@ -481,6 +482,8 @@ function AdminRequestApproval() {
           product_name: product.product_name,
           quantity: product.quantity,
           deadline: formData.deadline,
+          issuance_no: `DRAFT-${new Date().getTime()}`, // Generate unique issuance number
+          issuance_date: today,
           cancellation_reason: "Cancelled before issuance",
         }),
       });
@@ -688,17 +691,23 @@ function AdminRequestApproval() {
         position: "relative",
         overflow: "visible"
       }}>
-        {/* Alert Message */}
+        {/* Alert Message - Toast Notification (Top Right) */}
         {createRequestMessage && (
           <div 
-            className={`alert ${createRequestMessage.includes("✓") ? "alert-success" : "alert-danger"} mb-4`} 
-            role="alert"
             style={{
+              position: "fixed",
+              top: "20px",
+              right: "20px",
+              padding: "14px 20px",
               borderRadius: "8px",
-              border: "none",
-              padding: "1rem 1.25rem",
-              fontSize: "0.95rem",
-              animation: "slideIn 0.3s ease-out",
+              background: createRequestMessage.includes("✓") ? "#10b981" : "#ef4444",
+              color: "white",
+              fontSize: "14px",
+              fontWeight: "500",
+              boxShadow: "0 4px 12px rgba(0, 0, 0, 0.15)",
+              zIndex: 10000,
+              animation: "slideInRight 0.3s ease-out",
+              maxWidth: "400px",
             }}
           >
             {createRequestMessage}
@@ -1282,7 +1291,7 @@ function AdminRequestApproval() {
                   padding: "0.85rem 2.5rem",
                   fontWeight: "700",
                   fontSize: "0.95rem",
-                  background: "linear-gradient(135deg, #22c55e 0%, #16a34a 100%)",
+                  background: "#22c55e",
                   color: "#ffffff",
                   border: "1px solid rgba(240, 255, 244, 0.8)",
                   borderRadius: "10px",
@@ -1471,8 +1480,8 @@ function AdminRequestApproval() {
               style={{
                 padding: "0.75rem 2.5rem",
                 background: createRequestLoading || addedProducts.length === 0 || !formData.requester_id || !formData.deadline || !productsCompleted
-                  ? "linear-gradient(135deg, #d1d5db 0%, #9ca3af 100%)" 
-                  : "linear-gradient(135deg, #10b981 0%, #059669 100%)",
+                  ? "#d1d5db" 
+                  : "#10b981",
                 color: "white",
                 border: "none",
                 borderRadius: "8px",
@@ -1482,21 +1491,17 @@ function AdminRequestApproval() {
                 display: "flex",
                 alignItems: "center",
                 gap: "0.5rem",
-                boxShadow: createRequestLoading || addedProducts.length === 0 || !formData.requester_id || !formData.deadline || !productsCompleted
-                  ? "none" 
-                  : "0 6px 20px rgba(16, 185, 129, 0.3)",
-                transition: "all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)",
+                boxShadow: "none",
+                transition: "all 0.2s ease",
                 opacity: createRequestLoading || addedProducts.length === 0 || !formData.requester_id || !formData.deadline || !productsCompleted ? 0.7 : 1,
               }}
               onMouseEnter={(e) => {
                 if (!(createRequestLoading || addedProducts.length === 0 || !formData.requester_id || !formData.deadline || !productsCompleted)) {
-                  e.currentTarget.style.boxShadow = "0 10px 30px rgba(16, 185, 129, 0.4)";
-                  e.currentTarget.style.transform = "translateY(-2px)";
+                  e.currentTarget.style.backgroundColor = "#059669";
                 }
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.boxShadow = "0 6px 20px rgba(16, 185, 129, 0.3)";
-                e.currentTarget.style.transform = "translateY(0)";
+                e.currentTarget.style.backgroundColor = "#10b981";
               }}
             >
               {createRequestLoading ? (
@@ -1633,7 +1638,7 @@ function AdminRequestApproval() {
           >
             {/* Header with blue background */}
             <div style={{
-              background: "linear-gradient(135deg, #1d6ab7 0%, #2a7fd7 100%)",
+              background: "#1d6ab7",
               padding: "1.25rem 1.5rem",
               color: "#ffffff",
             }}>
@@ -1705,7 +1710,7 @@ function AdminRequestApproval() {
                 onClick={proceedToDeadlineSelection}
                 style={{
                   border: "none",
-                  background: "linear-gradient(135deg, #1d6ab7 0%, #2a7fd7 100%)",
+                  background: "#1d6ab7",
                   color: "#fff",
                   padding: "0.65rem 1.35rem",
                   borderRadius: "8px",
@@ -1859,6 +1864,16 @@ function AdminRequestApproval() {
                 transform: translateY(0) scale(1);
               }
             }
+            @keyframes slideInRight {
+              from {
+                opacity: 0;
+                transform: translateX(400px);
+              }
+              to {
+                opacity: 1;
+                transform: translateX(0);
+              }
+            }
             @keyframes pulse {
               0%, 100% {
                 transform: scale(1);
@@ -1896,7 +1911,7 @@ function AdminRequestApproval() {
                   height: "48px",
                   margin: "0 auto",
                   borderRadius: "50%",
-                  background: "linear-gradient(135deg, #10b981 0%, #059669 100%)",
+                  background: "#10b981",
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
@@ -2000,7 +2015,7 @@ function AdminRequestApproval() {
                 }}
                 style={{
                   padding: "0.65rem 1.75rem",
-                  background: "linear-gradient(135deg, #10b981 0%, #059669 100%)",
+                  background: "#10b981",
                   color: "white",
                   border: "none",
                   borderRadius: "6px",
@@ -2058,16 +2073,14 @@ function AdminRequestApproval() {
                       </div>
 
                       {/* REQUEST DETAILS */}
-                      <div style={{ marginBottom: "30px", fontSize: "11px", display: "table", width: "100%" }}>
-                        <div style={{ display: "table-row", marginBottom: "15px" }}>
-                          <div style={{ display: "table-cell", width: "50%", paddingBottom: "12px" }}>
-                            <div style={{ fontWeight: "bold", color: "#666" }}>Customer Name</div>
-                            <div style={{ fontSize: "12px" }}>{successModalData?.requester}</div>
-                          </div>
-                          <div style={{ display: "table-cell", width: "50%", paddingBottom: "12px" }}>
-                            <div style={{ fontWeight: "bold", color: "#666" }}>PO Number</div>
-                            <div style={{ fontSize: "14px", fontWeight: "bold", color: "#1d6ab7" }}>PO-{successModalData?.requestId}</div>
-                          </div>
+                      <div style={{ marginBottom: "30px", fontSize: "11px", display: "flex", justifyContent: "flex-start", gap: "40px", alignItems: "flex-start" }}>
+                        <div style={{ flex: "1" }}>
+                          <div style={{ fontWeight: "bold", color: "#666", marginBottom: "6px", lineHeight: "1.2" }}>Customer Name</div>
+                          <div style={{ fontSize: "12px" }}>{successModalData?.requester}</div>
+                        </div>
+                        <div style={{ flex: "1", textAlign: "center" }}>
+                          <div style={{ fontWeight: "bold", color: "#666", marginBottom: "6px", lineHeight: "1.2" }}>PO Number</div>
+                          <div style={{ fontSize: "14px", fontWeight: "bold", color: "#1d6ab7" }}>PO-{successModalData?.requestId}</div>
                         </div>
                       </div>
 

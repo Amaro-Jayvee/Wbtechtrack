@@ -226,103 +226,106 @@ function CancelledRequests() {
           <div className="loading">Loading cancelled requests...</div>
         ) : sortedRequests.length > 0 ? (
           <>
-            <table className="data-table" style={{ tableLayout: "fixed", width: "100%" }}>
-              <thead>
-                <tr>
-                  <th style={{ width: "120px", textAlign: "left" }}>Issuance No.</th>
-                  <th style={{ width: "210px", textAlign: "left" }}>Product Name</th>
-                  <th style={{ width: "90px", textAlign: "center" }}>Quantity</th>
-                  <th style={{ width: "120px", textAlign: "center" }}>Progress @ Cancel</th>
-                  <th style={{ width: "95px", textAlign: "left" }}>Deadline</th>
-                  <th style={{ width: "105px", textAlign: "left" }}>Cancelled By</th>
-                  <th style={{ width: "210px", textAlign: "left" }}>Reason</th>
-                  <th style={{ width: "75px", textAlign: "center" }}>Log</th>
-                  <th style={{ width: "170px", textAlign: "left" }}>Last Update</th>
-                </tr>
-              </thead>
-              <tbody>
-                {sortedRequests
-                  .slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
-                  .map((item) => (
-                  <tr key={item.id}>
-                    <td style={{ whiteSpace: "nowrap", fontWeight: "600", verticalAlign: "middle" }}>
-                      {formatIssuanceLabel(item)}
-                    </td>
-                    <td style={{ verticalAlign: "middle" }} title={item.product_name || "N/A"}>
-                      <div style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                        {item.product_name || "N/A"}
-                      </div>
-                    </td>
-                    <td style={{ textAlign: "center", verticalAlign: "middle" }}>{item.quantity || 0}</td>
-                    <td style={{ textAlign: "center", verticalAlign: "middle", fontSize: "13px" }}>
-                      {item.cancellation_progress ? (
-                        <div>
-                          <div style={{ fontWeight: "600", color: "#1D6AB7" }}>
-                            {item.cancellation_progress.completed_quota || 0} / {item.cancellation_progress.total_quota || 0}
-                          </div>
-                          <div style={{ fontSize: "11px", color: "#666" }}>
-                            {item.cancellation_progress.total_quota > 0 
-                              ? ((item.cancellation_progress.completed_quota / item.cancellation_progress.total_quota) * 100).toFixed(1)
-                              : 0}%
-                          </div>
-                          {item.cancellation_progress.defects > 0 && (
-                            <div style={{ fontSize: "11px", color: "#d32f2f", marginTop: "4px" }}>
-                              Defects: {item.cancellation_progress.defects}
-                            </div>
-                          )}
-                        </div>
-                      ) : (
-                        <span style={{ color: "#999" }}>—</span>
-                      )}
-                    </td>
-                    <td style={{ whiteSpace: "nowrap", verticalAlign: "middle" }}>
-                      {item.deadline
-                        ? new Date(item.deadline).toLocaleDateString('en-US', {
-                            year: 'numeric',
-                            month: '2-digit',
-                            day: '2-digit'
-                          })
-                        : "N/A"}
-                    </td>
-                    <td style={{ verticalAlign: "middle" }}>{item.cancelled_by_name || "—"}</td>
-                    <td style={{ verticalAlign: "middle" }}>
-                      <div 
-                        style={{ 
-                          maxWidth: "100%", 
-                          overflow: "hidden", 
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap"
-                        }} 
-                        title={item.cancellation_reason}
-                      >
-                        {item.cancellation_reason || "—"}
-                      </div>
-                    </td>
-                    <td style={{ textAlign: "center", verticalAlign: "middle" }}>
-                      <button
-                        type="button"
-                        onClick={() => openLogModal(item)}
-                        style={{
-                          border: "1px solid #0d6efd",
-                          color: "#0d6efd",
-                          backgroundColor: "#fff",
-                          borderRadius: "4px",
-                          fontSize: "12px",
-                          fontWeight: "600",
-                          padding: "3px 8px",
-                          cursor: "pointer",
-                        }}
-                      >
-                        View
-                      </button>
-                    </td>
-                    <td style={{ whiteSpace: "nowrap", fontSize: "0.85rem", color: "#666", verticalAlign: "middle" }}>
-                      {formatDateTime(item.updated_at)}
-                    </td>
+            <div style={{ overflowX: "auto", width: "100%", marginBottom: "20px" }}>
+              <table className="data-table" style={{ tableLayout: "auto", width: "100%", minWidth: "1100px" }}>
+                <thead>
+                  <tr>
+                    <th style={{ width: "10%", minWidth: "100px", textAlign: "left" }}>Issuance No.</th>
+                    <th style={{ width: "18%", minWidth: "180px", textAlign: "left" }}>Product Name</th>
+                    <th style={{ width: "7%", minWidth: "70px", textAlign: "center" }}>Quantity</th>
+                    <th style={{ width: "12%", minWidth: "100px", textAlign: "center" }}>Progress @ Cancel</th>
+                    <th style={{ width: "9%", minWidth: "85px", textAlign: "left" }}>Deadline</th>
+                    <th style={{ width: "10%", minWidth: "90px", textAlign: "left" }}>Cancelled By</th>
+                    <th style={{ width: "18%", minWidth: "150px", textAlign: "left" }}>Reason</th>
+                    <th style={{ width: "6%", minWidth: "65px", textAlign: "center" }}>Log</th>
+                    <th style={{ width: "10%", minWidth: "120px", textAlign: "left" }}>Last Update</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {sortedRequests
+                    .slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
+                    .map((item) => (
+                    <tr key={item.id}>
+                      <td style={{ whiteSpace: "nowrap", fontWeight: "600", verticalAlign: "middle" }}>
+                        {formatIssuanceLabel(item)}
+                      </td>
+                      <td style={{ verticalAlign: "middle" }} title={item.product_name || "N/A"}>
+                        <div style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                          {item.product_name || "N/A"}
+                        </div>
+                      </td>
+                      <td style={{ textAlign: "center", verticalAlign: "middle" }}>{item.quantity || 0}</td>
+                      <td style={{ textAlign: "center", verticalAlign: "middle", fontSize: "13px" }}>
+                        {item.cancellation_progress ? (
+                          <div>
+                            <div style={{ fontWeight: "600", color: "#1D6AB7" }}>
+                              {item.cancellation_progress.completed_quota || 0} / {item.cancellation_progress.total_quota || 0}
+                            </div>
+                            <div style={{ fontSize: "11px", color: "#666" }}>
+                              {item.cancellation_progress.total_quota > 0 
+                                ? ((item.cancellation_progress.completed_quota / item.cancellation_progress.total_quota) * 100).toFixed(1)
+                                : 0}%
+                            </div>
+                            {item.cancellation_progress.defects > 0 && (
+                              <div style={{ fontSize: "11px", color: "#d32f2f", marginTop: "4px" }}>
+                                Defects: {item.cancellation_progress.defects}
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <span style={{ color: "#999" }}>—</span>
+                        )}
+                      </td>
+                      <td style={{ whiteSpace: "nowrap", verticalAlign: "middle" }}>
+                        {item.deadline
+                          ? new Date(item.deadline).toLocaleDateString('en-US', {
+                              year: 'numeric',
+                              month: '2-digit',
+                              day: '2-digit'
+                            })
+                          : "N/A"}
+                      </td>
+                      <td style={{ verticalAlign: "middle" }}>{item.cancelled_by_name || "—"}</td>
+                      <td style={{ verticalAlign: "middle" }}>
+                        <div 
+                          style={{ 
+                            maxWidth: "100%", 
+                            overflow: "hidden", 
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap"
+                          }} 
+                          title={item.cancellation_reason}
+                        >
+                          {item.cancellation_reason || "—"}
+                        </div>
+                      </td>
+                      <td style={{ textAlign: "center", verticalAlign: "middle" }}>
+                        <button
+                          type="button"
+                          onClick={() => openLogModal(item)}
+                          style={{
+                            border: "1px solid #0d6efd",
+                            color: "#0d6efd",
+                            backgroundColor: "#fff",
+                            borderRadius: "4px",
+                            fontSize: "12px",
+                            fontWeight: "600",
+                            padding: "3px 8px",
+                            cursor: "pointer",
+                            whiteSpace: "nowrap"
+                          }}
+                        >
+                          View
+                        </button>
+                      </td>
+                      <td style={{ whiteSpace: "nowrap", fontSize: "0.85rem", color: "#666", verticalAlign: "middle" }}>
+                        {formatDateTime(item.updated_at)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
 
             {/* Pagination Controls */}
             {Math.ceil(sortedRequests.length / itemsPerPage) > 1 && (

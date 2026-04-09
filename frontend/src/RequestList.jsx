@@ -237,9 +237,7 @@ function RequestList() {
         return;
       }
 
-      // Show success message
-      const successMessage = `✓ Project started! Created ${data.tasks_created} task(s)`;
-      showToast(successMessage, "success");
+      // Show success message (modal handles the feedback)
       
       // Hide the details modal
       setShowDetailsModal(false);

@@ -236,17 +236,14 @@ function SidebarLayout({ children }) {
     <div className="dashboard-container">
       {/* Sidebar */}
       <div className={`sidebar ${sidebarCollapsed ? "collapsed" : "expanded"}`}>
-        {/* Sidebar Header - Logo and Toggle */}
+        {/* Sidebar Header - Logo */}
         <div className="sidebar-header">
-          <div className="sidebar-logo">
-            <img src="/Group 1.png" alt="WB Technologies" className="sidebar-logo-img" />
-          </div>
           <button
-            className="sidebar-toggle-btn"
-            onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-            title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+            className="sidebar-logo"
+            onClick={() => navigate('/dashboard')}
+            title="Go to Dashboard"
           >
-            <i className={`bi ${sidebarCollapsed ? "bi-chevron-right" : "bi-chevron-left"}`}></i>
+            <img src="/Group 1.png" alt="WB Technologies" className="sidebar-logo-img" />
           </button>
         </div>
 
@@ -373,6 +370,17 @@ function SidebarLayout({ children }) {
               </Link>
             </>
           )}
+        </div>
+
+        {/* Sidebar Footer - Toggle Button */}
+        <div className="sidebar-footer">
+          <button
+            className="sidebar-toggle-btn"
+            onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+            title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+          >
+            <i className={`bi ${sidebarCollapsed ? "bi-chevron-right" : "bi-chevron-left"}`}></i>
+          </button>
         </div>
       </div>
 

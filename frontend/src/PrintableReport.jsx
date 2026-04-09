@@ -29,6 +29,7 @@ function PrintableReport() {
   const navigate = useNavigate();
   const [month, setMonth] = useState(new Date().getMonth() + 1);
   const [year, setYear] = useState(new Date().getFullYear());
+  const [includeArchived, setIncludeArchived] = useState(true);
   const [loading, setLoading] = useState(true);
   const [weeklyRows, setWeeklyRows] = useState([]);
   const [summaryData, setSummaryData] = useState({
@@ -47,7 +48,7 @@ function PrintableReport() {
 
   useEffect(() => {
     fetchReportData();
-  }, [month, year]);
+  }, [month, year, includeArchived]);
 
   const isWithinSelectedMonth = (dateText) => {
     if (!dateText) return false;
@@ -64,7 +65,7 @@ function PrintableReport() {
   const fetchReportData = async () => {
     setLoading(true);
     try {
-      const params = `?month=${month}&year=${year}&include_archived=false`;
+      const params = `?month=${month}&year=${year}&include_archived=${includeArchived}`;
 
       const [barResponse, moversResponse, inProgressResponse, cancelledResponse] = await Promise.all([
         fetch(`http://localhost:8000/app/reports/bar-chart/${params}`, {
@@ -75,7 +76,7 @@ function PrintableReport() {
           method: "GET",
           credentials: "include",
         }),
-        fetch("http://localhost:8000/app/product/?include_completed=false&include_archived=false", {
+        fetch(`http://localhost:8000/app/product/?include_completed=false&include_archived=${includeArchived}`, {
           method: "GET",
           credentials: "include",
         }),
@@ -89,6 +90,9 @@ function PrintableReport() {
       let totalDefects = 0;
       let filteredInProgressRows = [];
       let filteredCancelledRows = [];
+      let otTaskCount = 0;
+      let otTotalQuota = 0;
+      let otTotalDefects = 0;
 
       if (barResponse.ok) {
         const barData = await barResponse.json();
@@ -141,10 +145,6 @@ function PrintableReport() {
       if (inProgressResponse.ok) {
         const stepRows = await inProgressResponse.json();
         const grouped = new Map();
-
-        let otTaskCount = 0;
-        let otTotalQuota = 0;
-        let otTotalDefects = 0;
 
         (Array.isArray(stepRows) ? stepRows : []).forEach((step) => {
           const rpId = step.request_product_id || step.request_product || `${step.request_id || "no-request"}-${step.product_name || "no-product"}`;
@@ -337,6 +337,19 @@ function PrintableReport() {
                 );
               })}
             </select>
+          </div>
+
+          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <input 
+              type="checkbox" 
+              id="includeArchived"
+              checked={includeArchived} 
+              onChange={(e) => setIncludeArchived(e.target.checked)}
+              style={{ cursor: "pointer" }}
+            />
+            <label htmlFor="includeArchived" style={{ fontWeight: "bold", fontSize: "14px", cursor: "pointer" }}>
+              Include Archived
+            </label>
           </div>
 
           <button 

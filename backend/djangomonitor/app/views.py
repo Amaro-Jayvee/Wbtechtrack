@@ -19,7 +19,7 @@ from django.contrib.auth.models import User
 from django.contrib.auth import views as auth_views
 from django.contrib.auth.decorators import login_required
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import Q, Sum
 # from .permissions import manager_or_admin_required
 # from django.contrib.auth.views import (
 #     PasswordResetView,
@@ -1542,36 +1542,37 @@ def _auto_start_project_tasks(req, requesting_user):
                         'quantity': request_product.quantity
                     })
             else:
-                # Product has no templates - create a generic fallback task
+                # Product has no templates - create minimum 2 fallback tasks (Cutting + Assembly)
                 try:
-                    # Try to get the first available ProcessName as fallback
-                    fallback_process = ProcessName.objects.first()
+                    # Get the first 2 available ProcessNames as fallback (minimum 2 steps required)
+                    fallback_processes = ProcessName.objects.all()[:2]
                     
-                    if fallback_process:
-                        # Extract process number and name from the combined ProcessName.name
-                        process_num, process_name_text = _extract_process_details(fallback_process.name)
-                        
-                        task = ProductProcess.objects.create(
-                            request_product=request_product,
-                            process=fallback_process,
-                            process_number=process_num,
-                            process_name=process_name_text,
-                            step_order=1,
-                            completed_quota=0,
-                            is_completed=False
-                        )
-                        created_tasks.append({
-                            'id': task.id,
-                            'request_id': req.RequestID,
-                            'product': product.prodName,
-                            'process': f'{fallback_process.name} (Generated)',
-                            'quantity': request_product.quantity
-                        })
-                        print(f"[DEBUG] Created generic fallback task for product {product.prodName} using process: {fallback_process.name}")
+                    if fallback_processes.count() >= 2:
+                        # Create 2 fallback tasks minimum
+                        for step_num, fallback_process in enumerate(fallback_processes, start=1):
+                            process_num, process_name_text = _extract_process_details(fallback_process.name)
+                            
+                            task = ProductProcess.objects.create(
+                                request_product=request_product,
+                                process=fallback_process,
+                                process_number=process_num,
+                                process_name=process_name_text,
+                                step_order=step_num,
+                                completed_quota=0,
+                                is_completed=False
+                            )
+                            created_tasks.append({
+                                'id': task.id,
+                                'request_id': req.RequestID,
+                                'product': product.prodName,
+                                'process': f'{fallback_process.name} (Generated)',
+                                'quantity': request_product.quantity
+                            })
+                        print(f"[DEBUG] Created {fallback_processes.count()} fallback tasks for product {product.prodName}")
                     else:
-                        print(f"[DEBUG] Warning: No ProcessName found at all in database for fallback task for product {product.prodName}")
+                        print(f"[DEBUG] Warning: Not enough ProcessNames in database (need 2+) for fallback tasks for product {product.prodName}")
                 except Exception as e:
-                    print(f"[DEBUG] Warning: Failed to create fallback task for product {product.prodName}: {str(e)}")
+                    print(f"[DEBUG] Warning: Failed to create fallback tasks for product {product.prodName}: {str(e)}")
         
         # Create notifications only if tasks were created
         if created_tasks:
@@ -1833,25 +1834,17 @@ def get_tasks(request):
             all_steps = request_product.process_steps.order_by('step_order') if request_product else []
             
             # Calculate progress based on current step and completion
-            # Progress increases as we complete each step in the workflow
-            if quantity > 0 and all_steps.exists():
-                total_steps = all_steps.count()
+            # Progress = (completed_quota / total_quantity) * 100
+            # This is accurate and matches frontend calculation
+            if quantity > 0:
+                # Simple, accurate calculation: what % of total quota is complete
+                progress = int((task.completed_quota / quantity) * 100)
                 
-                # Count ONLY the steps that are BEFORE the current step and are completed
-                # This prevents counting future completed steps that don't belong in this task's progress
-                completed_steps_before = all_steps.filter(is_completed=True, step_order__lt=task.step_order).count()
-                
-                # Calculate base progress: % of completed steps before current
-                base_progress = (completed_steps_before / total_steps) * 100
-                
-                # Add progress from current task's actual work done
-                current_step_progress = (task.completed_quota / quantity) * (100 / total_steps)
-                progress = int(base_progress + current_step_progress)
-                    
-                # Cap at 100% only if actually complete, show real percentage otherwise
+                # Cap at 100%
                 progress = min(progress, 100)
                 
-                print(f"[DEBUG] Progress calculation - Task {task.id}: step {task.step_order}/{total_steps}, completed_quota={task.completed_quota}, qty={quantity}, completed_steps_before={completed_steps_before}, progress={progress}%")
+                total_steps = all_steps.count() if all_steps else 1
+                print(f"[DEBUG] Progress calculation - Task {task.id}: step {task.step_order}/{total_steps}, completed_quota={task.completed_quota}, qty={quantity}, progress={progress}%")
             else:
                 progress = 0
             
@@ -3294,6 +3287,7 @@ def get_bar_report_data(month, year, include_archived=False):
     import calendar
     from datetime import datetime, timedelta, time
     from django.utils import timezone
+    from django.db.models import Q
     
     # Calculate date range for the month
     first_day = datetime(year, month, 1)
@@ -3303,10 +3297,21 @@ def get_bar_report_data(month, year, include_archived=False):
     start_datetime = timezone.make_aware(datetime.combine(first_day, time.min))
     end_datetime = timezone.make_aware(datetime.combine(last_day, time.max))
     
-    # Get all ProductProcess for this month (not just final steps)
+    # Get all ProductProcess records where work happened this month:
+    # - Steps updated/worked on in this month
+    # - OR items completed this month
+    # - OR items archived (cancelled) this month
     base_qs = ProductProcess.objects.filter(
-        updated_at__gte=start_datetime,
-        updated_at__lte=end_datetime,
+        Q(
+            updated_at__gte=start_datetime,
+            updated_at__lte=end_datetime
+        ) | Q(
+            request_product__completed_at__gte=start_datetime,
+            request_product__completed_at__lte=end_datetime
+        ) | Q(
+            request_product__archived_at__gte=start_datetime,
+            request_product__archived_at__lte=end_datetime
+        ),
         request_product__isnull=False  # Only actual tasks, not templates
     )
 
@@ -3540,16 +3545,17 @@ def top_movers(request):
 
 def get_pie_report_data(month, year, include_archived=False):
     """
-    Get production percentages from ALL task steps
-    Shows: In Progress (units still being worked on), Completed (finished units), Rejected (defects)
-    Note: We track the CURRENT step's progress for each product, not sum across steps (to avoid double-counting)
+    Get production percentages Report
+    Shows: In Progress (units still being worked on), Completed (finished units), Cancelled (cancelled orders)
+    More accurate calculation based on total request_products, not just one step
     """
     from datetime import datetime, timedelta, time
     from django.utils import timezone
+    from django.db.models import Q
     
     active_qty = 0
     completed_qty = 0
-    rejected_qty = 0
+    cancelled_qty = 0
 
     # Calculate date range for the month
     first_day = datetime(year, month, 1)
@@ -3559,68 +3565,48 @@ def get_pie_report_data(month, year, include_archived=False):
     start_datetime = timezone.make_aware(datetime.combine(first_day, time.min))
     end_datetime = timezone.make_aware(datetime.combine(last_day, time.max))
     
-    # Get ALL ProductProcess records within the date range (not just final steps)
-    base_qs = ProductProcess.objects.filter(
-        updated_at__gte=start_datetime,
-        updated_at__lte=end_datetime,
-        request_product__isnull=False  # Only actual tasks, not templates
-    )
-
-    if not include_archived:
-        # Filter out archived items
-        base_qs = base_qs.filter(
+    # Get request products:
+    # - ALL active items (in progress) regardless of when created
+    # - Items completed this month
+    # - Items archived (cancelled) this month
+    base_qs = RequestProduct.objects.filter(
+        Q(
+            # ALL active items (in production) - ignore date for these
             archived_at__isnull=True,
-            request_product__archived_at__isnull=True
+            completed_at__isnull=True
+        ) | Q(
+            # Completed this month
+            completed_at__gte=start_datetime,
+            completed_at__lte=end_datetime
+        ) | Q(
+            # Archived (cancelled) this month
+            archived_at__gte=start_datetime,
+            archived_at__lte=end_datetime
         )
+    ).select_related('request')
 
-    # Track which request_products we've already counted (to avoid double-counting steps)
-    counted_request_products = set()
+    # Count by status
+    for rp in base_qs:
+        # Check if cancelled
+        if rp.archived_at is not None:
+            cancelled_qty += rp.quantity
+        # Check if completed
+        elif rp.completed_at is not None:
+            completed_qty += rp.quantity
+        # Otherwise it's active
+        else:
+            # Only count if not completed
+            remaining = rp.quantity
+            if remaining > 0:
+                active_qty += remaining
 
-    # Calculate quantities by completion status
-    for process in base_qs:
-        rp = process.request_product
-        if rp:
-            rp_id = rp.id
-            
-            # Skip if we already counted this request product
-            # We only count the CURRENT step's progress, not all steps
-            if rp_id in counted_request_products:
-                continue
-            
-            # Find the current step (first incomplete) for this request product
-            current_step = rp.process_steps.filter(
-                archived_at__isnull=True
-            ).order_by('step_order').exclude(is_completed=True).first()
-            
-            # If no incomplete step, use the last completed step
-            if not current_step:
-                current_step = rp.process_steps.filter(
-                    archived_at__isnull=True
-                ).order_by('-step_order').first()
-            
-            if current_step:
-                # For completed request products: count completed quota
-                if rp.process_steps.filter(archived_at__isnull=True).count() == rp.process_steps.filter(is_completed=True, archived_at__isnull=True).count():
-                    # All steps completed
-                    completed_qty += current_step.completed_quota
-                else:
-                    # Still in progress: add remaining quantity
-                    remaining = rp.quantity - current_step.completed_quota
-                    if remaining > 0:
-                        active_qty += remaining
-                
-                # All defects from current step
-                rejected_qty += current_step.defect_count
-                
-                counted_request_products.add(rp_id)
-
-    total = active_qty + completed_qty + rejected_qty
+    total = active_qty + completed_qty + cancelled_qty
     pct = lambda n: round((n / total) * 100) if total else 0
 
     return {
-        "labels": ["In Progress", "Completed", "Rejected"],
-        "raw": [active_qty, completed_qty, rejected_qty],
-        "percentages": [pct(active_qty), pct(completed_qty), pct(rejected_qty)],
+        "labels": ["In Progress", "Completed", "Cancelled"],
+        "raw": [active_qty, completed_qty, cancelled_qty],
+        "percentages": [pct(active_qty), pct(completed_qty), pct(cancelled_qty)],
         "total": total
     }
 
@@ -4873,7 +4859,7 @@ def customer_cancelled_requests_view(request):
                 
                 cancelled_requests.append({
                     'id': rp.id,
-                    'request_id': None,
+                    'request_id': rp.request.RequestID,
                     'product_name': rp.product.prodName,
                     'quantity': rp.quantity,
                     'deadline': deadline_value.strftime("%Y-%m-%d") if deadline_value else None,
@@ -4881,7 +4867,7 @@ def customer_cancelled_requests_view(request):
                     'cancellation_reason': rp.cancellation_reason if rp.cancellation_reason else 'Cancelled',
                     'cancellation_progress': rp.cancellation_progress or {},
                     'created_at': created_at_str,
-                    'updated_at': _format_cancelled_timestamp(rp.archived_at or rp.cancelled_at),
+                    'cancelled_at': rp.cancelled_at.isoformat() if rp.cancelled_at else (rp.archived_at.isoformat() if rp.archived_at else None),
                 })
             except Exception as item_err:
                 print(f"[ERROR] Processing cancelled product {rp.id}: {str(item_err)}")
@@ -4919,20 +4905,17 @@ def completed_requests_view(request):
         
         user_role = request.user.userprofile.role if hasattr(request.user, 'userprofile') else None
         
-        # Get all RequestProducts that have all their steps completed and are NOT cancelled/archived
-        completed_products = RequestProduct.objects.filter(
-            Q(completed_at__isnull=False) | Q(process_steps__is_completed=True),  # completed_at set OR all steps done
+        # Get all RequestProducts that are NOT archived and NOT cancelled
+        # We'll filter for completion in Python since the logic is complex
+        all_products = RequestProduct.objects.filter(
             archived_at__isnull=True,  # NOT archived
-            status__ne='cancelled'  # NOT cancelled
-        ).select_related('request', 'product').annotate(
-            completed_steps=Count('process_steps', filter=Q(process_steps__is_completed=True)),
-            total_steps=Count('process_steps')
-        ).distinct()
+            status__in=['active', 'completed']  # Not cancelled
+        ).select_related('request', 'product').distinct()
         
-        # Further filter: keep only those where ALL steps are completed
+        # Filter: keep only those where ALL steps are completed (is_completed=True)
         completed_products_list = []
-        for rp in completed_products:
-            all_steps = rp.process_steps.all()
+        for rp in all_products:
+            all_steps = rp.process_steps.filter(archived_at__isnull=True)
             if all_steps.count() > 0:
                 all_completed = all_steps.filter(is_completed=True).count() == all_steps.count()
                 if all_completed:
@@ -4953,7 +4936,7 @@ def completed_requests_view(request):
                     completed_at_str = completion_timestamp.isoformat()
                 else:
                     # Use the latest ProductProcess updated_at if completed_at not set yet
-                    latest_step = rp.process_steps.order_by('-updated_at').first()
+                    latest_step = rp.process_steps.filter(archived_at__isnull=True).order_by('-updated_at').first()
                     if latest_step and latest_step.updated_at:
                         completed_at_str = latest_step.updated_at.isoformat()
                     else:
@@ -5834,16 +5817,48 @@ def cancelled_requests_view(request):
                     f"Reason: {cancellation_reason}"
                 )
 
+                # Prepare cancellation_progress with defect logs
+                cancellation_progress = rp.cancellation_progress or {}
+                
+                # If defectLogs are not in cancellation_progress, try to fetch them from DefectLog model
+                if not cancellation_progress.get('defectLogs'):
+                    try:
+                        from app.models import DefectLog
+                        defect_logs = []
+                        # Query all defect logs for all process steps of this request product
+                        defects = DefectLog.objects.filter(
+                            product_process__request_product=rp
+                        ).values('defect_type').annotate(
+                            total_count=Sum('defect_count')
+                        )
+                        for defect in defects:
+                            defect_logs.append({
+                                'defect_type': defect['defect_type'],
+                                'defect_count': defect['total_count'] or 0
+                            })
+                        if defect_logs:
+                            cancellation_progress['defectLogs'] = defect_logs
+                    except Exception as defect_err:
+                        print(f"[DEBUG] Could not fetch defect logs for request product {rp.id}: {str(defect_err)}")
+                        # Don't fail the entire request if defect fetch fails
+
+                try:
+                    issuance_date_str = rp.request.created_date.strftime("%Y-%m-%d") if rp.request and hasattr(rp.request, 'created_date') and rp.request.created_date else None
+                except:
+                    issuance_date_str = None
+
                 cancelled_requests.append({
                     'id': f"request-product-{rp.id}",
                     'request_id': rp.request.RequestID,
+                    'issuance_no': rp.request.RequestID if rp.request else None,
+                    'issuance_date': issuance_date_str,
                     'product_name': rp.product.prodName,
                     'quantity': rp.quantity,
                     'deadline': deadline_value.strftime("%Y-%m-%d") if deadline_value else None,
                     'cancelled_by_name': cancelled_by_name,
                     'cancellation_reason': cancellation_reason,
                     'cancellation_log': cancellation_log,
-                    'cancellation_progress': rp.cancellation_progress or {},
+                    'cancellation_progress': cancellation_progress,
                     'updated_at': updated_timestamp,
                 })
             except Exception as item_err:
@@ -5857,15 +5872,21 @@ def cancelled_requests_view(request):
             cancelled_by_user = draft.cancelled_by
             cancelled_by_name = (cancelled_by_user.get_full_name() or cancelled_by_user.username) if cancelled_by_user else 'System'
             cancellation_reason = draft.cancellation_reason if draft.cancellation_reason else 'Cancelled before issuance'
+            
+            # Use issuance_no if available, otherwise None
+            request_id = draft.issuance_no if draft.issuance_no else None
+            
             cancelled_requests.append({
                 'id': f"draft-{draft.id}",
-                'request_id': None,
+                'request_id': request_id,
+                'issuance_no': draft.issuance_no,
+                'issuance_date': draft.issuance_date.strftime("%Y-%m-%d") if draft.issuance_date else None,
                 'product_name': draft.product_name,
                 'quantity': draft.quantity,
                 'deadline': draft.deadline.strftime("%Y-%m-%d") if draft.deadline else None,
                 'cancelled_by_name': cancelled_by_name,
                 'cancellation_reason': cancellation_reason,
-                'cancellation_log': f"Draft product cancellation (no issuance number) by {cancelled_by_name}. Reason: {cancellation_reason}",
+                'cancellation_log': f"Draft product cancellation (Issuance: {draft.issuance_no or 'Not issued'}) by {cancelled_by_name}. Reason: {cancellation_reason}",
                 'updated_at': _format_cancelled_timestamp(draft.updated_at),
             })
 
@@ -5896,6 +5917,8 @@ def log_cancelled_draft_product(request):
         product_name = (data.get('product_name') or '').strip()
         quantity = data.get('quantity')
         deadline = data.get('deadline')
+        issuance_no = (data.get('issuance_no') or '').strip() or None
+        issuance_date = data.get('issuance_date') or None
         cancellation_reason = (data.get('cancellation_reason') or 'Cancelled before issuance').strip()
 
         if not product_name:
@@ -5904,10 +5927,24 @@ def log_cancelled_draft_product(request):
         if not quantity:
             return error_response('Quantity is required', code=400)
 
+        # Validate issuance_date is a valid date if provided
+        if issuance_date:
+            try:
+                from datetime import datetime
+                # Handle ISO format dates
+                if isinstance(issuance_date, str):
+                    issuance_date = datetime.fromisoformat(issuance_date.split('T')[0]).date()
+                elif not isinstance(issuance_date, date):
+                    issuance_date = datetime.fromisoformat(str(issuance_date)).date()
+            except (ValueError, TypeError):
+                return error_response('Invalid issuance_date format. Use YYYY-MM-DD', code=400)
+
         cancelled_entry = CancelledDraftProduct.objects.create(
             product_name=product_name,
             quantity=int(quantity),
             deadline=deadline or None,
+            issuance_no=issuance_no,
+            issuance_date=issuance_date,
             cancelled_by=request.user,
             cancellation_reason=cancellation_reason,
         )
@@ -5927,6 +5964,8 @@ def log_cancelled_draft_product(request):
                 'product_name': product_name,
                 'quantity': int(quantity),
                 'deadline': deadline,
+                'issuance_no': issuance_no,
+                'issuance_date': str(issuance_date) if issuance_date else None,
                 'reason': cancellation_reason,
             })
         )
@@ -5943,6 +5982,8 @@ def log_cancelled_draft_product(request):
                     'product_name': product_name,
                     'quantity': int(quantity),
                     'deadline': deadline,
+                    'issuance_no': issuance_no,
+                    'issuance_date': str(issuance_date) if issuance_date else None,
                     'reason': cancellation_reason,
                 }
             )
@@ -6276,6 +6317,338 @@ def reject_deadline_extension(request, id):
         import traceback
         traceback.print_exc()
         return error_response(f"Error rejecting extension: {str(e)}", code=500)
+
+
+@csrf_exempt
+@role_required('admin', 'production_manager')
+@require_http_methods(['GET', 'PUT', 'PATCH'])
+def products_with_steps_view(request):
+    """Get all products with their configured process steps (for Settings management)"""
+    if request.method == 'GET':
+        try:
+            products = ProductName.objects.all().order_by('prodName')
+            result = []
+            
+            for product in products:
+                # Get all ProcessTemplate records for this product (these define the workflow)
+                templates = ProcessTemplate.objects.filter(product_name=product).order_by('step_order')
+                
+                processes = []
+                for template in templates:
+                    # Use custom name if set, otherwise use default process name
+                    display_name = template.custom_name if template.custom_name else template.process.name
+                    processes.append({
+                        "id": template.id,
+                        "step_order": template.step_order,
+                        "process_id": template.process.ProcessID,
+                        "process_name": display_name
+                    })
+                
+                # Check if product has active tasks (RequestProducts that are not archived and not completed)
+                from app.models import RequestProduct
+                active_tasks = RequestProduct.objects.filter(
+                    product=product,
+                    archived_at__isnull=True,
+                    completed_at__isnull=True
+                ).exists()
+                
+                can_edit = not active_tasks  # Can only edit if no active tasks
+                
+                result.append({
+                    "id": product.ProdID,
+                    "product_name": product.prodName,
+                    "process_count": len(processes),
+                    "processes": processes,
+                    "can_edit": can_edit,
+                    "has_active_tasks": active_tasks,
+                    "created_at": product.created_at.isoformat() if product.created_at else None
+                })
+            
+            return JsonResponse(result, safe=False)
+        except Exception as e:
+            return error_response(f"Error fetching products: {str(e)}", code=500)
+    
+    elif request.method in ['PUT', 'PATCH']:
+        # Update product name or edit steps or add new steps
+        try:
+            data = JSONParser().parse(request)
+            product_id = data.get('product_id')
+            new_product_name = data.get('product_name', '').strip()
+            steps_update = data.get('steps', [])
+            new_steps = data.get('new_steps', [])
+            
+            if not product_id:
+                return error_response("product_id is required", code=400)
+            
+            product = ProductName.objects.get(ProdID=product_id)
+            old_product_name = product.prodName
+            
+            # Check if product has active tasks - prevent editing if it does
+            from app.models import RequestProduct
+            active_tasks = RequestProduct.objects.filter(
+                product=product,
+                archived_at__isnull=True,
+                completed_at__isnull=True
+            ).exists()
+            
+            if active_tasks:
+                return error_response(
+                    "Cannot edit this product. It has active tasks in progress. Please complete or archive all tasks first.",
+                    code=403
+                )
+            
+            # Track changes for logging
+            changes_log = {
+                "product_id": product_id,
+                "product_name": old_product_name,
+                "changes": {
+                    "product_name_updated": False,
+                    "steps_modified": [],
+                    "steps_added": []
+                }
+            }
+            
+            # Update product name if changed
+            if new_product_name and new_product_name != product.prodName:
+                changes_log["changes"]["product_name_updated"] = {
+                    "old_name": old_product_name,
+                    "new_name": new_product_name
+                }
+                product.prodName = new_product_name
+                product.save()
+            
+            # Handle step name updates (existing steps)
+            if steps_update:
+                for step in steps_update:
+                    step_id = step.get('id')
+                    new_process_name = step.get('process_name', '').strip()
+                    
+                    if step_id and new_process_name:
+                        try:
+                            # Update ProcessTemplate record with custom name
+                            template = ProcessTemplate.objects.get(id=step_id)
+                            old_name = template.custom_name or template.process.name
+                            template.custom_name = new_process_name
+                            template.save()
+                            
+                            # Log the specific step change
+                            changes_log["changes"]["steps_modified"].append({
+                                "template_id": step_id,
+                                "step_order": template.step_order,
+                                "old_name": old_name,
+                                "new_name": new_process_name
+                            })
+                        except ProcessTemplate.DoesNotExist:
+                            pass
+            
+            # Handle adding new steps
+            if new_steps:
+                # Get the default process (use first available)
+                default_process = ProcessName.objects.first()
+                if not default_process:
+                    return error_response("No processes configured in system", code=500)
+                
+                # Calculate starting step_order for new steps
+                max_order = ProcessTemplate.objects.filter(product_name=product).aggregate(max_order=Max('step_order'))
+                current_max_order = max_order['max_order'] or 0
+                
+                for idx, new_step in enumerate(new_steps):
+                    step_name = new_step.get('step_name', '').strip()
+                    if step_name:
+                        new_template = ProcessTemplate.objects.create(
+                            product_name=product,
+                            process=default_process,
+                            step_order=current_max_order + idx + 1,
+                            custom_name=step_name
+                        )
+                        
+                        # Log the new step
+                        changes_log["changes"]["steps_added"].append({
+                            "step_order": new_template.step_order,
+                            "step_name": step_name
+                        })
+            
+            # Log audit entry with detailed changes
+            log_audit(
+                request.user,
+                "settings_update",
+                new_value=json.dumps(changes_log)
+            )
+            
+            return success_response({
+                "id": product.ProdID,
+                "product_name": product.prodName,
+                "message": "Product updated successfully"
+            })
+        except ProductName.DoesNotExist:
+            return error_response("Product not found", code=404)
+        except Exception as e:
+            return error_response(f"Error updating product: {str(e)}", code=500)
+
+
+@csrf_exempt
+@role_required('admin', 'production_manager')
+@require_http_methods(['POST'])
+def add_step_view(request):
+    """Add a new step to a product with custom name"""
+    try:
+        data = JSONParser().parse(request)
+        product_id = data.get('product_id')
+        step_name = data.get('step_name', '').strip()
+        
+        if not product_id or not step_name:
+            return error_response("product_id and step_name are required", code=400)
+        
+        if len(step_name) > 255:
+            return error_response("Step name must be 255 characters or less", code=400)
+        
+        product = ProductName.objects.get(ProdID=product_id)
+        
+        # Check if product has active tasks
+        from app.models import RequestProduct
+        active_tasks = RequestProduct.objects.filter(
+            product=product,
+            archived_at__isnull=True,
+            completed_at__isnull=True
+        ).exists()
+        
+        if active_tasks:
+            return error_response(
+                "Cannot add steps. Product has active tasks in progress.",
+                code=403
+            )
+        
+        # Calculate next step_order
+        max_order = ProcessTemplate.objects.filter(product_name=product).aggregate(max_order=Max('step_order'))
+        next_order = (max_order['max_order'] or 0) + 1
+        
+        # Get a default process (any process will work since we're using custom_name)
+        default_process = ProcessName.objects.first()
+        if not default_process:
+            return error_response("No processes configured in system", code=500)
+        
+        # Create new ProcessTemplate entry with custom name
+        new_template = ProcessTemplate.objects.create(
+            product_name=product,
+            process=default_process,
+            step_order=next_order,
+            custom_name=step_name
+        )
+        
+        # Log audit entry
+        log_audit(
+            request.user,
+            "settings_update",
+            new_value=json.dumps({
+                "action": "add_step",
+                "product_id": product_id,
+                "step_name": step_name,
+                "step_order": next_order
+            })
+        )
+        
+        return success_response({
+            "id": new_template.id,
+            "step_order": new_template.step_order,
+            "process_name": step_name,
+            "message": "Step added successfully"
+        })
+    except ProductName.DoesNotExist:
+        return error_response("Product not found", code=404)
+    except Exception as e:
+        return error_response(f"Error adding step: {str(e)}", code=500)
+
+
+@csrf_exempt
+@role_required('admin', 'production_manager')
+@require_http_methods(['DELETE'])
+def remove_step_view(request):
+    """Remove a step from a product"""
+    try:
+        data = JSONParser().parse(request)
+        product_id = data.get('product_id')
+        template_id = data.get('template_id')
+        
+        if not product_id or not template_id:
+            return error_response("product_id and template_id are required", code=400)
+        
+        product = ProductName.objects.get(ProdID=product_id)
+        template = ProcessTemplate.objects.get(id=template_id, product_name=product)
+        
+        # Check if product has active tasks
+        from app.models import RequestProduct
+        active_tasks = RequestProduct.objects.filter(
+            product=product,
+            archived_at__isnull=True,
+            completed_at__isnull=True
+        ).exists()
+        
+        if active_tasks:
+            return error_response(
+                "Cannot remove steps. Product has active tasks in progress.",
+                code=403
+            )
+        
+        # Store step info before deletion for logging
+        removed_step_order = template.step_order
+        removed_step_name = template.custom_name or template.process.name
+        
+        template.delete()
+        
+        # Recalculate step_order for remaining templates (shift down any steps after the removed one)
+        remaining_templates = ProcessTemplate.objects.filter(
+            product_name=product,
+            step_order__gt=removed_step_order
+        ).order_by('step_order')
+        
+        for i, tmpl in enumerate(remaining_templates):
+            tmpl.step_order = removed_step_order + i
+            tmpl.save()
+        
+        # Log audit entry with detailed information
+        log_audit(
+            request.user,
+            "settings_update",
+            new_value=json.dumps({
+                "action": "remove_step",
+                "product_id": product_id,
+                "product_name": product.prodName,
+                "template_id": template_id,
+                "removed_step": {
+                    "step_order": removed_step_order,
+                    "step_name": removed_step_name
+                }
+            })
+        )
+        
+        return success_response({
+            "message": "Step removed successfully"
+        })
+    except ProductName.DoesNotExist:
+        return error_response("Product not found", code=404)
+    except ProcessTemplate.DoesNotExist:
+        return error_response("Step not found for this product", code=404)
+    except Exception as e:
+        return error_response(f"Error removing step: {str(e)}", code=500)
+
+
+@csrf_exempt
+@role_required('admin', 'production_manager')
+@require_http_methods(['GET'])
+def available_processes_view(request):
+    """Get list of all available processes"""
+    try:
+        processes = ProcessName.objects.all().order_by('name')
+        result = [
+            {
+                "ProcessID": p.ProcessID,
+                "name": p.name
+            }
+            for p in processes
+        ]
+        return JsonResponse(result, safe=False)
+    except Exception as e:
+        return error_response(f"Error fetching processes: {str(e)}", code=500)
 
 
 def create_notification(user, notification_type, title, message, related_request=None, related_request_product=None, action_data=None):

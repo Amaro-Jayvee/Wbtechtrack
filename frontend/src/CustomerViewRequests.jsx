@@ -5,6 +5,7 @@ import "react-calendar/dist/Calendar.css";
 import "bootstrap/dist/css/bootstrap.min.css";
 import "./Request.css";
 import { useUser } from "./UserContext.jsx";
+import CompletedOrderModal from "./CompletedOrderModal.jsx";
 
 // Helper function to get minimum allowed date (4 days from today)
 const getMinimumDate = () => {
@@ -44,6 +45,8 @@ function CustomerViewRequests() {
   const [showDeleteConfirmation, setShowDeleteConfirmation] = useState(false);
   const [notificationToDelete, setNotificationToDelete] = useState(null);
   const [deleteToastMessage, setDeleteToastMessage] = useState("");
+  const [showCompletedOrderModal, setShowCompletedOrderModal] = useState(false);
+  const [selectedCompletedOrder, setSelectedCompletedOrder] = useState(null);
 
   const dropdownButtonRef = useRef(null);
   const dropdownMenuRef = useRef(null);
@@ -76,6 +79,23 @@ function CustomerViewRequests() {
       window.removeEventListener('requestCancelled', handleRequestCancelled);
     };
   }, [requestStatusFilter]);
+
+  const handleViewCompletedOrder = (task) => {
+    // Prepare order data for modal from task
+    const orderData = {
+      requestId: task.requestId,
+      productName: task.productName,
+      quantity: task.quantity,
+      completedQuota: task.completedQuota || task.quantity,
+      completedAt: task.completed_at,
+      createdAt: task.created_at,
+      requesterName: task.requesterName || 'Unknown',
+      dueDate: task.dueDate,
+    };
+    
+    setSelectedCompletedOrder(orderData);
+    setShowCompletedOrderModal(true);
+  };
 
   const fetchNotifications = async () => {
     try {
@@ -350,6 +370,8 @@ function CustomerViewRequests() {
         
         const requestId = request.RequestID || request.request_id;
         const dueDate = request.deadline || request.due_date;
+        const createdAt = request.created_at; // Order created date
+        const completedAt = product.completed_at; // Product completed date (from serializer)
         
         return {
           requestId: requestId,
@@ -361,6 +383,8 @@ function CustomerViewRequests() {
           progress: Math.min(Math.max(progressValue, 0), 100), // Ensure between 0-100
           dueDate: dueDate,
           workers: product.workers || [],
+          created_at: createdAt,
+          completed_at: completedAt
         };
       }).filter((product) => {
         // For active tab: exclude 100% complete items
@@ -1173,6 +1197,19 @@ function CustomerViewRequests() {
             </div>
           ) : (
             <>
+            {requestStatusFilter === "completed" && (
+              <div style={{
+                backgroundColor: "#f0fdf4",
+                border: "1px solid #86efac",
+                borderRadius: "6px",
+                padding: "12px",
+                marginBottom: "15px",
+                fontSize: "14px",
+                color: "#166534"
+              }}>
+                💡 <strong>Tip:</strong> Click on any completed order to view the order receipt with full details, manufacturing steps, and quality information.
+              </div>
+            )}
             <table className="data-table">
             <thead>
               <tr>
@@ -1201,7 +1238,29 @@ function CustomerViewRequests() {
               {sortedTasks
                 .slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
                 .map((task, idx) => (
-                <tr key={idx}>
+                <tr 
+                  key={idx}
+                  onClick={() => {
+                    if (requestStatusFilter !== "cancelled" && requestStatusFilter === "completed") {
+                      handleViewCompletedOrder(task);
+                    }
+                  }}
+                  style={{
+                    cursor: requestStatusFilter === "completed" ? "pointer" : "default",
+                    transition: "background-color 0.2s ease",
+                    backgroundColor: requestStatusFilter === "completed" ? "rgba(16, 185, 129, 0.05)" : "transparent"
+                  }}
+                  onMouseEnter={(e) => {
+                    if (requestStatusFilter === "completed") {
+                      e.currentTarget.style.backgroundColor = "rgba(16, 185, 129, 0.15)";
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (requestStatusFilter === "completed") {
+                      e.currentTarget.style.backgroundColor = "rgba(16, 185, 129, 0.05)";
+                    }
+                  }}
+                >
                   {requestStatusFilter === "cancelled" ? (
                     <>
                       <td><strong>{task.requestId}</strong></td>
@@ -1567,6 +1626,13 @@ function CustomerViewRequests() {
         </div>
       )}
 
+      {/* Completed Order Details Modal */}
+      {showCompletedOrderModal && (
+        <CompletedOrderModal 
+          orderData={selectedCompletedOrder}
+          onClose={() => setShowCompletedOrderModal(false)}
+        />
+      )}
 
     </div>
   );

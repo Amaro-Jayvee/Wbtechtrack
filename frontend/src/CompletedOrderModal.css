@@ -1,0 +1,208 @@
+/* Completed Order Modal Styles */
+
+.completed-order-modal {
+  max-width: 900px;
+}
+
+.completed-order-content {
+  font-family: Arial, Helvetica, sans-serif;
+  line-height: 1.4;
+  color: #333;
+}
+
+/* Table Styles */
+.order-details-table,
+.timeline-table,
+.steps-table,
+.defects-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 20px;
+  border: 1px solid #999;
+  font-size: 13px;
+}
+
+/* General Table Header */
+.order-details-table thead,
+.timeline-table thead,
+.steps-table thead,
+.defects-table thead {
+  background-color: #4a7ba7;
+  color: white;
+}
+
+.order-details-table th,
+.timeline-table th,
+.steps-table th,
+.defects-table th {
+  padding: 10px;
+  text-align: left;
+  font-weight: 600;
+  font-size: 12px;
+  border: 1px solid #3d6284;
+}
+
+/* Table Body */
+.order-details-table tbody td,
+.timeline-table tbody td,
+.steps-table tbody td,
+.defects-table tbody td {
+  padding: 10px;
+  border: 1px solid #999;
+  font-size: 12px;
+}
+
+.order-details-table tbody tr:nth-child(even),
+.timeline-table tbody tr:nth-child(even) {
+  background-color: #f9f9f9;
+}
+
+/* Steps Table Alternating */
+.steps-table tbody tr:nth-child(even) {
+  background-color: #f9f9f9;
+}
+
+/* Defects Table */
+.defects-table thead {
+  background-color: #dc2626;
+}
+
+.defects-table th {
+  border-color: #991b1b;
+}
+
+.defects-table tbody tr:nth-child(odd) {
+  background-color: #fef2f2;
+}
+
+.defects-table tbody tr:nth-child(even) {
+  background-color: #fecaca;
+}
+
+/* Print Styles */
+.print-only {
+  display: none;
+}
+
+.no-print {
+  display: block;
+}
+
+@page {
+  size: A4 portrait;
+  margin: 10mm;
+}
+
+@media print {
+  /* PRINT LAYOUT */
+  body {
+    margin: 0;
+    padding: 0;
+    background-color: white;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    font-family: Arial, Helvetica, sans-serif;
+  }
+
+  html {
+    overflow: visible;
+  }
+
+  /* Show print-only elements */
+  .print-only {
+    display: block;
+  }
+
+  /* Hide no-print elements */
+  .no-print {
+    display: none;
+  }
+
+  /* Modal specific - print as full page */
+  .modal-overlay {
+    position: static;
+    background-color: white;
+    display: block;
+  }
+
+  .modal-dialog {
+    max-width: 100%;
+    max-height: 100%;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .completed-order-content {
+    padding: 0;
+    overflow: visible;
+    max-height: none;
+  }
+
+  /* Page breaks */
+  .order-details-table,
+  .timeline-table,
+  .steps-table,
+  .defects-table {
+    page-break-inside: avoid;
+  }
+
+  h3 {
+    page-break-after: avoid;
+  }
+
+  /* Improve table printing */
+  table {
+    border: 1px solid #999;
+    width: 100%;
+  }
+
+  td, th {
+    page-break-inside: avoid;
+  }
+
+  /* Header and Footer */
+  h1 {
+    font-size: 20px;
+    font-weight: 700;
+  }
+
+  p {
+    margin-top: 0;
+  }
+
+  /* Color adjustment for print */
+  .steps-table thead {
+    background-color: #4a7ba7;
+    color: white;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .defects-table thead {
+    background-color: #dc2626;
+    color: white;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}
+
+/* Mobile responsiveness */
+@media (max-width: 768px) {
+  .completed-order-content {
+    padding: 20px;
+  }
+
+  .order-details-table,
+  .timeline-table,
+  .steps-table,
+  .defects-table {
+    font-size: 11px;
+  }
+
+  .order-details-table td,
+  .timeline-table td,
+  .steps-table td,
+  .defects-table td {
+    padding: 8px;
+  }
+}

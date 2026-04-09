@@ -42,12 +42,18 @@ class RequestProductReadSerializer(serializers.ModelSerializer):
     def get_progress(self, obj):
         # Calculate progress using SAME formula as production manager (PST-01: 10% + Others: 90%)
         # This ensures customer view matches production manager view
+        # CRITICAL FIX: Include both regular quota AND OT quota in progress calculation
         
         # Get all steps for this product
         all_steps = obj.process_steps.filter(archived_at__isnull=True).order_by('step_order')
         
         if not all_steps.exists():
             return "0%"
+        
+        # If ALL steps are completed (is_completed=True), return 100%
+        all_is_completed = all_steps.filter(is_completed=True).count() == all_steps.count()
+        if all_is_completed:
+            return "100%"
         
         # Separate PST-01 and other steps
         pst_01_steps = []
@@ -72,19 +78,44 @@ class RequestProductReadSerializer(serializers.ModelSerializer):
                 other_steps.append(step)
         
         progress = 0
+        request_qty = obj.quantity if obj else 1
         
         # PST-01 steps share 10% equally
         if pst_01_steps:
-            pst_01_completed = sum(1 for s in pst_01_steps if s.is_completed)
-            pst_01_progress = (pst_01_completed / len(pst_01_steps)) * 10
+            pst_01_completed_count = sum(1 for s in pst_01_steps if s.is_completed)
+            pst_01_partial = 0
+            
+            # Check for partial progress in first incomplete PST-01 step
+            if pst_01_completed_count < len(pst_01_steps):
+                first_incomplete = next((s for s in pst_01_steps if not s.is_completed), None)
+                if first_incomplete:
+                    # Include both regular and OT quota in progress calculation
+                    total_completed = (first_incomplete.completed_quota or 0) + (first_incomplete.ot_quota or 0)
+                    if request_qty > 0:
+                        pst_01_partial = (total_completed / request_qty) / len(pst_01_steps)
+            
+            pst_01_progress = ((pst_01_completed_count + pst_01_partial) / len(pst_01_steps)) * 10
             progress += pst_01_progress
         
         # Other steps share 90% equally
         if other_steps:
-            other_completed = sum(1 for s in other_steps if s.is_completed)
-            other_progress = (other_completed / len(other_steps)) * 90
+            other_completed_count = sum(1 for s in other_steps if s.is_completed)
+            other_partial = 0
+            
+            # Check for partial progress in first incomplete OTHER step
+            if other_completed_count < len(other_steps):
+                first_incomplete = next((s for s in other_steps if not s.is_completed), None)
+                if first_incomplete:
+                    # Include both regular and OT quota in progress calculation
+                    total_completed = (first_incomplete.completed_quota or 0) + (first_incomplete.ot_quota or 0)
+                    if request_qty > 0:
+                        other_partial = (total_completed / request_qty) / len(other_steps)
+            
+            other_progress = ((other_completed_count + other_partial) / len(other_steps)) * 90
             progress += other_progress
         
+        # Ensure progress doesn't exceed 99% until all steps are actually completed
+        progress = min(progress, 99.9) if progress < 100 else 100
         return f"{int(progress)}%"
 
     def get_task_status(self, obj):
@@ -848,6 +879,7 @@ class CustomerProductDetailSerializer(serializers.ModelSerializer):
             "workers",
             "completed_quota",
             "defect_count",
+            "completed_at",
         ]
 
     product_name = serializers.CharField(source='product.prodName', read_only=True)
@@ -855,7 +887,7 @@ class CustomerProductDetailSerializer(serializers.ModelSerializer):
     def get_progress(self, obj):
         """Calculate overall progress matching production manager calculation.
         Progress = (Total work done) / (Total work needed across all steps)
-        Includes partial progress from in-progress steps.
+        When ALL steps are completed (is_completed=True), return 100%.
         """
         # Get all steps for this product
         all_steps = obj.process_steps.filter(archived_at__isnull=True).order_by('step_order')
@@ -868,7 +900,11 @@ class CustomerProductDetailSerializer(serializers.ModelSerializer):
         if total_quantity <= 0:
             return "0%"
         
+        # CRITICAL: If ALL steps are marked as completed (is_completed=True), return 100%
         total_steps = all_steps.count()
+        completed_steps = all_steps.filter(is_completed=True).count()
+        if completed_steps == total_steps and total_steps > 0:
+            return "100%"
         
         # Separate PST-01 and other steps
         pst_01_steps = []
@@ -900,6 +936,9 @@ class CustomerProductDetailSerializer(serializers.ModelSerializer):
             pst_01_weight = 10
             pst_01_progress = (pst_01_completed / len(pst_01_steps)) * pst_01_weight
             progress += pst_01_progress
+        else:
+            # If no PST-01 steps exist, add 10% to the base (prerequisite is met)
+            progress += 10
         
         # Calculate Other steps progress (90% weight)
         # Includes full step completions AND partial progress from work done
@@ -907,8 +946,9 @@ class CustomerProductDetailSerializer(serializers.ModelSerializer):
             # Total work needed for other steps = total_quantity × num_other_steps
             total_work_needed = total_quantity * len(other_steps)
             
-            # Total work done = sum of completed_quota across all other steps
-            total_work_done = sum(s.completed_quota for s in other_steps)
+            # CRITICAL FIX: Total work done = completed_quota + ot_quota from all other steps
+            # This ensures OT work is properly counted in customer view
+            total_work_done = sum((s.completed_quota or 0) + (s.ot_quota or 0) for s in other_steps)
             
             # Progress as percentage of work done (cap at 100%)
             work_progress = min((total_work_done / total_work_needed) * 100, 100) if total_work_needed > 0 else 0
@@ -960,7 +1000,6 @@ class CustomerProductDetailSerializer(serializers.ModelSerializer):
         # Deduplicate by name
         unique_workers = {w["name"]: w for w in all_workers}.values()
         return list(unique_workers)
-
 
 
 

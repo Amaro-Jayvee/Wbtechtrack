@@ -325,16 +325,23 @@ function CancellationReportModal({ item, onClose }) {
               borderBottom: "3px solid #1d6ab7",
             }}
           >
-            <div
-              style={{
-                fontSize: "22px",
-                fontWeight: "bold",
-                color: "#1d6ab7",
-                marginBottom: "8px",
-              }}
-            >
-              CANCELLED PURCHASE ORDER REPORT
+            {/* Company Info */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "20px" }}>
+              <div style={{ flex: 1, textAlign: "left" }}>
+                <img src="/Group 1.png" alt="WB Logo" style={{ width: "50px", height: "50px", objectFit: "contain" }} />
+              </div>
+              <div style={{ flex: 2, textAlign: "center" }}>
+                <div style={{ fontSize: "22px", fontWeight: "bold", color: "#1d6ab7", marginBottom: "8px" }}>
+                  CANCELLED PURCHASE ORDER REPORT
+                </div>
+              </div>
+              <div style={{ flex: 1, textAlign: "right", fontSize: "10px", lineHeight: 1.4 }}>
+                <div style={{ fontSize: "11px", fontWeight: "bold", color: "#1d6ab7" }}>WB Technologies Inc.</div>
+                <div style={{ color: "#666" }}>B2, L11, Greenland Bulihan</div>
+                <div style={{ color: "#666", fontSize: "9px", marginTop: "2px" }}>(02) 994.9971</div>
+              </div>
             </div>
+            
             <div style={{ fontSize: "12px", color: "#666" }}>
               Generated on {formatDateTime(new Date().toISOString())}
             </div>
@@ -366,8 +373,19 @@ function CancellationReportModal({ item, onClose }) {
                 Issuance No.
               </span>
               <span style={{ color: "#333" }}>
-                {item.request_id ? `#${item.request_id}` : "Draft Order"}
+                {item.issuance_no ? `#${item.issuance_no}` : (item.request_id ? `#${item.request_id}` : "Draft Order")}
               </span>
+
+              {item.issuance_date && (
+                <>
+                  <span style={{ fontWeight: "600", color: "#1d6ab7" }}>
+                    Issuance Date
+                  </span>
+                  <span style={{ color: "#333" }}>
+                    {item.issuance_date ? formatDate(item.issuance_date) : "N/A"}
+                  </span>
+                </>
+              )}
 
               <span style={{ fontWeight: "600", color: "#1d6ab7" }}>
                 Product Name
@@ -499,25 +517,60 @@ function CancellationReportModal({ item, onClose }) {
 
                 {/* Defects Information */}
                 {defects > 0 && (
-                  <div
-                    style={{
-                      backgroundColor: "#fff3cd",
-                      border: "1px solid #ffc107",
-                      borderRadius: "4px",
-                      padding: "10px",
-                      marginTop: "12px",
-                      color: "#856404",
-                      fontSize: "13px",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "8px",
-                    }}
-                  >
-                    <span style={{ fontSize: "16px" }}>⚠</span>
-                    <span>
-                      <strong>{defects}</strong> defect(s) recorded during
-                      production
-                    </span>
+                  <div style={{ marginTop: "12px" }}>
+                    {/* Check if we have detailed defect logs */}
+                    {item.cancellation_progress?.defectLogs && item.cancellation_progress.defectLogs.length > 0 ? (
+                      <div>
+                        <div style={{ fontSize: "12px", fontWeight: "600", color: "#1d6ab7", marginBottom: "10px" }}>
+                          Detailed Defect Breakdown:
+                        </div>
+                        <table style={{
+                          width: "100%",
+                          borderCollapse: "collapse",
+                          fontSize: "12px",
+                          backgroundColor: "#fff",
+                          border: "1px solid #e5e7eb"
+                        }}>
+                          <thead>
+                            <tr style={{ backgroundColor: "#f3f4f6", borderBottom: "1px solid #d0d0d0" }}>
+                              <th style={{ padding: "8px", textAlign: "left", fontWeight: "600", color: "#333", borderRight: "1px solid #e5e7eb" }}>Defect Type</th>
+                              <th style={{ padding: "8px", textAlign: "center", fontWeight: "600", color: "#333", width: "100px" }}>Qty</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {item.cancellation_progress.defectLogs.map((log, idx) => (
+                              <tr key={idx} style={{ borderBottom: "1px solid #e5e7eb" }}>
+                                <td style={{ padding: "8px", color: "#555", borderRight: "1px solid #e5e7eb" }}>
+                                  {log.defect_type && log.defect_type.charAt(0).toUpperCase() + log.defect_type.slice(1)}
+                                </td>
+                                <td style={{ padding: "8px", textAlign: "center", color: "#333", fontWeight: "500" }}>
+                                  {log.defect_count || 0}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : (
+                      <div
+                        style={{
+                          backgroundColor: "#fff3cd",
+                          border: "1px solid #ffc107",
+                          borderRadius: "4px",
+                          padding: "10px",
+                          color: "#856404",
+                          fontSize: "13px",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "8px",
+                        }}
+                      >
+                        <span style={{ fontSize: "16px" }}>⚠</span>
+                        <span>
+                          <strong>{defects}</strong> defect(s) recorded during production
+                        </span>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

@@ -548,6 +548,7 @@ class ProcessTemplate(models.Model):
     product_name = models.ForeignKey(ProductName, on_delete=models.CASCADE)
     process = models.ForeignKey(ProcessName, on_delete=models.CASCADE)
     step_order = models.PositiveIntegerField("Step Order")
+    custom_name = models.CharField("Custom Step Name", max_length=255, null=True, blank=True, help_text="Optional custom name for this step in this product")
 
     class Meta:
         unique_together = ('product_name', 'process')
@@ -710,6 +711,8 @@ class CancelledDraftProduct(models.Model):
     product_name = models.CharField(max_length=100)
     quantity = models.PositiveIntegerField()
     deadline = models.DateField(null=True, blank=True)
+    issuance_no = models.CharField(max_length=100, null=True, blank=True, help_text="Purchase order issuance number")
+    issuance_date = models.DateField(null=True, blank=True, help_text="Date the purchase order was issued")
     cancelled_by = models.ForeignKey(
         User,
         on_delete=models.SET_NULL,

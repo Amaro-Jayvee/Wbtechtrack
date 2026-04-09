@@ -134,6 +134,10 @@ urlpatterns = [
     path('settings/', get_settings, name='get-settings'),
     path('settings/update/', update_settings, name='update-settings'),
     path('settings/login-background/', upload_login_background, name='upload-login-background'),
+    path('settings/products-with-steps/', products_with_steps_view, name='products-with-steps'),
+    path('settings/products-with-steps/add-step/', add_step_view, name='add-step'),
+    path('settings/products-with-steps/remove-step/', remove_step_view, name='remove-step'),
+    path('settings/available-processes/', available_processes_view, name='available-processes'),
     path('public/login-background/', public_login_background, name='public-login-background'),
 
     # Dashboard Report endpoints

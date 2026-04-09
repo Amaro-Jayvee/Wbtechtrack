@@ -152,21 +152,22 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
         data.ot_defect_types = otDefectTypes;
       }
       
-      // Check if task has already been saved (persistent across sessions)
+      // Check if task has already been saved TODAY (not permanent - resets at midnight)
       if (data.quota_updated_at && data.quota_updated_by) {
-        setHasAlreadyBeenSaved(true);
-        setSaveCount(1); // Mark as already saved
+        const lastSaveDate = new Date(data.quota_updated_at);
+        const today = new Date();
+        // Compare dates (ignoring time) - if saved today, lock until midnight
+        const isSavedToday = lastSaveDate.toDateString() === today.toDateString();
+        setHasAlreadyBeenSaved(isSavedToday);
+        setSaveCount(isSavedToday ? 1 : 0);
       } else {
         setHasAlreadyBeenSaved(false);
         setSaveCount(0);
       }
       
-      // Check if OT has already been saved (if is_overtime is true when task loads, OT was previously saved)
-      if (data.is_overtime === true) {
-        setHasOTBeenSaved(true);
-      } else {
-        setHasOTBeenSaved(false);
-      }
+      // NOTE: Removed hasOTBeenSaved lock to allow multiple OT saves across days
+      // Users should be able to ADD MORE OT quota on subsequent days
+      setHasOTBeenSaved(false);
       
       // Check if an extension has already been requested
       if (data.extension_status && data.extension_status !== 'none') {
@@ -176,12 +177,25 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
       }
       
       const workersArray = Array.isArray(data.workers) ? data.workers : [];
+      
+      // Process defect logs - filter out completely empty ones (no type, no count)
+      let processedDefectLogs = [];
+      if (data.defect_logs && data.defect_logs.length > 0) {
+        processedDefectLogs = data.defect_logs
+          .map(log => ({ defect_type: log.defect_type || '', defect_count: log.defect_count || 0 }))
+          .filter(log => log.defect_type !== '' || log.defect_count !== 0); // Keep only if has type OR count
+      }
+      
+      // Log what we received for debugging
+      console.log(`[TaskDetailModal] Task ID: ${productProcessId}`);
+      console.log(`[TaskDetailModal] Raw defect logs from API:`, data.defect_logs);
+      console.log(`[TaskDetailModal] Processed defect logs (non-empty):`, processedDefectLogs);
+      console.log(`[TaskDetailModal] Will display defect logs:`, processedDefectLogs.length > 0 ? processedDefectLogs : 'Using empty placeholder');
+      
       setFormData({
         completed_quota: data.completed_quota || 0,
         ot_quota: data.ot_quota || 0,
-        defectLogs: (data.defect_logs && data.defect_logs.length > 0) 
-          ? data.defect_logs.map(log => ({ defect_type: log.defect_type, defect_count: log.defect_count }))
-          : [{ defect_type: '', defect_count: 0 }],
+        defectLogs: processedDefectLogs.length > 0 ? processedDefectLogs : [{ defect_type: '', defect_count: 0 }],
         ot_defectLogs: (data.ot_defect_logs && data.ot_defect_logs.length > 0) 
           ? data.ot_defect_logs.map(log => ({ defect_type: log.defect_type, defect_count: log.defect_count }))
           : [{ defect_type: '', defect_count: 0 }],
@@ -522,10 +536,10 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
         const isSavingOT = formData.is_overtime && !taskData.is_overtime; // Newly enabling OT
         
         if (isSavingOT) {
-          // Mark OT as saved
-          setHasOTBeenSaved(true);
+          // NOTE: No longer locking OT after first save - users can add more OT quota across days
+          // setHasOTBeenSaved(true);
           setSaveReminderType('ot');
-          console.log("🎯 OT enabled and saved!");
+          console.log("🎯 OT enabled and saved - can add more OT quota tomorrow!");
         } else {
           // Regular quota save
           setHasAlreadyBeenSaved(true);
@@ -944,12 +958,14 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
       const productName = taskData?.product_name || `Product #${requestProductId}`;
       
       // Capture current progress before cancellation
+      const totalDefects = formData.defectLogs.reduce((sum, log) => sum + (Number(log.defect_count) || 0), 0);
       const progressBeforeCancel = {
         completed_quota: formData.completed_quota || 0,
         total_quota: taskData.total_quota || 0,
-        defects: formData.defectLogs.reduce((sum, log) => sum + (Number(log.defect_count) || 0), 0),
+        defects: totalDefects,
         estimated_total_defects: (taskData.total_quota && formData.completed_quota) ? 
-          Math.ceil((formData.defectLogs.reduce((sum, log) => sum + (Number(log.defect_count) || 0), 0) / formData.completed_quota) * taskData.total_quota) : 0
+          Math.ceil((totalDefects / formData.completed_quota) * taskData.total_quota) : 0,
+        defectLogs: formData.defectLogs || [] // Include detailed defect logs
       };
       
       console.log("🔍 [DEBUG] Cancelling product with progress data:", {
@@ -1162,7 +1178,7 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
                 
                 <div>
                   <label style={{ fontWeight: "600", color: "#333" }}>Total Quota</label>
-                  <p style={{ fontSize: "16px", color: "#1D6AB7", fontWeight: "600" }}>{completedProductData.total_quota} units</p>
+                  <p style={{ fontSize: "16px", color: "#000", fontWeight: "600" }}>{completedProductData.total_quota} units</p>
                 </div>
                 
                 <div>
@@ -1591,13 +1607,15 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
                               ot_quota: adjustedOTQuota
                             });
                           }}
+                          onWheel={(e) => {
+                            e.preventDefault();
+                            e.currentTarget.blur();
+                          }}
                           className="input-text"
                           min="0"
                           max={taskData.total_quota - (taskData.completed_quota || 0)}
                           placeholder="0"
                           style={{ textAlign: "center" }}
-                          disabled={hasAlreadyBeenSaved}
-                          title={hasAlreadyBeenSaved ? "Quantity already saved. Use Edit Quantity button to modify." : ""}
                           disabled={hasAlreadyBeenSaved}
                           title={hasAlreadyBeenSaved ? "Quantity already saved. Use Edit button below to modify." : ""}
                         />
@@ -1656,6 +1674,10 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
                           type="number"
                           value={log.defect_count || ""}
                           onChange={(e) => updateDefectLog(index, 'defect_count', e.target.value)}
+                          onWheel={(e) => {
+                            e.preventDefault();
+                            e.currentTarget.blur();
+                          }}
                           className="input-text"
                           min="0"
                           placeholder="Count"
@@ -1852,9 +1874,9 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
                     type="checkbox"
                     checked={formData.is_overtime}
                     onChange={handleOTCheckboxClick}
-                    disabled={formData.is_overtime && hasOTBeenSaved} // Once OT saved, cannot toggle off
-                    style={{ width: '18px', height: '18px', cursor: formData.is_overtime && hasOTBeenSaved ? 'not-allowed' : 'pointer' }}
-                    title={formData.is_overtime && hasOTBeenSaved ? "OT has been saved for this task and cannot be changed" : "Enable Overtime tracking for this task"}
+                    disabled={taskData && taskData.is_overtime} // Once OT enabled, cannot toggle off (not a daily lock, permanent for task)
+                    style={{ width: '18px', height: '18px', cursor: (taskData && taskData.is_overtime) ? 'not-allowed' : 'pointer' }}
+                    title={(taskData && taskData.is_overtime) ? "OT has been enabled for this task and cannot be turned off" : "Enable Overtime tracking for this task"}
                   />
                   <span>Enable Overtime (OT)</span>
                 </label>
@@ -2078,28 +2100,25 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
             disabled={
               !taskData || 
               formData.completed_quota < taskData.completed_quota || 
-              (formData.is_overtime ? hasOTBeenSaved : hasAlreadyBeenSaved)
+              (!formData.is_overtime && hasAlreadyBeenSaved)
             }
             style={{
               margin: 0,
-              opacity: (!taskData || formData.completed_quota < taskData.completed_quota || (formData.is_overtime ? hasOTBeenSaved : hasAlreadyBeenSaved)) ? 0.5 : 1,
-              cursor: (!taskData || formData.completed_quota < taskData.completed_quota || (formData.is_overtime ? hasOTBeenSaved : hasAlreadyBeenSaved)) ? 'not-allowed' : 'pointer',
+              opacity: (!taskData || formData.completed_quota < taskData.completed_quota || (!formData.is_overtime && hasAlreadyBeenSaved)) ? 0.5 : 1,
+              cursor: (!taskData || formData.completed_quota < taskData.completed_quota || (!formData.is_overtime && hasAlreadyBeenSaved)) ? 'not-allowed' : 'pointer',
               position: 'relative'
             }}
             title={
-              formData.is_overtime && hasOTBeenSaved
-                ? `⛔ OT has already been saved once. One-time OT save rule for accountability.` 
-                : !formData.is_overtime && hasAlreadyBeenSaved
-                ? `⛔ This task has already been saved once. One-time save rule: Only one save per task for accountability.` 
+              !formData.is_overtime && hasAlreadyBeenSaved
+                ? `⛔ Regular quota already saved TODAY. Resets at midnight. Come back tomorrow to save another batch.` 
                 : formData.completed_quota < taskData.completed_quota 
                 ? `Quota cannot decrease (was ${taskData.completed_quota})` 
                 : formData.is_overtime 
-                ? '💾 Save OT changes (⚠️ WARNING: Can only save ONE TIME for OT)'
-                : '💾 Save changes (⚠️ WARNING: Can only save ONE TIME per task for accountability)'
+                ? '💾 Save OT changes - Add OT quota (daily reset at midnight)'
+                : '💾 Save changes - Add daily regular quota (resets at midnight)'
             }
           >
-            Save {(hasAlreadyBeenSaved && !formData.is_overtime) && <span style={{ marginLeft: '6px' }}>✓ (Saved)</span>}
-            {(hasOTBeenSaved && formData.is_overtime) && <span style={{ marginLeft: '6px' }}>✓ (OT Saved)</span>}
+            Save {(hasAlreadyBeenSaved && !formData.is_overtime) && <span style={{ marginLeft: '6px' }}>✓ (Saved Today)</span>}
           </button>
           </div>
         </div>
