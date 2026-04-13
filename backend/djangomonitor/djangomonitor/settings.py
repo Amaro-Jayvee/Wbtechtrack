@@ -30,12 +30,12 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-(qi_idh_-7-@6%-yr#zc7s_t&w30pxys-&_wwn)8i(-pv(!-m7'
+SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-(qi_idh_-7-@6%-yr#zc7s_t&w30pxys-&_wwn)8i(-pv(!-m7')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.environ.get('DEBUG', 'False') == 'True'
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
 
 
 # Application definition
@@ -88,17 +88,26 @@ SITE_ID = 1
 
 CORS_ORIGIN_ALLOW_ALL = True
 
-CSRF_TRUSTED_ORIGINS = ['http://localhost:5173', 'http://127.0.0.1:5173', 'http://localhost:5174', 'http://127.0.0.1:5174']
-# DEFAULT_DOMAIN = "127.0.0.1:8000"  # Change this to your actual domain if needed
+# Railway domains support
+CSRF_TRUSTED_ORIGINS = [
+    'http://localhost:5173', 
+    'http://127.0.0.1:5173', 
+    'http://localhost:5174', 
+    'http://127.0.0.1:5174',
+    'https://*.railway.app',
+    'http://*.railway.app',
+]
 
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
     "http://localhost:5174",
-    "http://127.0.0.1:5174"
+    "http://127.0.0.1:5174",
+    "https://*.railway.app",
+    "http://*.railway.app",
 ]
 
-ALLOWED_HOSTS = ["localhost", "127.0.0.1", "testserver"]
+ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
 
 
 CORS_ALLOW_CREDENTIALS = True
@@ -133,20 +142,31 @@ WSGI_APPLICATION = 'djangomonitor.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases
 
-# Database configuration - MySQL (using environment variables for Docker)
-DATABASES = {
-    'default': {
-        'ENGINE': os.environ.get('DB_ENGINE', 'django.db.backends.mysql'),
-        'NAME': os.environ.get('DB_NAME', 'techtrack_db'),
-        'USER': os.environ.get('DB_USER', 'techtrack_user'),
-        'PASSWORD': os.environ.get('DB_PASSWORD', 'techtrack_secure_password'),
-        'HOST': os.environ.get('DB_HOST', 'localhost'),
-        'PORT': os.environ.get('DB_PORT', '3306'),
-        'OPTIONS': {
-            'charset': 'utf8mb4',
-        },
+# Database configuration - MySQL (supports both Docker and Railway)
+import dj_database_url
+
+# Try to use DATABASE_URL (Railway format), fallback to individual variables
+if os.environ.get('DATABASE_URL'):
+    DATABASES = {
+        'default': dj_database_url.config(
+            default=os.environ.get('DATABASE_URL'),
+            conn_max_age=600
+        )
     }
-}
+else:
+    DATABASES = {
+        'default': {
+            'ENGINE': os.environ.get('DB_ENGINE', 'django.db.backends.mysql'),
+            'NAME': os.environ.get('DB_NAME', 'techtrack_db'),
+            'USER': os.environ.get('DB_USER', 'techtrack_user'),
+            'PASSWORD': os.environ.get('DB_PASSWORD', 'techtrack_secure_password'),
+            'HOST': os.environ.get('DB_HOST', 'localhost'),
+            'PORT': os.environ.get('DB_PORT', '3306'),
+            'OPTIONS': {
+                'charset': 'utf8mb4',
+            },
+        }
+    }
 
 # Password validation
 # https://docs.djangoproject.com/en/5.1/ref/settings/#auth-password-validators
