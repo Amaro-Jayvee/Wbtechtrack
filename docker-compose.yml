@@ -11,7 +11,7 @@ services:
       MYSQL_USER: ${DB_USER:-techtrack_user}
       MYSQL_PASSWORD: ${DB_PASSWORD:-techtrack_secure_password}
     ports:
-      - "${DB_PORT:-3306}:3306"
+      - "${DB_PORT:-3307}:3306"
     volumes:
       - mysql_data:/var/lib/mysql
     networks:
@@ -36,7 +36,7 @@ services:
       DB_USER: ${DB_USER:-techtrack_user}
       DB_PASSWORD: ${DB_PASSWORD:-techtrack_secure_password}
       DB_HOST: ${DB_HOST:-db}
-      DB_PORT: ${DB_PORT:-3306}
+      DB_PORT: 3306
       EMAIL_HOST_USER: ${EMAIL_HOST_USER}
       EMAIL_HOST_PASSWORD: ${EMAIL_HOST_PASSWORD}
       ALLOWED_HOSTS: ${ALLOWED_HOSTS:-localhost,127.0.0.1,backend}
@@ -53,7 +53,8 @@ services:
       - techtrack
     restart: unless-stopped
     command: >
-      sh -c "python manage.py migrate &&
+      sh -c "sleep 30 &&
+             python manage.py migrate &&
              python manage.py collectstatic --noinput &&
              gunicorn djangomonitor.wsgi:application --bind 0.0.0.0:8000 --workers 4"
 

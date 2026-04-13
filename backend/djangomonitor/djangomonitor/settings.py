@@ -133,15 +133,15 @@ WSGI_APPLICATION = 'djangomonitor.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases
 
-# Database configuration - MySQL
+# Database configuration - MySQL (using environment variables for Docker)
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.mysql',
-        'NAME': 'techtrack_db',
-        'USER': 'root',
-        'PASSWORD': 'Ara071804',
-        'HOST': 'localhost',
-        'PORT': 3306,
+        'ENGINE': os.environ.get('DB_ENGINE', 'django.db.backends.mysql'),
+        'NAME': os.environ.get('DB_NAME', 'techtrack_db'),
+        'USER': os.environ.get('DB_USER', 'techtrack_user'),
+        'PASSWORD': os.environ.get('DB_PASSWORD', 'techtrack_secure_password'),
+        'HOST': os.environ.get('DB_HOST', 'localhost'),
+        'PORT': os.environ.get('DB_PORT', '3306'),
         'OPTIONS': {
             'charset': 'utf8mb4',
         },
@@ -183,6 +183,7 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/5.1/howto/static-files/
 
 STATIC_URL = 'static/'
+STATIC_ROOT = BASE_DIR / 'staticfiles'
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
