@@ -686,7 +686,7 @@ function AdminRequestApproval() {
         background: adminFormTheme.panelBackground,
         borderRadius: "18px",
         boxShadow: `${adminFormTheme.panelOutline}, ${adminFormTheme.panelShadow}`,
-        padding: "2.5rem",
+        padding: "2.5rem 1.5rem 2.5rem 2.5rem",
         border: adminFormTheme.panelBorder,
         position: "relative",
         overflow: "visible"
@@ -741,9 +741,20 @@ function AdminRequestApproval() {
           </div>
         )}
 
-        <form onSubmit={(e) => { e.preventDefault(); handleSubmitCreateRequest(); }}>
-          {/* Customer Selection - Separate Row */}
-          <div style={{ marginBottom: "2rem" }}>
+        <form onSubmit={(e) => { e.preventDefault(); handleSubmitCreateRequest(); }} style={{
+          border: "2px solid rgba(29, 106, 183, 0.25)",
+          borderRadius: "12px",
+          padding: "2rem",
+          backgroundColor: "rgba(255, 255, 255, 0.5)",
+          boxShadow: "0 4px 12px rgba(29, 106, 183, 0.08)"
+        }}>
+          {/* 50/50 Split Layout - Left: Form Controls, Right: Products Added */}
+          <div style={{ display: "flex", gap: "2rem", marginBottom: "2rem" }}>
+            
+            {/* LEFT SIDE (50%) - Customer & Add Products */}
+            <div style={{ flex: "0 0 50%", minWidth: 0 }}>
+              {/* Customer Selection */}
+              <div style={{ marginBottom: "2rem" }}>
             <div style={{
               display: "flex",
               alignItems: "center",
@@ -770,7 +781,7 @@ function AdminRequestApproval() {
             </div>
             <div className="row g-2 mb-3" style={{ overflow: "visible" }}>
               {/* Customer Dropdown */}
-              <div className="col-12">
+              <div className="col-md-8">
                 <label htmlFor="customer" className="form-label fw-600 mb-2" style={{ fontSize: "0.9rem", color: adminFormTheme.mutedText }}>
                   Customer *
                 </label>
@@ -868,7 +879,7 @@ function AdminRequestApproval() {
             </div>
             <div className="row g-2 mb-3" style={{ overflow: "visible" }}>
               {/* Product Dropdown */}
-              <div className="col-md-6">
+              <div className="col-md-4">
                 <label className="form-label fw-600 mb-2" style={{ fontSize: "0.9rem", color: adminFormTheme.mutedText }}>Product *</label>
                 <div style={{ position: "relative" }}>
                   <button
@@ -917,7 +928,7 @@ function AdminRequestApproval() {
               </div>
               
               {/* Quantity Input */}
-              <div className="col-md-3">
+              <div className="col-md-2">
                 <label className="form-label fw-600 mb-2" style={{ fontSize: "0.9rem", color: adminFormTheme.mutedText }}>Qty</label>
                 <input
                   type="text"
@@ -944,7 +955,7 @@ function AdminRequestApproval() {
               </div>
 
               {/* Add Button */}
-              <div className="col-md-3 d-flex align-items-end">
+              <div className="col-md-2 d-flex align-items-end">
                 <button
                   type="button"
                   className="btn w-100"
@@ -978,17 +989,15 @@ function AdminRequestApproval() {
                 </button>
               </div>
             </div>
-          </div>
+            </div>
+            </div>
 
+            {/* RIGHT SIDE (50%) - Products Added Table */}
+            <div style={{ flex: "0 0 50%", minWidth: 0, paddingLeft: "2rem", borderLeft: "3px solid #1d6ab7" }}>
           {/* Products Added */}
           {addedProducts.length > 0 && (
             <div style={{ 
-              marginBottom: "1.5rem", 
-              padding: "1.5rem", 
-              background: "linear-gradient(135deg, #e9f5ff 0%, #d7ebff 100%)",
-              borderRadius: "14px", 
-              border: "1px solid rgba(87, 168, 249, 0.3)",
-              boxShadow: "0 10px 24px rgba(29, 106, 183, 0.14)"
+              marginBottom: 0
             }}>
               <h6 style={{ 
                 fontSize: "0.85rem", 
@@ -1279,46 +1288,9 @@ function AdminRequestApproval() {
             </div>
           )}
 
-          {/* Complete Order Section */}
-          {addedProducts.length > 0 && !productsCompleted && (
-            <div style={{ marginBottom: "1.5rem", textAlign: "center" }}>
-              <button
-                type="button"
-                className="btn"
-                onClick={openCompleteProductsModal}
-                disabled={createRequestLoading}
-                style={{
-                  padding: "0.85rem 2.5rem",
-                  fontWeight: "700",
-                  fontSize: "0.95rem",
-                  background: "#22c55e",
-                  color: "#ffffff",
-                  border: "1px solid rgba(240, 255, 244, 0.8)",
-                  borderRadius: "10px",
-                  boxShadow: "0 12px 30px rgba(34, 197, 94, 0.3)",
-                  transition: "all 0.3s ease",
-                  cursor: createRequestLoading ? "not-allowed" : "pointer",
-                  opacity: createRequestLoading ? 0.6 : 1,
-                }}
-                onMouseEnter={(e) => {
-                  if (!createRequestLoading) {
-                    e.currentTarget.style.boxShadow = "0 16px 40px rgba(34, 197, 94, 0.4)";
-                    e.currentTarget.style.transform = "translateY(-2px)";
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.boxShadow = "0 12px 30px rgba(34, 197, 94, 0.3)";
-                  e.currentTarget.style.transform = "translateY(0)";
-                }}
-              >
-                Complete Order
-              </button>
-            </div>
-          )}
-
-          {/* Deadline Section - Shows after products completed */}
+          {/* Deadline Section - Shows after products completed - NOW IN RIGHT SIDE */}
           {productsCompleted && (
-            <div style={{ marginBottom: "0.3rem" }}>
+            <div style={{ marginTop: "1.5rem", paddingTop: "1.5rem", borderTop: "1px solid rgba(29, 106, 183, 0.15)" }}>
               <div style={{
                 display: "flex",
                 alignItems: "center",
@@ -1431,6 +1403,45 @@ function AdminRequestApproval() {
                   ✓ Deadline set to {formData.deadline}
                 </small>
               )}
+            </div>
+          )}
+            </div>
+          </div>
+
+          {/* Complete Order Button - Footer Section */}
+          {addedProducts.length > 0 && !productsCompleted && (
+            <div style={{ marginTop: "2rem", marginBottom: "1.5rem", textAlign: "center" }}>
+              <button
+                type="button"
+                className="btn"
+                onClick={openCompleteProductsModal}
+                disabled={createRequestLoading}
+                style={{
+                  padding: "0.85rem 2.5rem",
+                  fontWeight: "700",
+                  fontSize: "0.95rem",
+                  background: "#22c55e",
+                  color: "#ffffff",
+                  border: "1px solid rgba(240, 255, 244, 0.8)",
+                  borderRadius: "10px",
+                  boxShadow: "0 12px 30px rgba(34, 197, 94, 0.3)",
+                  transition: "all 0.3s ease",
+                  cursor: createRequestLoading ? "not-allowed" : "pointer",
+                  opacity: createRequestLoading ? 0.6 : 1,
+                }}
+                onMouseEnter={(e) => {
+                  if (!createRequestLoading) {
+                    e.currentTarget.style.boxShadow = "0 16px 40px rgba(34, 197, 94, 0.4)";
+                    e.currentTarget.style.transform = "translateY(-2px)";
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.boxShadow = "0 12px 30px rgba(34, 197, 94, 0.3)";
+                  e.currentTarget.style.transform = "translateY(0)";
+                }}
+              >
+                Complete Order
+              </button>
             </div>
           )}
 

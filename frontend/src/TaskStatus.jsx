@@ -25,6 +25,8 @@ function TaskStatus() {
   const [toastType, setToastType] = useState("info"); // 'success' or 'error'
   const [selectedProcessIndex, setSelectedProcessIndex] = useState(0);
   const [currentPage, setCurrentPage] = useState(1);
+  const [showReportMode, setShowReportMode] = useState(false);
+  const [selectedTaskIds, setSelectedTaskIds] = useState(new Set());
   const itemsPerPage = 10;
 
   useEffect(() => {
@@ -469,6 +471,163 @@ function TaskStatus() {
     }
   };
 
+  const handlePrintReport = () => {
+    // Only for In-Progress
+    setShowReportMode(true);
+    setSelectedTaskIds(new Set());
+  };
+
+  // NEW: Dedicated handler for Completed Tasks Report
+  const handlePrintCompletedTasksReport = () => {
+    console.log("=== PRINT COMPLETED TASKS REPORT CLICKED ===");
+    console.log("Current filterStatus:", filterStatus);
+    console.log("Current paginatedData:", paginatedData.length, "tasks");
+    console.log("First few tasks:", paginatedData.slice(0, 2).map(t => ({id: t.id, status: t.task_status, product: t.product_name})));
+    
+    setShowReportMode(true);
+    setSelectedTaskIds(new Set());
+  };
+
+  // NEW: Dedicated handler for generating Completed Tasks Report
+  const handleGenerateCompletedTasksReport = () => {
+    try {
+      console.log("\n========================================");
+      console.log("=== GENERATE COMPLETED TASKS REPORT ===");
+      console.log("========================================");
+      
+      if (selectedTaskIds.size === 0) {
+        alert("Please select at least one completed task to generate report");
+        return;
+      }
+      
+      // Filter selected tasks
+      const selectedCompletedTasks = paginatedData.filter(task => selectedTaskIds.has(task.id));
+      
+      console.log("Selected tasks:", selectedCompletedTasks.length);
+      
+      if (selectedCompletedTasks.length === 0) {
+        alert("No completed tasks found in selection");
+        return;
+      }
+      
+      // Create report data
+      const reportData = {
+        tasks: selectedCompletedTasks,
+        selectedCount: selectedCompletedTasks.length,
+        filters: {
+          generatedAt: new Date().toLocaleString(),
+          reportType: "Completed Tasks"
+        }
+      };
+      
+      // Encode as base64 for URL
+      const jsonStr = JSON.stringify(reportData);
+      const encodedData = btoa(jsonStr);
+      console.log("✓ Data encoded (size: " + encodedData.length + " bytes)");
+      
+      // Open new tab WITH data in URL hash
+      const reportUrl = `/completed-tasks-report#data=${encodedData}`;
+      console.log("→ Opening new tab with URL hash data");
+      
+      const newTab = window.open(reportUrl, '_blank');
+      if (!newTab) {
+        console.error("✗ Failed to open new tab - popup may be blocked");
+        alert("Could not open report tab. Please check if popups are blocked.");
+      } else {
+        console.log("✓ New tab opened successfully");
+      }
+      
+      // Reset UI
+      setShowReportMode(false);
+      setSelectedTaskIds(new Set());
+      console.log("✓ Report mode reset");
+      console.log("========================================\n");
+      
+    } catch (error) {
+      console.error("✗ ERROR in handleGenerateCompletedTasksReport:", error);
+      alert(`Error generating report: ${error.message}`);
+    }
+  };
+
+  const handleTaskCheckboxChange = (taskId) => {
+    const newSelected = new Set(selectedTaskIds);
+    if (newSelected.has(taskId)) {
+      newSelected.delete(taskId);
+    } else {
+      newSelected.add(taskId);
+    }
+    setSelectedTaskIds(newSelected);
+  };
+
+  const handleSelectAllTasks = (checked) => {
+    if (checked) {
+      setSelectedTaskIds(new Set(paginatedData.map(t => t.id)));
+    } else {
+      setSelectedTaskIds(new Set());
+    }
+  };
+
+  const handleGenerateReport = () => {
+    try {
+      console.log("=== GENERATE IN-PROGRESS REPORT ===");
+      
+      if (selectedTaskIds.size === 0) {
+        alert("Please select at least one task to generate report");
+        return;
+      }
+      
+      const selectedTasks = paginatedData.filter(task => selectedTaskIds.has(task.id));
+      
+      console.log("Selected tasks:", selectedTasks.length);
+      
+      if (selectedTasks.length === 0) {
+        alert("No tasks found in selection");
+        return;
+      }
+      
+      // Create report data
+      const reportData = {
+        tasks: selectedTasks,
+        selectedCount: selectedTaskIds.size,
+        filters: {
+          generatedAt: new Date().toLocaleString(),
+          reportType: "Active Tasks"
+        }
+      };
+      
+      // Encode as base64 for URL
+      const jsonStr = JSON.stringify(reportData);
+      const encodedData = btoa(jsonStr);
+      console.log("✓ Data encoded (size: " + encodedData.length + " bytes)");
+      
+      // Open new tab WITH data in URL hash
+      const reportUrl = `/task-status-report#data=${encodedData}`;
+      console.log("→ Opening new tab with URL hash data");
+      
+      const newTab = window.open(reportUrl, '_blank');
+      if (!newTab) {
+        console.error("✗ Failed to open new tab - popup may be blocked");
+        alert("Failed to open report tab. Please check if popups are blocked.");
+      } else {
+        console.log("✓ New tab opened successfully");
+      }
+      
+      // Reset report mode
+      setShowReportMode(false);
+      setSelectedTaskIds(new Set());
+      console.log("✓ Report generation completed");
+      
+    } catch (error) {
+      console.error("✗ ERROR in handleGenerateReport:", error);
+      alert(`Error generating report: ${error.message}`);
+    }
+  };
+
+  const handleCancelReport = () => {
+    setShowReportMode(false);
+    setSelectedTaskIds(new Set());
+  };
+
   return (
     <SidebarLayout>
       <div className="content">
@@ -545,13 +704,52 @@ function TaskStatus() {
             />
             
             {(userData.role === "admin" || userData.role === "production_manager") && (
-              <button
-                onClick={handleAddProductClick}
-                className="btn fw-600"
-                style={{ minWidth: "170px", padding: "0.375rem 0.75rem", backgroundColor: "#46E63E", color: "white", border: "none", fontSize: "12px" }}
-              >
-                <i className="bi bi-plus-circle me-2"></i>Add Product/Part
-              </button>
+              <>
+                <button
+                  onClick={handleAddProductClick}
+                  className="btn fw-600"
+                  style={{ minWidth: "170px", padding: "0.375rem 0.75rem", backgroundColor: "#52A374", color: "white", border: "none", fontSize: "12px" }}
+                >
+                  <i className="bi bi-plus-circle me-2"></i>Add Product/Part
+                </button>
+                
+                {/* UNIFIED PRINT REPORT BUTTON - SAME FOR BOTH TABS */}
+                <button
+                  onClick={filterStatus === "done" ? handlePrintCompletedTasksReport : handlePrintReport}
+                  className="btn fw-600"
+                  style={{ minWidth: "170px", padding: "0.375rem 0.75rem", backgroundColor: "#1D6AB7", color: "white", border: "none", fontSize: "12px" }}
+                >
+                  <i className="bi bi-file-earmark-pdf me-2"></i>Print Report
+                </button>
+                
+                {showReportMode && (
+                  <>
+                    <button
+                      onClick={filterStatus === "done" ? handleGenerateCompletedTasksReport : handleGenerateReport}
+                      disabled={selectedTaskIds.size === 0}
+                      className="btn fw-600"
+                      style={{ 
+                        minWidth: "170px", 
+                        padding: "0.375rem 0.75rem", 
+                        backgroundColor: selectedTaskIds.size === 0 ? "#ccc" : "#28a745", 
+                        color: "white", 
+                        border: "none", 
+                        fontSize: "12px",
+                        cursor: selectedTaskIds.size === 0 ? "not-allowed" : "pointer"
+                      }}
+                    >
+                      <i className="bi bi-check-circle me-2"></i>Generate Report ({selectedTaskIds.size})
+                    </button>
+                    <button
+                      onClick={handleCancelReport}
+                      className="btn fw-600"
+                      style={{ minWidth: "170px", padding: "0.375rem 0.75rem", backgroundColor: "#999", color: "white", border: "none", fontSize: "12px" }}
+                    >
+                      <i className="bi bi-x-circle me-2"></i>Cancel
+                    </button>
+                  </>
+                )}
+              </>
             )}
           </div>
         </div>
@@ -564,6 +762,15 @@ function TaskStatus() {
             <table className="data-table">
               <thead>
                 <tr>
+                  {showReportMode && (
+                    <th style={{ width: "40px", textAlign: "center" }}>
+                      <input 
+                        type="checkbox" 
+                        checked={selectedTaskIds.size === paginatedData.length && paginatedData.length > 0}
+                        onChange={(e) => handleSelectAllTasks(e.target.checked)}
+                      />
+                    </th>
+                  )}
                   <th>Issuance No.</th>
                   <th>Requester</th>
                   <th>Product Name</th>
@@ -589,6 +796,15 @@ function TaskStatus() {
               <tbody>
                 {paginatedData.map((item) => (
                 <tr key={item.id}>
+                  {showReportMode && (
+                    <td style={{ width: "40px", textAlign: "center" }}>
+                      <input 
+                        type="checkbox" 
+                        checked={selectedTaskIds.has(item.id)}
+                        onChange={() => handleTaskCheckboxChange(item.id)}
+                      />
+                    </td>
+                  )}
                   <td>
                     <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                       {item.request_id}
@@ -695,7 +911,7 @@ function TaskStatus() {
             </table>
 
             {/* Pagination Controls */}
-            {totalPages > 1 && (
+            {sortedRequestProducts.length > 0 && (
               <div style={{
                 display: "flex",
                 justifyContent: "center",
@@ -706,104 +922,116 @@ function TaskStatus() {
                 borderTop: "1px solid #e0e0e0",
                 flexWrap: "wrap"
               }}>
-                <button
-                  onClick={() => setCurrentPage(1)}
-                  disabled={currentPage === 1}
-                  style={{
-                    padding: "6px 10px",
-                    border: currentPage === 1 ? "1px solid #ddd" : "1px solid #1D6AB7",
-                    backgroundColor: currentPage === 1 ? "#f0f0f0" : "#fff",
-                    color: currentPage === 1 ? "#999" : "#1D6AB7",
-                    borderRadius: "4px",
-                    cursor: currentPage === 1 ? "not-allowed" : "pointer",
-                    fontWeight: "500",
-                    fontSize: "12px"
-                  }}
-                >
-                  ◀◀ First
-                </button>
+                {totalPages > 1 && (
+                  <>
+                    <button
+                      onClick={() => setCurrentPage(1)}
+                      disabled={currentPage === 1}
+                      style={{
+                        padding: "6px 10px",
+                        border: currentPage === 1 ? "1px solid #ddd" : "1px solid #1D6AB7",
+                        backgroundColor: currentPage === 1 ? "#f0f0f0" : "#fff",
+                        color: currentPage === 1 ? "#999" : "#1D6AB7",
+                        borderRadius: "4px",
+                        cursor: currentPage === 1 ? "not-allowed" : "pointer",
+                        fontWeight: "500",
+                        fontSize: "12px"
+                      }}
+                    >
+                      ◀◀ First
+                    </button>
 
-                <button
-                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                  disabled={currentPage === 1}
-                  style={{
-                    padding: "6px 10px",
-                    border: currentPage === 1 ? "1px solid #ddd" : "1px solid #1D6AB7",
-                    backgroundColor: currentPage === 1 ? "#f0f0f0" : "#fff",
-                    color: currentPage === 1 ? "#999" : "#1D6AB7",
-                    borderRadius: "4px",
-                    cursor: currentPage === 1 ? "not-allowed" : "pointer",
-                    fontWeight: "500",
-                    fontSize: "12px"
-                  }}
-                >
-                  ◀ Previous
-                </button>
+                    <button
+                      onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                      disabled={currentPage === 1}
+                      style={{
+                        padding: "6px 10px",
+                        border: currentPage === 1 ? "1px solid #ddd" : "1px solid #1D6AB7",
+                        backgroundColor: currentPage === 1 ? "#f0f0f0" : "#fff",
+                        color: currentPage === 1 ? "#999" : "#1D6AB7",
+                        borderRadius: "4px",
+                        cursor: currentPage === 1 ? "not-allowed" : "pointer",
+                        fontWeight: "500",
+                        fontSize: "12px"
+                      }}
+                    >
+                      ◀ Previous
+                    </button>
+                  </>
+                )}
 
                 <div style={{ display: "flex", gap: "4px", alignItems: "center" }}>
-                  {Array.from({ length: totalPages }, (_, i) => i + 1)
-                    .filter(page => {
-                      if (totalPages <= 5) return true;
-                      if (page === 1 || page === totalPages) return true;
-                      if (Math.abs(page - currentPage) <= 1) return true;
-                      return false;
-                    })
-                    .map((page, idx, arr) => (
-                      <div key={page}>
-                        {idx > 0 && arr[idx - 1] !== page - 1 && <span style={{ color: "#999", padding: "0 4px" }}>...</span>}
-                        <button
-                          onClick={() => setCurrentPage(page)}
-                          style={{
-                            padding: "6px 10px",
-                            border: currentPage === page ? "1px solid #1D6AB7" : "1px solid #ddd",
-                            backgroundColor: currentPage === page ? "#1D6AB7" : "#fff",
-                            color: currentPage === page ? "#fff" : "#333",
-                            borderRadius: "4px",
-                            cursor: "pointer",
-                            fontWeight: currentPage === page ? "600" : "500",
-                            fontSize: "12px",
-                            minWidth: "32px"
-                          }}
-                        >
-                          {page}
-                        </button>
-                      </div>
-                    ))}
+                  {totalPages > 1 && (
+                    <>
+                      {Array.from({ length: totalPages }, (_, i) => i + 1)
+                        .filter(page => {
+                          if (totalPages <= 5) return true;
+                          if (page === 1 || page === totalPages) return true;
+                          if (Math.abs(page - currentPage) <= 1) return true;
+                          return false;
+                        })
+                        .map((page, idx, arr) => (
+                          <div key={page}>
+                            {idx > 0 && arr[idx - 1] !== page - 1 && <span style={{ color: "#999", padding: "0 4px" }}>...</span>}
+                            <button
+                              onClick={() => setCurrentPage(page)}
+                              style={{
+                                padding: "6px 10px",
+                                border: currentPage === page ? "1px solid #1D6AB7" : "1px solid #ddd",
+                                backgroundColor: currentPage === page ? "#1D6AB7" : "#fff",
+                                color: currentPage === page ? "#fff" : "#333",
+                                borderRadius: "4px",
+                                cursor: "pointer",
+                                fontWeight: currentPage === page ? "600" : "500",
+                                fontSize: "12px",
+                                minWidth: "32px"
+                              }}
+                            >
+                              {page}
+                            </button>
+                          </div>
+                        ))}
+                    </>
+                  )}
                 </div>
 
-                <button
-                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                  disabled={currentPage === totalPages}
-                  style={{
-                    padding: "6px 10px",
-                    border: currentPage === totalPages ? "1px solid #ddd" : "1px solid #1D6AB7",
-                    backgroundColor: currentPage === totalPages ? "#f0f0f0" : "#fff",
-                    color: currentPage === totalPages ? "#999" : "#1D6AB7",
-                    borderRadius: "4px",
-                    cursor: currentPage === totalPages ? "not-allowed" : "pointer",
-                    fontWeight: "500",
-                    fontSize: "12px"
-                  }}
-                >
-                  Next ▶
-                </button>
+                {totalPages > 1 && (
+                  <>
+                    <button
+                      onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                      disabled={currentPage === totalPages}
+                      style={{
+                        padding: "6px 10px",
+                        border: currentPage === totalPages ? "1px solid #ddd" : "1px solid #1D6AB7",
+                        backgroundColor: currentPage === totalPages ? "#f0f0f0" : "#fff",
+                        color: currentPage === totalPages ? "#999" : "#1D6AB7",
+                        borderRadius: "4px",
+                        cursor: currentPage === totalPages ? "not-allowed" : "pointer",
+                        fontWeight: "500",
+                        fontSize: "12px"
+                      }}
+                    >
+                      Next ▶
+                    </button>
 
-                <button
-                  onClick={() => setCurrentPage(totalPages)}
-                  disabled={currentPage === totalPages}
-                  style={{
-                    padding: "6px 10px",
-                    border: currentPage === totalPages ? "1px solid #ddd" : "1px solid #1D6AB7",
-                    backgroundColor: currentPage === totalPages ? "#f0f0f0" : "#fff",
-                    color: currentPage === totalPages ? "#999" : "#1D6AB7",
-                    borderRadius: "4px",
-                    cursor: currentPage === totalPages ? "not-allowed" : "pointer",
-                    fontWeight: "500",
-                    fontSize: "12px"
-                  }}
-                >
-                  Last ▶▶
-                </button>
+                    <button
+                      onClick={() => setCurrentPage(totalPages)}
+                      disabled={currentPage === totalPages}
+                      style={{
+                        padding: "6px 10px",
+                        border: currentPage === totalPages ? "1px solid #ddd" : "1px solid #1D6AB7",
+                        backgroundColor: currentPage === totalPages ? "#f0f0f0" : "#fff",
+                        color: currentPage === totalPages ? "#999" : "#1D6AB7",
+                        borderRadius: "4px",
+                        cursor: currentPage === totalPages ? "not-allowed" : "pointer",
+                        fontWeight: "500",
+                        fontSize: "12px"
+                      }}
+                    >
+                      Last ▶▶
+                    </button>
+                  </>
+                )}
 
                 <span style={{ color: "#666", fontSize: "12px", marginLeft: "10px" }}>
                   Page {currentPage} of {totalPages}
@@ -877,7 +1105,7 @@ function TaskStatus() {
       {showAddProductModal && (
         <div className="modal-overlay" style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0, 0, 0, 0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999 }}>
           <div className="modal-dialog" style={{ backgroundColor: "white", borderRadius: "8px", maxWidth: "600px", width: "90%", maxHeight: "90vh", display: "flex", flexDirection: "column", overflow: "hidden" }} onClick={e => e.stopPropagation()}>
-            <div className="modal-header" style={{ backgroundColor: "#46E63E", padding: "1.5rem", borderBottom: "2px solid #fff", color: "white", display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0, gap: "1rem" }}>
+            <div className="modal-header" style={{ backgroundColor: "#52A374", padding: "1.5rem", borderBottom: "2px solid #fff", color: "white", display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0, gap: "1rem" }}>
               <h5 className="modal-title" style={{ color: "white", marginBottom: 0, flex: 1 }}>Add Product/Part</h5>
               <button 
                 type="button" 
@@ -924,7 +1152,7 @@ function TaskStatus() {
                   <div style={{ display: "flex", gap: "1rem", marginTop: "1rem", height: "400px", border: "1px solid #e9ecef", borderRadius: "4px", overflow: "hidden" }}>
                     
                     {/* Left Column - Process List */}
-                    <div style={{ flex: "0 0 180px", backgroundColor: "#f8f9fa", borderRight: "2px solid #9BC284", overflowY: "auto", padding: "0.5rem" }}>
+                    <div style={{ flex: "0 0 180px", backgroundColor: "#f8f9fa", borderRight: "2px solid #52A374", overflowY: "auto", padding: "0.5rem" }}>
                       <div style={{ fontSize: "0.85rem", fontWeight: "600", color: "#666", marginBottom: "0.5rem", paddingLeft: "0.5rem" }}>Processes</div>
                       {partForm.processes.map((process, processIndex) => (
                         <div key={processIndex} style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem" }}>
@@ -934,9 +1162,9 @@ function TaskStatus() {
                             style={{
                               flex: 1,
                               padding: "0.5rem",
-                              backgroundColor: selectedProcessIndex === processIndex ? "#9BC284" : "white",
+                              backgroundColor: selectedProcessIndex === processIndex ? "#52A374" : "white",
                               color: selectedProcessIndex === processIndex ? "white" : "#333",
-                              border: `2px solid #9BC284`,
+                              border: `2px solid #52A374`,
                               borderRadius: "4px",
                               cursor: "pointer",
                               fontWeight: selectedProcessIndex === processIndex ? "600" : "400",

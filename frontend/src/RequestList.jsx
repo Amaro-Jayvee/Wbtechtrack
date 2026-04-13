@@ -269,20 +269,24 @@ function RequestList() {
     }
   };
 
-  const handleCancelRequest = async () => {
+  const [showCancellationModal, setShowCancellationModal] = React.useState(false);
+  const [cancellationReason, setCancellationReason] = React.useState('');
+
+  const handleCancelRequest = async (reason = '') => {
     if (!selectedRequest) {
       showToast("No request selected", "error");
       return;
     }
 
     try {
+      const finalReason = reason || cancellationReason || 'Cancelled by admin/manager';
       const response = await fetch(
         `http://localhost:8000/app/request/${selectedRequest.RequestID}/archive/`,
         {
           method: "PATCH",
           credentials: "include",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ cancellation_reason: 'Cancelled by admin/manager' }),
+          body: JSON.stringify({ cancellation_reason: finalReason }),
         }
       );
 
@@ -302,6 +306,8 @@ function RequestList() {
       }
 
       showToast("✅ Purchase order cancelled successfully!", "success");
+      setShowCancellationModal(false);
+      setCancellationReason('');
       
       // Dispatch event to notify CancelledRequests component to refresh
       window.dispatchEvent(new Event('requestCancelled'));
@@ -820,15 +826,18 @@ function RequestList() {
                     style={{
                       minWidth: "160px",
                       padding: "0.65rem 1rem",
-                      backgroundColor: "#28a745",
+                      backgroundColor: "#22c55e",
                       color: "white",
                       border: "none",
                       borderRadius: "4px",
                       cursor: requestHasTasks ? "not-allowed" : "pointer",
                       fontWeight: "600",
                       fontSize: "0.9rem",
-                      opacity: requestHasTasks ? 0.7 : 1
+                      opacity: requestHasTasks ? 0.7 : 1,
+                      transition: "background 0.2s"
                     }}
+                    onMouseOver={(e) => !requestHasTasks && (e.currentTarget.style.backgroundColor = "#16a34a")}
+                    onMouseOut={(e) => !requestHasTasks && (e.currentTarget.style.backgroundColor = "#22c55e")}
                     title={requestHasTasks ? "This project has already been started" : "Start the project"}
                   >
                     {requestHasTasks ? "✓ Project Started" : "Start Project"}
@@ -836,7 +845,7 @@ function RequestList() {
                 )}
                 <button
                   type="button"
-                  onClick={handleCancelRequest}
+                  onClick={() => setShowCancellationModal(true)}
                   className="btn"
                   style={{
                     minWidth: "160px",
@@ -938,6 +947,247 @@ function RequestList() {
           </div>
         )}
       </div>
+
+      {/* Cancellation Confirmation Modal */}
+      {showCancellationModal && (
+        <div
+          onClick={() => {
+            setShowCancellationModal(false);
+            setCancellationReason('');
+          }}
+          style={{
+            position: "fixed",
+            inset: 0,
+            backgroundColor: "rgba(0, 0, 0, 0.6)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 10000,
+            padding: "20px",
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              backgroundColor: "#ffffff",
+              borderRadius: "12px",
+              padding: "0",
+              maxWidth: "500px",
+              width: "100%",
+              boxShadow: "0 20px 60px rgba(0, 0, 0, 0.3)",
+              fontFamily: "Arial, sans-serif",
+            }}
+          >
+            {/* Header */}
+            <div
+              style={{
+                backgroundColor: "#EF4444",
+                color: "white",
+                padding: "1.5rem",
+                borderRadius: "12px 12px 0 0",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+              }}
+            >
+              <div style={{ fontSize: "18px", fontWeight: "700" }}>
+                Cancel Purchase Order
+              </div>
+              <button
+                onClick={() => {
+                  setShowCancellationModal(false);
+                  setCancellationReason('');
+                }}
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  color: "white",
+                  fontSize: "24px",
+                  cursor: "pointer",
+                  lineHeight: 1,
+                }}
+              >
+                ×
+              </button>
+            </div>
+
+            {/* Content */}
+            <div style={{ padding: "2rem" }}>
+              {/* Confirmation Text */}
+              <div style={{ marginBottom: "1.5rem" }}>
+                <p
+                  style={{
+                    margin: 0,
+                    color: "#374151",
+                    fontSize: "14px",
+                    lineHeight: "1.6",
+                  }}
+                >
+                  Are you sure you want to <strong>cancel</strong> this purchase order?
+                </p>
+                <p
+                  style={{
+                    margin: "0.5rem 0 0 0",
+                    color: "#6B7280",
+                    fontSize: "13px",
+                    fontStyle: "italic",
+                  }}
+                >
+                  This action cannot be undone. The order will be moved to Cancelled Orders.
+                </p>
+              </div>
+
+              {/* Cancellation Reason Input */}
+              <div style={{ marginBottom: "1.5rem" }}>
+                <label
+                  style={{
+                    display: "block",
+                    marginBottom: "0.5rem",
+                    fontSize: "14px",
+                    fontWeight: "600",
+                    color: "#374151",
+                  }}
+                >
+                  Cancellation Reason <span style={{ color: "#EF4444" }}>*</span>
+                </label>
+                <textarea
+                  value={cancellationReason}
+                  onChange={(e) => setCancellationReason(e.target.value)}
+                  placeholder="Please provide a reason for cancelling this order..."
+                  style={{
+                    width: "100%",
+                    padding: "0.75rem",
+                    border: "1px solid #D1D5DB",
+                    borderRadius: "6px",
+                    fontSize: "14px",
+                    fontFamily: "Arial, sans-serif",
+                    minHeight: "100px",
+                    resize: "vertical",
+                    boxSizing: "border-box",
+                  }}
+                />
+              </div>
+
+              {/* Order Details */}
+              {selectedRequest && (
+                <div
+                  style={{
+                    backgroundColor: "#F9FAFB",
+                    padding: "1rem",
+                    borderRadius: "6px",
+                    marginBottom: "1.5rem",
+                    fontSize: "13px",
+                  }}
+                >
+                  <div style={{ marginBottom: "0.5rem" }}>
+                    <span style={{ fontWeight: "600", color: "#374151" }}>
+                      Issuance:
+                    </span>
+                    <span style={{ marginLeft: "0.5rem", color: "#6B7280" }}>
+                      #{selectedRequest.RequestID}
+                    </span>
+                  </div>
+                  <div>
+                    <span style={{ fontWeight: "600", color: "#374151" }}>
+                      Customer:
+                    </span>
+                    <span style={{ marginLeft: "0.5rem", color: "#6B7280" }}>
+                      {selectedRequest.customer_name}
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* Error if no reason */}
+              {!cancellationReason.trim() && (
+                <div
+                  style={{
+                    backgroundColor: "#FEE2E2",
+                    border: "1px solid #FECACA",
+                    color: "#DC2626",
+                    padding: "0.75rem",
+                    borderRadius: "6px",
+                    fontSize: "13px",
+                    marginBottom: "1rem",
+                  }}
+                >
+                  ⚠️ Please provide a cancellation reason before confirming.
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div
+              style={{
+                display: "flex",
+                gap: "1rem",
+                padding: "1.5rem",
+                borderTop: "1px solid #E5E7EB",
+                backgroundColor: "#F9FAFB",
+                borderRadius: "0 0 12px 12px",
+                justifyContent: "flex-end",
+              }}
+            >
+              <button
+                onClick={() => {
+                  setShowCancellationModal(false);
+                  setCancellationReason('');
+                }}
+                style={{
+                  padding: "0.65rem 1.5rem",
+                  backgroundColor: "#E5E7EB",
+                  color: "#374151",
+                  border: "1px solid #D1D5DB",
+                  borderRadius: "6px",
+                  fontSize: "14px",
+                  fontWeight: "600",
+                  cursor: "pointer",
+                  transition: "all 0.2s",
+                }}
+                onMouseOver={(e) => {
+                  e.currentTarget.style.backgroundColor = "#D1D5DB";
+                }}
+                onMouseOut={(e) => {
+                  e.currentTarget.style.backgroundColor = "#E5E7EB";
+                }}
+              >
+                Keep Order
+              </button>
+              <button
+                onClick={() => {
+                  if (cancellationReason.trim()) {
+                    handleCancelRequest(cancellationReason);
+                  }
+                }}
+                disabled={!cancellationReason.trim()}
+                style={{
+                  padding: "0.65rem 1.5rem",
+                  backgroundColor: cancellationReason.trim() ? "#EF4444" : "#9CA3AF",
+                  color: "white",
+                  border: "none",
+                  borderRadius: "6px",
+                  fontSize: "14px",
+                  fontWeight: "600",
+                  cursor: cancellationReason.trim() ? "pointer" : "not-allowed",
+                  transition: "all 0.2s",
+                }}
+                onMouseOver={(e) => {
+                  if (cancellationReason.trim()) {
+                    e.currentTarget.style.backgroundColor = "#DC2626";
+                  }
+                }}
+                onMouseOut={(e) => {
+                  if (cancellationReason.trim()) {
+                    e.currentTarget.style.backgroundColor = "#EF4444";
+                  }
+                }}
+              >
+                Confirm Cancellation
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </SidebarLayout>
   );
 }

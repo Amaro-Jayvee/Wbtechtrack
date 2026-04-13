@@ -1438,7 +1438,7 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
       <div className="modal-overlay" onClick={onClose}>
       <div className="modal-content modal-large" onClick={(e) => e.stopPropagation()}>
         {/* Header */}
-        <div className="modal-header" style={{ backgroundColor: "#46E63E", color: "white", padding: "1.5rem", display: "flex", justifyContent: "space-between", alignItems: "center", position: "sticky", top: 0, zIndex: 100 }}>
+        <div className="modal-header" style={{ backgroundColor: "#52A374", color: "white", padding: "1.5rem", display: "flex", justifyContent: "space-between", alignItems: "center", position: "sticky", top: 0, zIndex: 100 }}>
           <h2 style={{ margin: 0, color: "white", fontSize: "1.25rem", fontWeight: "600" }}>Task Information</h2>
           <button className="btn-close" onClick={onClose} style={{ color: "#ffffff", fontSize: "2.5rem", background: "none", border: "none", cursor: "pointer", padding: "0", lineHeight: "1", textShadow: "0 0 2px rgba(0,0,0,0.1)", transition: "all 0.2s ease" }} onMouseEnter={(e) => { e.target.style.color = "#f0f0f0"; e.target.style.textShadow = "0 0 4px rgba(0,0,0,0.2)"; }} onMouseLeave={(e) => { e.target.style.color = "#ffffff"; e.target.style.textShadow = "0 0 2px rgba(0,0,0,0.1)"; }}>
             ×

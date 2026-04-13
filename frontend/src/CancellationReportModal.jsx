@@ -34,7 +34,7 @@ function CancellationReportModal({ item, onClose }) {
   };
 
   const handlePrint = () => {
-    const printWindow = window.open("", "", "height=800,width=1200");
+    const printWindow = window.open("", "_blank", "height=800,width=1200");
     const reportContent = reportRef.current.innerHTML;
     
     printWindow.document.write(`

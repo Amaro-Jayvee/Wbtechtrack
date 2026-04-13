@@ -11,6 +11,9 @@ import Settings from "./Settings";
 import CustomerViewRequests from "./CustomerViewRequests";
 import CustomerSettings from "./CustomerSettings";
 import PrintableReport from "./PrintableReport";
+import TaskStatusReport from "./TaskStatusReport";
+import CompletedTasksReport from "./CompletedTasksReport";
+import CancelledOrdersReport from "./CancelledOrdersReport";
 import ResetPassword from "./ResetPassword";
 import { UserProvider } from "./UserContext.jsx";
 
@@ -28,7 +31,10 @@ function App() {
           <Route path="/customer-requests" element={<CustomerViewRequests />} />
           <Route path="/customer/settings" element={<CustomerSettings />} />
           <Route path="/task-status" element={<TaskStatus />} />
+          <Route path="/task-status-report" element={<TaskStatusReport />} />
+          <Route path="/completed-tasks-report" element={<CompletedTasksReport />} />
           <Route path="/cancelled-requests" element={<CancelledRequests />} />
+          <Route path="/cancelled-orders-report" element={<CancelledOrdersReport />} />
           <Route path="/printable-report" element={<PrintableReport />} />
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/settings" element={<Settings />} />

@@ -261,6 +261,8 @@ html, body {
   display: flex;
   flex-direction: column;
   transition: margin-left 0.3s ease;
+  height: 100vh;
+  overflow: hidden;
 }
 
 .main-content.sidebar-collapsed {
@@ -280,6 +282,8 @@ html, body {
   justify-content: space-between;
   align-items: center;
   gap: 20px;
+  flex-shrink: 0;
+  height: auto;
 }
 
 .header-title {
@@ -634,6 +638,7 @@ html, body {
   flex: 1;
   padding: 8px 30px;
   overflow: auto;
+  height: 100%;
 }
 
 .page-title {

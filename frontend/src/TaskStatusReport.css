@@ -1,0 +1,370 @@
+/* TaskStatusReport.css - Professional Print Report Styling */
+
+.task-status-report {
+  background-color: #fff;
+  color: #333;
+  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  line-height: 1.6;
+}
+
+/* Print Controls (Hidden on Print) */
+.print-controls {
+  display: flex;
+  gap: 10px;
+  padding: 20px;
+  background-color: #f5f5f5;
+  border-bottom: 1px solid #e0e0e0;
+  justify-content: flex-end;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.btn-print,
+.btn-back {
+  padding: 10px 18px;
+  border: 1px solid #ddd;
+  background-color: #fff;
+  color: #333;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.btn-print:hover {
+  background-color: #1D6AB7;
+  color: #fff;
+  border-color: #1D6AB7;
+}
+
+.btn-back:hover {
+  background-color: #f0f0f0;
+}
+
+/* Report Header */
+.report-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 30px;
+  border-bottom: 3px solid #1D6AB7;
+  background-color: #f9f9f9;
+  max-width: 1200px;
+  margin: 20px auto 0;
+}
+
+.company-header {
+  flex: 1;
+}
+
+.company-header h1 {
+  margin: 0;
+  font-size: 28px;
+  color: #1D6AB7;
+  font-weight: 700;
+}
+
+.company-header p {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: #666;
+}
+
+.report-title {
+  text-align: right;
+  flex: 1;
+}
+
+.report-title h2 {
+  margin: 0;
+  font-size: 22px;
+  color: #333;
+  font-weight: 600;
+}
+
+.report-title p {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: #999;
+}
+
+/* Summary Section */
+.summary-section {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 30px;
+  background-color: #fff;
+}
+
+.summary-section h3 {
+  margin: 0 0 20px;
+  font-size: 18px;
+  color: #1D6AB7;
+  font-weight: 600;
+}
+
+.summary-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 15px;
+  margin-bottom: 20px;
+}
+
+.metric-card {
+  background: linear-gradient(135deg, #f5f7fa 0%, #f0f2f5 100%);
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 20px;
+  text-align: center;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+.metric-value {
+  font-size: 32px;
+  font-weight: 700;
+  color: #1D6AB7;
+  margin-bottom: 8px;
+}
+
+.metric-label {
+  font-size: 12px;
+  color: #666;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Filters Applied */
+.filters-applied {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 15px 30px;
+  background-color: #e3f2fd;
+  border-left: 3px solid #1D6AB7;
+  font-size: 13px;
+  color: #333;
+}
+
+.filters-applied p {
+  margin: 0;
+}
+
+.filters-applied ul {
+  list-style: none;
+  padding: 0;
+}
+
+.filters-applied li {
+  padding: 4px 0;
+}
+
+/* Tasks Section */
+.tasks-section {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 30px;
+  background-color: #fff;
+}
+
+.product-group {
+  margin-bottom: 40px;
+  break-inside: avoid;
+}
+
+.product-name {
+  font-size: 16px;
+  color: #1D6AB7;
+  font-weight: 600;
+  border-bottom: 2px solid #e0e0e0;
+  padding-bottom: 10px;
+  margin: 0 0 15px;
+}
+
+.tasks-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 15px;
+  font-size: 13px;
+}
+
+.tasks-table thead tr {
+  background-color: #f5f5f5;
+  border-bottom: 2px solid #d0d0d0;
+}
+
+.tasks-table th {
+  padding: 12px 10px;
+  text-align: left;
+  font-weight: 600;
+  color: #333;
+  white-space: nowrap;
+}
+
+.tasks-table td {
+  padding: 10px;
+  border-bottom: 1px solid #e0e0e0;
+  vertical-align: middle;
+}
+
+.tasks-table tbody tr:nth-child(even) {
+  background-color: #f9f9f9;
+}
+
+.tasks-table tbody tr:hover {
+  background-color: #f0f0f0;
+}
+
+/* Report Footer */
+.report-footer {
+  text-align: center;
+  padding: 30px;
+  background-color: #f5f5f5;
+  border-top: 1px solid #e0e0e0;
+  color: #999;
+  font-size: 12px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.report-footer p {
+  margin: 4px 0;
+}
+
+/* Print Styles */
+@media print {
+  /* Hide on-screen controls */
+  .print-controls {
+    display: none;
+  }
+
+  /* Page setup */
+  body {
+    margin: 0;
+    padding: 0;
+    background: none;
+  }
+
+  .task-status-report {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    box-shadow: none;
+  }
+
+  /* Header on every page */
+  .report-header {
+    margin: 0;
+    padding: 20px 40px;
+    background: none;
+    border-bottom: 2px solid #1D6AB7;
+  }
+
+  .report-header h1 {
+    font-size: 24px;
+  }
+
+  .report-header h2 {
+    font-size: 18px;
+  }
+
+  /* Content sections */
+  .summary-section,
+  .filters-applied,
+  .tasks-section {
+    margin: 0;
+    padding: 20px 40px;
+    background: none;
+  }
+
+  .summary-metrics {
+    gap: 10px;
+    grid-template-columns: repeat(5, 1fr);
+  }
+
+  .metric-card {
+    background: none;
+    border: 1px solid #999;
+    padding: 12px 8px;
+  }
+
+  .metric-value {
+    font-size: 24px;
+  }
+
+  .metric-label {
+    font-size: 10px;
+  }
+
+  /* Tables */
+  .tasks-table {
+    font-size: 11px;
+  }
+
+  .tasks-table th {
+    padding: 8px 6px;
+    background-color: #e0e0e0;
+    border: 1px solid #999;
+  }
+
+  .tasks-table td {
+    padding: 6px;
+    border: 1px solid #ccc;
+  }
+
+  .product-group {
+    page-break-inside: avoid;
+    margin-bottom: 30px;
+  }
+
+  /* Footer */
+  .report-footer {
+    margin: 0;
+    padding: 15px 40px;
+    background: none;
+    border-top: 1px solid #999;
+  }
+
+  /* Page breaks */
+  @page {
+    size: A4;
+    margin: 20mm;
+  }
+
+  /* Avoid breaking tables */
+  table {
+    page-break-inside: avoid;
+  }
+
+  /* Print-friendly colors */
+  a {
+    text-decoration: none;
+    color: #000;
+  }
+}
+
+/* Responsive Design for Screen */
+@media screen and (max-width: 768px) {
+  .report-header {
+    flex-direction: column;
+    text-align: center;
+    gap: 15px;
+  }
+
+  .report-title {
+    text-align: center;
+  }
+
+  .summary-metrics {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .tasks-table {
+    font-size: 12px;
+  }
+
+  .tasks-table th,
+  .tasks-table td {
+    padding: 8px 6px;
+  }
+}
