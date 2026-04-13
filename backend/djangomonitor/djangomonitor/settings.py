@@ -94,8 +94,8 @@ CSRF_TRUSTED_ORIGINS = [
     'http://127.0.0.1:5173', 
     'http://localhost:5174', 
     'http://127.0.0.1:5174',
-    'https://*.railway.app',
-    'http://*.railway.app',
+    'https://railway.app',
+    'http://railway.app',
 ]
 
 CORS_ALLOWED_ORIGINS = [
@@ -103,8 +103,8 @@ CORS_ALLOWED_ORIGINS = [
     "http://127.0.0.1:5173",
     "http://localhost:5174",
     "http://127.0.0.1:5174",
-    "https://*.railway.app",
-    "http://*.railway.app",
+    "https://railway.app",
+    "http://railway.app",
 ]
 
 ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
