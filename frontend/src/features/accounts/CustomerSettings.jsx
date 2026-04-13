@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { useUser } from "./UserContext.jsx";
-import ActivityLogsPanel from "./ActivityLogsPanel";
-import "./Dashboard.css";
+import { useUser } from "../../shared/context/UserContext.jsx";
+import ActivityLogsPanel from "../../shared/components/ActivityLogsPanel";
+import "../../features/dashboard/Dashboard.css";
 
 function CustomerSettings() {
   const navigate = useNavigate();

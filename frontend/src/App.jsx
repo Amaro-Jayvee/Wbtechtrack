@@ -1,21 +1,21 @@
 import React from "react";
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
-import Login from "./login";
-import Accounts from "./Accounts";
-import Request from "./Request";
-import RequestList from "./RequestList";
-import TaskStatus from "./TaskStatus";
-import CancelledRequests from "./CancelledRequests";
-import Dashboard from "./Dashboard";
-import Settings from "./Settings";
-import CustomerViewRequests from "./CustomerViewRequests";
-import CustomerSettings from "./CustomerSettings";
-import PrintableReport from "./PrintableReport";
-import TaskStatusReport from "./TaskStatusReport";
-import CompletedTasksReport from "./CompletedTasksReport";
-import CancelledOrdersReport from "./CancelledOrdersReport";
-import ResetPassword from "./ResetPassword";
-import { UserProvider } from "./UserContext.jsx";
+import Login from "./features/auth/login";
+import Accounts from "./features/accounts/Accounts";
+import Request from "./features/requests/Request";
+import RequestList from "./features/requests/RequestList";
+import TaskStatus from "./features/tasks/TaskStatus";
+import CancelledRequests from "./features/cancelled-orders/CancelledRequests";
+import Dashboard from "./features/dashboard/Dashboard";
+import Settings from "./features/accounts/Settings";
+import CustomerViewRequests from "./features/requests/CustomerViewRequests";
+import CustomerSettings from "./features/accounts/CustomerSettings";
+import PrintableReport from "./shared/components/PrintableReport";
+import TaskStatusReport from "./features/tasks/reports/TaskStatusReport";
+import CompletedTasksReport from "./features/completed-tasks/reports/CompletedTasksReport";
+import CancelledOrdersReport from "./features/cancelled-orders/reports/CancelledOrdersReport";
+import ResetPassword from "./features/auth/ResetPassword";
+import { UserProvider } from "./shared/context/UserContext.jsx";
 
 function App() {
   return (

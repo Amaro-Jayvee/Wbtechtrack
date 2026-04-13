@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useUser } from "./UserContext.jsx";
+import { useUser } from "../../shared/context/UserContext.jsx";
 import "bootstrap/dist/css/bootstrap.min.css";
 import "./login.css";
 import SignupForm from "./SignupForm";

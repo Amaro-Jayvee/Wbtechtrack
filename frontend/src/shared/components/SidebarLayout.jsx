@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import "bootstrap/dist/css/bootstrap.min.css";
-import "./Dashboard.css";
-import ExtensionApprovalModal from "./ExtensionApprovalModal";
-import { useUser } from "./UserContext.jsx";
-import { fetchWithCSRF, initializeCsrfToken } from "./csrfUtils.js";
+import "../../features/dashboard/Dashboard.css";
+import ExtensionApprovalModal from "../../features/requests/ExtensionApprovalModal";
+import { useUser } from "../context/UserContext.jsx";
+import { fetchWithCSRF, initializeCsrfToken } from "../utils/csrfUtils.js";
 
 function SidebarLayout({ children }) {
   const navigate = useNavigate();

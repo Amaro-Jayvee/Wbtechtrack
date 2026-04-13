@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from "react";
-import "./Dashboard.css";
-import ExtensionRequestModal from "./ExtensionRequestModal";
+import "../../features/dashboard/Dashboard.css";
+import ExtensionRequestModal from "../requests/ExtensionRequestModal";
 import TaskHistoryModal from "./TaskHistoryModal";
-import CancellationReasonModalComponent from "./CancellationReasonModalComponent";
+import CancellationReasonModalComponent from "../cancelled-orders/CancellationReasonModalComponent";
 
 function TaskDetailModal({ productProcessId, onClose, onSave }) {
   const [taskData, setTaskData] = useState(null);

@@ -4,8 +4,8 @@ import Calendar from "react-calendar";
 import "react-calendar/dist/Calendar.css";
 import "bootstrap/dist/css/bootstrap.min.css";
 import "./Request.css";
-import { useUser } from "./UserContext.jsx";
-import CompletedOrderModal from "./CompletedOrderModal.jsx";
+import { useUser } from "../../shared/context/UserContext.jsx";
+import CompletedOrderModal from "../cancelled-orders/CompletedOrderModal.jsx";
 
 // Helper function to get minimum allowed date (4 days from today)
 const getMinimumDate = () => {

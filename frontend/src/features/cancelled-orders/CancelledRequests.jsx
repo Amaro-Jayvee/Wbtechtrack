@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useMemo } from "react";
-import SidebarLayout from "./SidebarLayout";
+import SidebarLayout from "../../shared/components/SidebarLayout";
 import CancellationReportModal from "./CancellationReportModal";
-import "./Dashboard.css";
-import { useUser } from "./UserContext.jsx";
+import "../../features/dashboard/Dashboard.css";
+import { useUser } from "../../shared/context/UserContext.jsx";
 
 function CancelledRequests() {
   const { userData } = useUser();

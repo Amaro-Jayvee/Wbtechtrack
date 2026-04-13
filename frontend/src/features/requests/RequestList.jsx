@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import SidebarLayout from "./SidebarLayout";
-import { useUser } from "./UserContext.jsx";
-import "./Dashboard.css";
+import SidebarLayout from "../../shared/components/SidebarLayout";
+import { useUser } from "../../shared/context/UserContext.jsx";
+import "../../features/dashboard/Dashboard.css";
 import "./Request.css";
 
 function RequestList() {

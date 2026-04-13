@@ -11,7 +11,7 @@ import {
   Tooltip,
   Legend,
 } from "chart.js";
-import SidebarLayout from "./SidebarLayout";
+import SidebarLayout from "../../shared/components/SidebarLayout";
 import "./Dashboard.css";
 
 // Custom plugin to display labels on pie chart (only for pie charts)

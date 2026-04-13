@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import "./Dashboard.css";
+import "../../features/dashboard/Dashboard.css";
 
 function ExtensionApprovalModal({ notification, onClose, onSuccess }) {
   const [isApproving, setIsApproving] = useState(false);

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import "./Dashboard.css";
+import "../../features/dashboard/Dashboard.css";
 
 function ExtensionRequestModal({ taskData, requestProductId, onClose, onSuccess }) {
   const [newDeadline, setNewDeadline] = useState("");

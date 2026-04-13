@@ -1,17 +1,17 @@
 import React, { useState, useMemo, useEffect } from "react";
 import { useLocation } from "react-router-dom";
-import "./PrintableReport.css";
+import "../../../shared/styles/PrintableReport.css";
 
-function CancelledOrdersReport() {
+function CompletedTasksReport() {
   const location = useLocation();
-  const [orders, setOrders] = useState([]);
+  const [tasks, setTasks] = useState([]);
   const [filters, setFilters] = useState({});
 
-  // Load orders from URL hash on component mount
+  // Load tasks from URL hash on component mount
   useEffect(() => {
     try {
       console.log("\n========================================");
-      console.log("=== CancelledOrdersReport LOADING ===");
+      console.log("=== CompletedTasksReport LOADING ===");
       console.log("========================================");
       
       // Method 1: URL Hash (PRIMARY - most reliable)
@@ -26,13 +26,16 @@ function CancelledOrdersReport() {
         const data = JSON.parse(jsonStr);
         
         console.log("✓ Decoded and parsed successfully");
-        console.log("Orders: " + data.orders.length);
+        console.log("Tasks: " + data.tasks.length);
         
-        if (data.orders.length > 0) {
-          console.log("First order: " + data.orders[0].product_name);
+        if (data.tasks.length > 0) {
+          console.log("First task: " + data.tasks[0].product_name + 
+            " (Quota: " + data.tasks[0].total_quota + 
+            ", OT: " + data.tasks[0].ot_quota + 
+            ", Defects: " + data.tasks[0].defect_count + ")");
         }
         
-        setOrders(data.orders);
+        setTasks(data.tasks);
         setFilters(data.filters || {});
         console.log("========================================\n");
         return;
@@ -40,55 +43,93 @@ function CancelledOrdersReport() {
       
       // Method 2: localStorage (fallback)
       console.log("\n2. Checking localStorage...");
-      const stored = localStorage.getItem('cancelledOrdersReportData');
+      const stored = localStorage.getItem('completedTasksReportData');
       if (stored) {
         const data = JSON.parse(stored);
         console.log("✓ Found in localStorage");
-        setOrders(data.orders);
+        setTasks(data.tasks);
         setFilters(data.filters || {});
-        localStorage.removeItem('cancelledOrdersReportData');
+        localStorage.removeItem('completedTasksReportData');
         console.log("========================================\n");
         return;
       }
       
       // Method 3: React Router state (fallback)
       console.log("\n3. Checking React Router state...");
-      if (location.state?.orders) {
+      if (location.state?.tasks) {
         console.log("✓ Found in location.state");
-        setOrders(location.state.orders);
+        setTasks(location.state.tasks);
         setFilters(location.state.filters || {});
         console.log("========================================\n");
         return;
       }
       
       console.log("✗ No data found in any source");
-      setOrders([]);
+      setTasks([]);
       console.log("========================================\n");
       
     } catch (error) {
       console.error("✗ Error loading data:", error);
-      setOrders([]);
+      setTasks([]);
     }
   }, [location]);
 
   // Get status badge color
   const getStatusBadgeColor = (status) => {
     const statusLower = (status || "").toLowerCase();
-    if (statusLower === "cancelled") {
-      return { bg: "#ffe0e0", color: "#d32f2f" };
+    if (statusLower === "done") {
+      return { bg: "#e0f2e0", color: "#22c55e" };
     }
     return { bg: "#f5f5f5", color: "#666" };
   };
 
   // Calculate summary metrics
   const summary = useMemo(() => {
-    const totalOrders = orders.length;
+    const totalTasks = tasks.length;
     
     return {
-      totalOrders,
+      totalTasks,
       generatedAt: filters.generatedAt || new Date().toLocaleString()
     };
-  }, [orders, filters]);
+  }, [tasks, filters]);
+
+  const getDeadlineValue = (task) => {
+    let deadline = null;
+    
+    if (task.due_date && task.due_date !== "-") {
+      deadline = task.due_date;
+    } 
+    else if (task.deadline_extension && task.deadline_extension !== "-") {
+      deadline = task.deadline_extension;
+    }
+    else if (task.deadline && task.deadline !== "-") {
+      deadline = task.deadline;
+    }
+    else if (task.deadline_date && task.deadline_date !== "-") {
+      deadline = task.deadline_date;
+    }
+    
+    if (!deadline && task.steps && task.steps.length > 0) {
+      const firstStep = task.steps[0];
+      if (firstStep.due_date && firstStep.due_date !== "-") deadline = firstStep.due_date;
+      else if (firstStep.deadline_extension && firstStep.deadline_extension !== "-") deadline = firstStep.deadline_extension;
+      else if (firstStep.deadline && firstStep.deadline !== "-") deadline = firstStep.deadline;
+    }
+    
+    if (deadline) {
+      try {
+        const dateObj = new Date(deadline);
+        if (isNaN(dateObj.getTime())) {
+          return "—";
+        }
+        return dateObj.toLocaleDateString();
+      } catch (e) {
+        return "—";
+      }
+    }
+    
+    return "—";
+  };
 
   return (
     <div style={{
@@ -125,7 +166,7 @@ function CancelledOrdersReport() {
         <div style={{ textAlign: "right", fontSize: "12px", color: "#666" }}>
           <div>Generated: {summary.generatedAt}</div>
           <div style={{ marginTop: "8px", fontSize: "11px", color: "#999" }}>
-            Report Type: Cancelled Orders
+            Report Type: Completed Tasks
           </div>
         </div>
       </div>
@@ -141,14 +182,14 @@ function CancelledOrdersReport() {
           fontWeight: "bold",
           margin: "0 0 8px 0"
         }}>
-          CANCELLED ORDERS REPORT
+          COMPLETED TASKS REPORT
         </h2>
         <p style={{
           color: "#666",
           fontSize: "12px",
           margin: "0"
         }}>
-          Summary of cancelled purchase orders
+          Summary of completed production tasks with quota and defect details
         </p>
       </div>
 
@@ -172,14 +213,38 @@ function CancelledOrdersReport() {
             color: "#1d6ab7",
             marginBottom: "5px"
           }}>
-            {summary.totalOrders}
+            {summary.totalTasks}
           </div>
           <div style={{
             fontSize: "12px",
             color: "#666",
             fontWeight: "500"
           }}>
-            Total Orders
+            Total Tasks
+          </div>
+        </div>
+
+        <div style={{
+          backgroundColor: "#f5f5f5",
+          border: "2px solid #22c55e",
+          borderRadius: "6px",
+          padding: "15px",
+          textAlign: "center"
+        }}>
+          <div style={{
+            fontSize: "24px",
+            fontWeight: "bold",
+            color: "#22c55e",
+            marginBottom: "5px"
+          }}>
+            {summary.totalTasks}
+          </div>
+          <div style={{
+            fontSize: "12px",
+            color: "#666",
+            fontWeight: "500"
+          }}>
+            Completed
           </div>
         </div>
 
@@ -196,38 +261,14 @@ function CancelledOrdersReport() {
             color: "#d32f2f",
             marginBottom: "5px"
           }}>
-            {summary.totalOrders}
+            {tasks.reduce((sum, task) => sum + (task.defect_count || 0), 0)}
           </div>
           <div style={{
             fontSize: "12px",
             color: "#666",
             fontWeight: "500"
           }}>
-            Cancelled
-          </div>
-        </div>
-
-        <div style={{
-          backgroundColor: "#f5f5f5",
-          border: "2px solid #999",
-          borderRadius: "6px",
-          padding: "15px",
-          textAlign: "center"
-        }}>
-          <div style={{
-            fontSize: "24px",
-            fontWeight: "bold",
-            color: "#999",
-            marginBottom: "5px"
-          }}>
-            {orders.reduce((sum, order) => sum + (order.quantity || 0), 0)}
-          </div>
-          <div style={{
-            fontSize: "12px",
-            color: "#666",
-            fontWeight: "500"
-          }}>
-            Total Quantity
+            Total Defects
           </div>
         </div>
 
@@ -256,79 +297,73 @@ function CancelledOrdersReport() {
         </div>
       </div>
 
-      {/* ORDERS TABLE */}
-      {orders.length === 0 ? (
+      {/* TASKS TABLE */}
+      {tasks.length === 0 ? (
         <div style={{ textAlign: "center", padding: "40px", color: "#999" }}>
-          <p>No cancelled orders found</p>
+          <p>No completed tasks found</p>
         </div>
       ) : (
         <table style={{
           width: "100%",
           borderCollapse: "collapse",
-          fontSize: "10px",
+          fontSize: "9px",
           marginBottom: "20px"
         }}>
           <thead>
             <tr style={{ backgroundColor: "#f5f5f5", borderBottom: "2px solid #999" }}>
               <th style={{ padding: "8px", textAlign: "left", fontWeight: "bold", borderRight: "1px solid #ccc" }}>Issuance No.</th>
               <th style={{ padding: "8px", textAlign: "left", fontWeight: "bold", borderRight: "1px solid #ccc" }}>Product</th>
-              <th style={{ padding: "8px", textAlign: "center", fontWeight: "bold", borderRight: "1px solid #ccc" }}>Quantity</th>
-              <th style={{ padding: "8px", textAlign: "center", fontWeight: "bold", borderRight: "1px solid #ccc" }}>Progress @ Cancel</th>
+              <th style={{ padding: "8px", textAlign: "left", fontWeight: "bold", borderRight: "1px solid #ccc" }}>Status</th>
+              <th style={{ padding: "8px", textAlign: "center", fontWeight: "bold", borderRight: "1px solid #ccc" }}>Regular Quota</th>
+              <th style={{ padding: "8px", textAlign: "center", fontWeight: "bold", borderRight: "1px solid #ccc" }}>OT Quota</th>
+              <th style={{ padding: "8px", textAlign: "center", fontWeight: "bold", borderRight: "1px solid #ccc" }}>Defect</th>
+              <th style={{ padding: "8px", textAlign: "center", fontWeight: "bold", borderRight: "1px solid #ccc" }}>OT Defect</th>
               <th style={{ padding: "8px", textAlign: "left", fontWeight: "bold", borderRight: "1px solid #ccc" }}>Deadline</th>
-              <th style={{ padding: "8px", textAlign: "left", fontWeight: "bold", borderRight: "1px solid #ccc" }}>Cancelled By</th>
-              <th style={{ padding: "8px", textAlign: "left", fontWeight: "bold", borderRight: "1px solid #ccc" }}>Reason</th>
-              <th style={{ padding: "8px", textAlign: "left", fontWeight: "bold" }}>Cancelled Date</th>
+              <th style={{ padding: "8px", textAlign: "left", fontWeight: "bold" }}>Last Update</th>
             </tr>
           </thead>
           <tbody>
-            {orders.map((order, idx) => {
-              const statusColor = getStatusBadgeColor("cancelled");
-              const progressValue = order.cancellation_progress 
-                ? ((order.cancellation_progress.completed_quota || 0) / (order.cancellation_progress.total_quota || 1) * 100).toFixed(1)
-                : 0;
+            {tasks.map((task, idx) => {
+              const statusColor = getStatusBadgeColor(task.task_status);
+              const statusText = (task.task_status || "").toLowerCase() === "done" ? "Done" : "Unknown";
               
               return (
-                <tr key={`${order.id}-${idx}`} style={{ borderBottom: "1px solid #ddd", backgroundColor: idx % 2 === 0 ? "#fff" : "#f9f9f9" }}>
+                <tr key={`${task.id}-${idx}`} style={{ borderBottom: "1px solid #ddd", backgroundColor: idx % 2 === 0 ? "#fff" : "#f9f9f9" }}>
                   <td style={{ padding: "6px 8px", borderRight: "1px solid #ccc", fontWeight: "600" }}>
-                    {order.request_id ? `#${order.request_id}` : "N/A"}
+                    {task.request_id || "N/A"}
                   </td>
-                  <td style={{ padding: "6px 8px", borderRight: "1px solid #ccc", fontSize: "9px" }}>
-                    {order.product_name || "Unnamed"}
-                  </td>
-                  <td style={{ padding: "6px 8px", textAlign: "center", borderRight: "1px solid #ccc" }}>
-                    {order.quantity || 0}
-                  </td>
-                  <td style={{ padding: "6px 8px", textAlign: "center", borderRight: "1px solid #ccc" }}>
-                    {order.cancellation_progress ? (
-                      <div>
-                        <div style={{ fontWeight: "600", color: "#1d6ab7" }}>
-                          {order.cancellation_progress.completed_quota || 0} / {order.cancellation_progress.total_quota || 0}
-                        </div>
-                        <div style={{ fontSize: "9px", color: "#666" }}>
-                          {progressValue}%
-                        </div>
-                      </div>
-                    ) : (
-                      "—"
-                    )}
+                  <td style={{ padding: "6px 8px", borderRight: "1px solid #ccc", fontSize: "8px" }}>
+                    {task.product_name || "Unnamed"}
                   </td>
                   <td style={{ padding: "6px 8px", borderRight: "1px solid #ccc" }}>
-                    {order.deadline
-                      ? new Date(order.deadline).toLocaleDateString('en-US', {
-                          year: 'numeric',
-                          month: '2-digit',
-                          day: '2-digit'
-                        })
-                      : "N/A"}
+                    <span style={{
+                      backgroundColor: statusColor.bg,
+                      color: statusColor.color,
+                      padding: "3px 6px",
+                      borderRadius: "2px",
+                      fontWeight: "600",
+                      fontSize: "8px"
+                    }}>
+                      {statusText}
+                    </span>
+                  </td>
+                  <td style={{ padding: "6px 8px", textAlign: "center", borderRight: "1px solid #ccc" }}>
+                    {task.total_quota || 0}
+                  </td>
+                  <td style={{ padding: "6px 8px", textAlign: "center", borderRight: "1px solid #ccc" }}>
+                    {task.ot_quota || 0}
+                  </td>
+                  <td style={{ padding: "6px 8px", textAlign: "center", borderRight: "1px solid #ccc", color: task.defect_count > 0 ? "#d32f2f" : "#666" }}>
+                    {task.defect_count || 0}
+                  </td>
+                  <td style={{ padding: "6px 8px", textAlign: "center", borderRight: "1px solid #ccc", color: (task.ot_defect_count || 0) > 0 ? "#d32f2f" : "#666" }}>
+                    {task.ot_defect_count || 0}
                   </td>
                   <td style={{ padding: "6px 8px", borderRight: "1px solid #ccc" }}>
-                    {order.cancelled_by_name || "—"}
-                  </td>
-                  <td style={{ padding: "6px 8px", borderRight: "1px solid #ccc", fontSize: "9px" }}>
-                    {order.cancellation_reason || "—"}
+                    {getDeadlineValue(task)}
                   </td>
                   <td style={{ padding: "6px 8px" }}>
-                    {order.updated_at ? new Date(order.updated_at).toLocaleString('en-US', { month: '2-digit', day: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : "N/A"}
+                    {task.updated_at ? new Date(task.updated_at).toLocaleString('en-US', { month: '2-digit', day: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : "N/A"}
                   </td>
                 </tr>
               );
@@ -391,11 +426,11 @@ function CancelledOrdersReport() {
           color: "#999"
         }}>
           <p style={{ margin: "4px 0" }}>This is an automated report generated by TechTrack Management System</p>
-          <p style={{ margin: "4px 0" }}>Report Type: Cancelled Purchase Orders | Confidential</p>
+          <p style={{ margin: "4px 0" }}>Report Type: Completed Tasks | Confidential</p>
         </div>
       </div>
     </div>
   );
 }
 
-export default CancelledOrdersReport;
+export default CompletedTasksReport;

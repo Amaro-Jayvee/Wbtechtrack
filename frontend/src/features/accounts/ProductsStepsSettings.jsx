@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { getCsrfToken } from './csrfUtils.js';
+import { getCsrfToken } from '../../shared/utils/csrfUtils.js';
 
 const ProductsStepsSettings = () => {
   const [products, setProducts] = useState([]);

@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useMemo } from "react";
-import SidebarLayout from "./SidebarLayout";
+import SidebarLayout from "../../shared/components/SidebarLayout";
 import TaskDetailModal from "./TaskDetailModal";
-import AdminRequestApproval from "./AdminRequestApproval";
-import "./Dashboard.css";
-import { useUser } from "./UserContext.jsx";
+import AdminRequestApproval from "../accounts/AdminRequestApproval";
+import "../../features/dashboard/Dashboard.css";
+import { useUser } from "../../shared/context/UserContext.jsx";
 
 function TaskStatus() {
   const { userData } = useUser();

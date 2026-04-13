@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from "react";
-import SidebarLayout from "./SidebarLayout";
-import ActivityLogsPanel from "./ActivityLogsPanel";
-import TaskUpdateLogsPanel from "./TaskUpdateLogsPanel";
+import SidebarLayout from "../../shared/components/SidebarLayout";
+import ActivityLogsPanel from "../../shared/components/ActivityLogsPanel";
+import TaskUpdateLogsPanel from "../../shared/components/TaskUpdateLogsPanel";
 import ProductsStepsSettings from "./ProductsStepsSettings";
-import "./Dashboard.css";
+import "../../features/dashboard/Dashboard.css";
 
 function Settings() {
   const [selectedSetting, setSelectedSetting] = useState("manage-accounts");

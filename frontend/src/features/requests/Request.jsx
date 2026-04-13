@@ -3,9 +3,9 @@ import { useNavigate } from "react-router-dom";
 import Calendar from "react-calendar";
 import "react-calendar/dist/Calendar.css";
 import "bootstrap/dist/css/bootstrap.min.css";
-import SidebarLayout from "./SidebarLayout";
-import { useUser } from "./UserContext.jsx";
-import "./Dashboard.css";
+import SidebarLayout from "../../shared/components/SidebarLayout";
+import { useUser } from "../../shared/context/UserContext.jsx";
+import "../../features/dashboard/Dashboard.css";
 import "./Request.css";
 
 // Helper function to get minimum allowed date (4 days from today)

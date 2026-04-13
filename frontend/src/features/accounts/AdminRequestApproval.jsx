@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import Calendar from "react-calendar";
 import "react-calendar/dist/Calendar.css";
-import "./Dashboard.css";
+import "../../features/dashboard/Dashboard.css";
 
 // Helper function to get minimum allowed date based on required lead days.
 const getMinimumDate = (leadDays = 4) => {

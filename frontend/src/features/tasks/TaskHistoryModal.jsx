@@ -18,7 +18,7 @@
  */
 
 import React, { useState, useEffect } from "react";
-import "./Dashboard.css";
+import "../../features/dashboard/Dashboard.css";
 
 function TaskHistoryModal({ requestProductId, productName, onClose }) {
   const [history, setHistory] = useState([]);
