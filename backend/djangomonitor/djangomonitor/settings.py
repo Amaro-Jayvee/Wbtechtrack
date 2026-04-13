@@ -83,8 +83,8 @@ SITE_ID = 1
 # ACCOUNT_EMAIL_VERIFICATION = "optional"
 # ACCOUNT_ADAPTER = "allauth.account.adapter.DefaultAccountAdapter"
 
-# SOCIAL_AUTH_GOOGLE_OAUTH2_KEY = '94867612755-utbpioqr7p2ligps1edsdd9b37dqiese.apps.googleusercontent.com'
-# SOCIAL_AUTH_GOOGLE_OAUTH2_SECRET = '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'
+# SOCIAL_AUTH_GOOGLE_OAUTH2_KEY = 'your-google-oauth-key-here'
+# SOCIAL_AUTH_GOOGLE_OAUTH2_SECRET = 'your-google-oauth-secret-here'
 
 CORS_ORIGIN_ALLOW_ALL = True
 
