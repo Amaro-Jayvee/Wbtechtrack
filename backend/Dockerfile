@@ -35,5 +35,6 @@ EXPOSE 8000
 # Copy startup script
 COPY run_server_docker.py .
 
-# Start server using pure Python (no shell commands)
-CMD ["python", "run_server_docker.py"]
+# Set explicit entrypoint to bypass any Railway default shell wrappers
+ENTRYPOINT ["/usr/local/bin/python"]
+CMD ["run_server_docker.py"]
