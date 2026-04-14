@@ -79,6 +79,7 @@ def create_users(apps, schema_editor):
                 'email': email,
                 'is_staff': user_data['is_staff'],
                 'is_superuser': user_data['is_superuser'],
+                'last_login': None,  # Allow last_login to be null for new users
             }
         )
         
