@@ -214,16 +214,16 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # Trust the X-Forwarded-Proto header from nginx proxy
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
-# Cookie security settings for production with HTTPS proxy
-CSRF_COOKIE_SECURE = True
-SESSION_COOKIE_SECURE = True
-CSRF_COOKIE_SAMESITE = 'None'  # Required when cookies sent over proxy with different domain initially
-SESSION_COOKIE_SAMESITE = 'None'  # Required when cookies sent over proxy
+# Cookie security settings for proxy setup
+# Important: For proxy setups, SameSite=None requires Secure=True in modern browsers
+# But Django must see the request as HTTPS via X-Forwarded-Proto for this to work
+CSRF_COOKIE_SECURE = False  # Set to False because backend sees HTTP (even though external is HTTPS)
+SESSION_COOKIE_SECURE = False  # Set to False because backend sees HTTP
+CSRF_COOKIE_SAMESITE = 'Lax'  # Use Lax instead of None for proxy compatibility
+SESSION_COOKIE_SAMESITE = 'Lax'  # Use Lax instead of None
 
 CSRF_COOKIE_HTTPONLY = False  # Needed for CSRF token access from JS
 SESSION_COOKIE_HTTPONLY = True  # Keep session cookie httponly for security
-
-# SESSION_COOKIE_DOMAIN = None  # Let Django use the request domain (nginx rewrites it)
 
 STATICFILE_DIRS = (
     BASE_DIR.parent.parent.joinpath('frontend', 'dist'),
