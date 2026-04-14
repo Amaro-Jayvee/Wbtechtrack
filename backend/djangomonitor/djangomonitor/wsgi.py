@@ -14,7 +14,10 @@ from django.core.wsgi import get_wsgi_application
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'djangomonitor.settings')
 
-# Run migrations on application startup
+# Setup Django first (initializes apps registry)
+application = get_wsgi_application()
+
+# Run migrations on application startup (after Django is fully initialized)
 def run_migrations():
     from django.core.management import call_command
     try:
@@ -24,7 +27,5 @@ def run_migrations():
     except Exception as e:
         print(f"[WSGI] ⚠️ Migration error: {e}", file=sys.stderr)
 
-# Call migrations before creating WSGI application
+# Call migrations after Django setup
 run_migrations()
-
-application = get_wsgi_application()
