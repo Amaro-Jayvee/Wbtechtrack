@@ -15,6 +15,14 @@ export default defineConfig({
       },
     },
   },
+  preview: {
+    allowedHosts: [
+      'localhost',
+      '127.0.0.1',
+      'frontend-services-production-ab60.up.railway.app',
+      '*.railway.app',
+    ],
+  },
   build: {
     // Increase chunk size warning limit temporarily
     chunkSizeWarningLimit: 1000,
