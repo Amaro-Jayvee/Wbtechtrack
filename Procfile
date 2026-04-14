@@ -1,1 +1,1 @@
-﻿web: cd backend/djangomonitor && python manage.py migrate --noinput && cd /app && python create_correct_users.py && python import_products.py && cd backend/djangomonitor && gunicorn djangomonitor.wsgi:application --bind 0.0.0.0:$PORT
+﻿web: bash /app/start.sh
