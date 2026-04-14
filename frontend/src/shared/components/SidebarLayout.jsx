@@ -92,7 +92,7 @@ function SidebarLayout({ children }) {
       
       // Mark all unread notifications as read on the server (fire and forget)
       for (const notif of unreadNotifications) {
-        await fetchWithCSRF(`/app/notifications/${notif.id}/read/", {
+          await fetchWithCSRF(`/app/notifications/${notif.id}/read/`, {
           method: "POST",
         });
       }
@@ -112,7 +112,7 @@ function SidebarLayout({ children }) {
       setUnreadCount(newUnreadCount);
       
       // Mark as read on server (fire and forget, don't refetch)
-      const response = await fetchWithCSRF(`/app/notifications/${notificationId}/read/", {
+        const response = await fetchWithCSRF(`/app/notifications/${notificationId}/read/`, {
         method: "POST",
       });
 

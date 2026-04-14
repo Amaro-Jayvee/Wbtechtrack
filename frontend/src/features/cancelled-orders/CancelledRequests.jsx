@@ -39,7 +39,7 @@ function CancelledRequests() {
     setLoading(true);
     try {
       const response = await fetch(
-        `/app/cancelled-requests/",
+        `/app/cancelled-requests/`,
         {
           method: "GET",
           credentials: "include",

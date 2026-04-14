@@ -68,15 +68,15 @@ function PrintableReport() {
       const params = `?month=${month}&year=${year}&include_archived=${includeArchived}`;
 
       const [barResponse, moversResponse, inProgressResponse, cancelledResponse] = await Promise.all([
-        fetch(`/app/reports/bar-chart/${params}", {
+        fetch(`/app/reports/bar-chart/${params}`, {
           method: "GET",
           credentials: "include",
         }),
-        fetch(`/app/reports/top-movers/${params}&limit=5", {
+        fetch(`/app/reports/top-movers/${params}&limit=5`, {
           method: "GET",
           credentials: "include",
         }),
-        fetch(`/app/product/?include_completed=false&include_archived=${includeArchived}", {
+        fetch(`/app/product/?include_completed=false&include_archived=${includeArchived}`, {
           method: "GET",
           credentials: "include",
         }),

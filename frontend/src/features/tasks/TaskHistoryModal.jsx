@@ -35,7 +35,7 @@ function TaskHistoryModal({ requestProductId, productName, onClose }) {
     
     try {
       const response = await fetch(
-        `/app/task-history/${requestProductId}/",
+        `/app/task-history/${requestProductId}/`,
         {
           method: "GET",
           credentials: "include",

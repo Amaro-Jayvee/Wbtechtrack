@@ -18,7 +18,7 @@ function ExtensionApprovalModal({ notification, onClose, onSuccess }) {
     setError("");
     try {
       const response = await fetch(
-        `/app/request-products/${requestProductId}/approve-extension/",
+        `/app/request-products/${requestProductId}/approve-extension/`,
         {
           method: "POST",
           credentials: "include",
