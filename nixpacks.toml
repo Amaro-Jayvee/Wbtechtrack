@@ -1,8 +1,9 @@
 # Override Railpack's default behavior - run our pure Python startup script
-# This prevents Railpack from generating the broken "cd && python" command
+# Railpack copies repo files to /app, with backend resources copied into /app
+# So run_server_docker.py will be at /app/run_server_docker.py
 
 [start]
-cmd = "python /app/backend/djangomonitor/run_server_docker.py"
+cmd = "python /app/run_server_docker.py"
 
 [build]
 # Let nixpacks/railpack handle installation normally
@@ -12,5 +13,7 @@ cmds = []
 [install]
 # Skip any install - let the default Python installation run
 cmds = []
+
+
 
 

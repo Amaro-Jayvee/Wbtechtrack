@@ -16,24 +16,24 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Set working directory
 WORKDIR /app
 
-# Copy requirements
-COPY requirements.txt .
+# Copy requirements from backend subdirectory
+COPY backend/requirements.txt .
 
 # Install Python dependencies
 RUN pip install --upgrade pip && \
     pip install -r requirements.txt
 
-# Copy project files
-COPY djangomonitor/ .
+# Copy Django project files from backend subdirectory
+COPY backend/djangomonitor/ .
+
+# Copy startup script from backend subdirectory
+COPY backend/run_server_docker.py .
 
 # Create necessary directories
 RUN mkdir -p /app/logs /app/staticfiles
 
 # Expose port
 EXPOSE 8000
-
-# Copy startup script
-COPY run_server_docker.py .
 
 # Set explicit entrypoint to bypass any Railway default shell wrappers
 ENTRYPOINT ["/usr/local/bin/python"]
