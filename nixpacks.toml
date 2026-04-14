@@ -1,0 +1,14 @@
+# This nixpacks.toml tells Railway/Nixpacks to skip automatic detection
+# and only use the Dockerfile for building the backend service
+
+[variables]
+# Disable Poetry, Pip, and other Python build tools
+NIXPACKS_NO_PYTHON_DETECTION = "true"
+
+[build]
+# Skip any automatic build steps
+cmds = []
+
+[deploy]
+# Skip any automatic deploy steps  
+cmds = []
