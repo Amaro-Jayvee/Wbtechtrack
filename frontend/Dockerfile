@@ -17,7 +17,7 @@ RUN rm -f /etc/nginx/conf.d/default.conf
 
 # Copy nginx configuration
 COPY frontend/nginx.conf /etc/nginx/nginx.conf
-COPY frontend/nginx-default.conf /etc/nginx/conf.d/default.conf
+COPY frontend/nginx-default.conf /etc/nginx/templates/default.conf.template
 
 # Copy built React app
 COPY --from=builder /app/dist /usr/share/nginx/html
