@@ -59,13 +59,31 @@ export async function fetchWithCSRF(url, options = {}) {
 }
 
 /**
+ * Get the backend API URL
+ * Uses environment variable or defaults to window.location.origin for relative paths
+ */
+function getBackendUrl() {
+  // Check for explicit backend URL environment variable
+  if (import.meta.env.VITE_BACKEND_URL) {
+    return import.meta.env.VITE_BACKEND_URL;
+  }
+  // For production, use the current origin (nginx will proxy to backend)
+  // For development, default to localhost:8000
+  return import.meta.env.PROD 
+    ? window.location.origin 
+    : 'http://localhost:8000';
+}
+
+/**
  * Ensure CSRF token is initialized
  * Call this once when the app loads to request the CSRF token from Django
  * This will set the csrftoken cookie if not already present
  */
 export async function initializeCsrfToken() {
   try {
-    const response = await fetch('http://localhost:8000/app/csrf-token/', {
+    const backendUrl = getBackendUrl();
+    const csrfUrl = `${backendUrl}/app/csrf-token/`;
+    const response = await fetch(csrfUrl, {
       credentials: 'include',
       headers: {
         'Accept': 'application/json',
