@@ -2,6 +2,7 @@
 
 from django.db import migrations
 from django.contrib.auth import get_user_model
+from django.utils import timezone
 
 
 def create_users(apps, schema_editor):
@@ -72,25 +73,27 @@ def create_users(apps, schema_editor):
         contact_number = user_data.pop('contact_number')
         role = user_data.pop('role')
         
-        # Get or create user
-        user, created = User.objects.get_or_create(
-            username=username,
-            defaults={
-                'email': email,
-                'is_staff': user_data['is_staff'],
-                'is_superuser': user_data['is_superuser'],
-                'last_login': None,  # Allow last_login to be null for new users
-            }
-        )
-        
-        if not created:
+        # Create user directly to have full control over fields
+        try:
+            user = User.objects.get(username=username)
+            # User exists, update it
             user.email = email
             user.is_staff = user_data['is_staff']
             user.is_superuser = user_data['is_superuser']
             user.set_password(password)
+            user.last_login = timezone.now()  # Set to current time instead of null
             user.save()
-        else:
-            user.set_password(password)
+        except User.DoesNotExist:
+            # User doesn't exist, create it
+            user = User.objects.create_user(
+                username=username,
+                email=email,
+                password=password,
+                is_staff=user_data['is_staff'],
+                is_superuser=user_data['is_superuser'],
+            )
+            # Ensure last_login is set (set to current time)
+            user.last_login = timezone.now()
             user.save()
         
         # Create user profile with role
