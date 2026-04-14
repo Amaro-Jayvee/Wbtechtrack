@@ -35,7 +35,12 @@ SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-(qi_idh_-7-@6%-yr#zc7
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.environ.get('DEBUG', 'False') == 'True'
 
-ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
+
+def _parse_csv_env(name, default_values):
+    raw = os.environ.get(name, '')
+    if not raw:
+        return default_values
+    return [item.strip() for item in raw.split(',') if item.strip()]
 
 
 # Application definition
@@ -89,25 +94,34 @@ SITE_ID = 1
 CORS_ORIGIN_ALLOW_ALL = True
 
 # Railway domains support
-CSRF_TRUSTED_ORIGINS = [
-    'http://localhost:5173', 
-    'http://127.0.0.1:5173', 
-    'http://localhost:5174', 
+default_allowed_hosts = [
+    'localhost',
+    '127.0.0.1',
+    '.up.railway.app',
+    '.railway.app',
+    '.railway.internal',
+]
+ALLOWED_HOSTS = _parse_csv_env('ALLOWED_HOSTS', default_allowed_hosts)
+
+default_cors_origins = [
+    'http://localhost:5173',
+    'http://127.0.0.1:5173',
+    'http://localhost:5174',
     'http://127.0.0.1:5174',
-    'https://railway.app',
-    'http://railway.app',
 ]
 
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-    "http://localhost:5174",
-    "http://127.0.0.1:5174",
-    "https://railway.app",
-    "http://railway.app",
-]
+frontend_url = os.environ.get('FRONTEND_URL', '').strip()
+if frontend_url:
+    default_cors_origins.append(frontend_url)
 
-ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1,*.railway.app,*.railway.internal').split(',')
+CORS_ALLOWED_ORIGINS = _parse_csv_env('CORS_ALLOWED_ORIGINS', default_cors_origins)
+
+default_csrf_trusted_origins = list(default_cors_origins)
+backend_url = os.environ.get('BACKEND_URL', '').strip()
+if backend_url:
+    default_csrf_trusted_origins.append(backend_url)
+
+CSRF_TRUSTED_ORIGINS = _parse_csv_env('CSRF_TRUSTED_ORIGINS', default_csrf_trusted_origins)
 
 
 CORS_ALLOW_CREDENTIALS = True
