@@ -1,32 +1,26 @@
-# Stage 1: Build
+# Stage 1: Build React app with Vite
 FROM node:18-alpine AS builder
 
 WORKDIR /app
 
-# Copy package files
 COPY package.json package-lock.json ./
+RUN npm ci --prefer-offline --no-audit
 
-# Install dependencies
-RUN npm ci
-
-# Copy source files
 COPY . .
-
-# Build the application
 RUN npm run build
 
-# Stage 2: Serve with nginx
+# Stage 2: Serve with nginx - reverse proxy to backend
 FROM nginx:alpine
 
-# Copy nginx config
+# Copy nginx configuration
 COPY nginx.conf /etc/nginx/nginx.conf
 COPY nginx-default.conf /etc/nginx/conf.d/default.conf
 
-# Copy built files from builder stage
+# Copy built React app
 COPY --from=builder /app/dist /usr/share/nginx/html
 
-# Expose port
 EXPOSE 80
 
-# Start nginx
+# Run nginx in foreground (required for Docker)
 CMD ["nginx", "-g", "daemon off;"]
+
