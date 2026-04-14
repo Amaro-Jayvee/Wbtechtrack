@@ -37,6 +37,5 @@ RUN mkdir -p /app/logs /app/staticfiles
 # Expose port
 EXPOSE 8000
 
-# Set explicit entrypoint to bypass any Railway default shell wrappers
-ENTRYPOINT ["/usr/local/bin/python"]
-CMD ["run_server_docker.py"]
+# Start server - use Python directly with full path to script
+CMD ["python", "/app/run_server_docker.py"]
