@@ -146,12 +146,12 @@ WSGI_APPLICATION = 'djangomonitor.wsgi.application'
 import dj_database_url
 
 # Priority order:
-# 1. DATABASE_URL (Railway/Heroku standard)
-# 2. MYSQL_URL (Railway MySQL variable reference)
+# 1. MYSQL_URL (Railway MySQL variable reference) - PRIORITY
+# 2. DATABASE_URL (Railway/Heroku standard)
 # 3. Individual DB_* variables (local development)
 # 4. Default SQLite
 
-database_url = os.environ.get('DATABASE_URL') or os.environ.get('MYSQL_URL')
+database_url = os.environ.get('MYSQL_URL') or os.environ.get('DATABASE_URL')
 
 if database_url:
     DATABASES = {
@@ -160,7 +160,10 @@ if database_url:
             conn_max_age=600
         )
     }
-    print(f"[settings.py] Using database URL from: {'DATABASE_URL' if os.environ.get('DATABASE_URL') else 'MYSQL_URL'}")
+    source = 'MYSQL_URL' if os.environ.get('MYSQL_URL') else 'DATABASE_URL'
+    print(f"[settings.py] Using database URL from: {source}")
+    if os.environ.get('MYSQL_URL'):
+        print(f"[settings.py] ✅ Using Railway MySQL variable reference")
 elif os.environ.get('DB_HOST'):
     # Local development with explicit MySQL
     DATABASES = {
