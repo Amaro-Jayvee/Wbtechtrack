@@ -34,6 +34,10 @@ try:
     from django.core.management import call_command
     call_command('migrate', '--noinput', verbosity=1)
     print("[run_server_docker.py] ✅ Migrations completed")
+
+    # Seed demo/customer product catalog + process templates (idempotent)
+    call_command('seed_demo_products', verbosity=1)
+    print("[run_server_docker.py] ✅ Demo products seeded")
 except Exception as e:
     print(f"[run_server_docker.py] ⚠️ Migration error (non-fatal): {e}")
     import traceback
