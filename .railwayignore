@@ -1,5 +1,38 @@
-# Tell Railway to ignore backend/requirements.txt for Railpack detection
-# This forces Railway to use backend/Dockerfile instead
+# Prevent Railpack Python detection by ignoring Python-related files
+# This forces Railway to use ONLY the Dockerfile
+
+# Python root level files that trigger detection
+*.py
+requirements.txt
+setup.py
+setup.cfg
+pyproject.toml
+Pipfile
+Pipfile.lock
+poetry.lock
+
+# All backend requirement files
 backend/requirements.txt
 backend/Pipfile
 backend/pyproject.toml
+
+# Local Python environment
+.venv
+venv
+env
+.env
+
+# Cache and build
+__pycache__
+*.pyc
+*.pyo
+*.egg-info
+dist
+build
+
+# Node that we handle frontend separately
+frontend/node_modules
+frontend/package-lock.json
+frontend/yarn.lock
+node_modules
+

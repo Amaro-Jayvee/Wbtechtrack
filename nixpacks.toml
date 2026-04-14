@@ -1,14 +1,16 @@
-# This nixpacks.toml tells Railway/Nixpacks to skip automatic detection
-# and only use the Dockerfile for building the backend service
+# Override Railpack's default behavior - run our pure Python startup script
+# This prevents Railpack from generating the broken "cd && python" command
 
-[variables]
-# Disable Poetry, Pip, and other Python build tools
-NIXPACKS_NO_PYTHON_DETECTION = "true"
+[start]
+cmd = "python /app/backend/djangomonitor/run_server_docker.py"
 
 [build]
-# Skip any automatic build steps
+# Let nixpacks/railpack handle installation normally
+# (pip installing from backend/requirements.txt)
 cmds = []
 
-[deploy]
-# Skip any automatic deploy steps  
+[install]
+# Skip any install - let the default Python installation run
 cmds = []
+
+

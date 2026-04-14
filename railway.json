@@ -1,5 +1,12 @@
 {
-  "builder": "dockerfile",
-  "dockerfile": "./backend/Dockerfile",
-  "context": "."
+  "$schema": "https://railway.app/railway.schema.json",
+  "build": {
+    "builder": "dockerfile",
+    "dockerfile": "backend/Dockerfile"
+  },
+  "deploy": {
+    "numReplicas": 1,
+    "startCommand": ""
+  }
 }
+
