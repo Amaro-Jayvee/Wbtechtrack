@@ -1,0 +1,5 @@
+# Tell Railway to ignore backend/requirements.txt for Railpack detection
+# This forces Railway to use backend/Dockerfile instead
+backend/requirements.txt
+backend/Pipfile
+backend/pyproject.toml
