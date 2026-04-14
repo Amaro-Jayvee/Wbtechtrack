@@ -23,6 +23,10 @@ for item in os.listdir(current_dir):
 
 # Run Django migrations using Django's call_command to avoid subprocess issues
 print("[run_server_docker.py] Running migrations via Django API...")
+print(f"[run_server_docker.py] DATABASE_URL: {os.environ.get('DATABASE_URL', 'NOT SET')}")
+print(f"[run_server_docker.py] DB_HOST: {os.environ.get('DB_HOST', 'NOT SET')}")
+print(f"[run_server_docker.py] DB_NAME: {os.environ.get('DB_NAME', 'NOT SET')}")
+print(f"[run_server_docker.py] DB_USER: {os.environ.get('DB_USER', 'NOT SET')}")
 try:
     import django
     os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'djangomonitor.settings')

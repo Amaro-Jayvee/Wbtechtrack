@@ -146,20 +146,24 @@ WSGI_APPLICATION = 'djangomonitor.wsgi.application'
 import dj_database_url
 
 # Try to use DATABASE_URL (Railway format), fallback to individual variables
-if os.environ.get('DATABASE_URL'):
+database_url = os.environ.get('DATABASE_URL')
+
+if database_url:
     DATABASES = {
         'default': dj_database_url.config(
-            default=os.environ.get('DATABASE_URL'),
+            default=database_url,
             conn_max_age=600
         )
     }
 else:
+    # Railway MySQL defaults: use root user with root password
+    # Individual DB variables can override for local development
     DATABASES = {
         'default': {
             'ENGINE': os.environ.get('DB_ENGINE', 'django.db.backends.mysql'),
-            'NAME': os.environ.get('DB_NAME', 'techtrack_db'),
-            'USER': os.environ.get('DB_USER', 'techtrack_user'),
-            'PASSWORD': os.environ.get('DB_PASSWORD', 'techtrack_secure_password'),
+            'NAME': os.environ.get('DB_NAME', 'railway'),
+            'USER': os.environ.get('DB_USER', 'root'),  # Changed: Railway MySQL default is root
+            'PASSWORD': os.environ.get('DB_PASSWORD', 'root'),  # Changed: Railway MySQL default is root
             'HOST': os.environ.get('DB_HOST', 'localhost'),
             'PORT': os.environ.get('DB_PORT', '3306'),
             'OPTIONS': {
