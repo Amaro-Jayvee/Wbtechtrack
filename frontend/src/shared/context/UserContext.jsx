@@ -38,9 +38,11 @@ export function UserProvider({ children }) {
         };
         
         setUserData(newUserData);
+      } else if (response.status === 401) {
+        // Expected when no active session yet (e.g., login page load)
+        setUserData({ username: "", role: "", id: null, terms_accepted: null });
       } else {
-        console.warn("Failed to fetch user data");
-        // Don't set Guest here - keep waiting for user to login
+        // Keep silent for non-auth pages; avoid noisy production console logs
       }
     } catch (err) {
       console.error("[UserContext] Error fetching user data:", err);
@@ -51,6 +53,14 @@ export function UserProvider({ children }) {
 
   // Fetch user data on mount
   useEffect(() => {
+    const publicRoutes = ["/login"];
+    const currentPath = window.location.pathname;
+
+    if (publicRoutes.includes(currentPath) || currentPath.startsWith("/reset-password")) {
+      setIsLoadingUser(false);
+      return;
+    }
+
     fetchUserData();
   }, []);
 

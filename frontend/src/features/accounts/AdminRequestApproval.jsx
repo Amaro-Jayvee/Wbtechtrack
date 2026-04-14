@@ -559,12 +559,6 @@ function AdminRequestApproval() {
         deadline: formData.deadline,
       };
 
-      console.log("[CREATE_REQUEST] Sending payload:", requestPayload);
-      console.log("[CREATE_REQUEST] Total products being sent:", submissionProducts.length);
-      submissionProducts.forEach((p, index) => {
-        console.log(`[CREATE_REQUEST] Product ${index}:`, p);
-      });
-
       const response = await fetch("/app/admin/create-request/", {
         method: "POST",
         credentials: "include",
@@ -576,11 +570,7 @@ function AdminRequestApproval() {
 
       const data = await response.json();
 
-      console.log("[CREATE_REQUEST] Response status:", response.status);
-      console.log("[CREATE_REQUEST] Response data:", data);
-
       if (response.ok) {
-        console.log("[CREATE_REQUEST] Success! Request created with ID:", data.request_id);
         setSuccessModalData({
           requestId: data.request_id,
           requester: data.requester,
@@ -600,7 +590,6 @@ function AdminRequestApproval() {
         if (data.detail) errorMessage = data.detail;
         else if (data.error) errorMessage = data.error;
         else if (data.errors) errorMessage = JSON.stringify(data.errors);
-        console.log("[CREATE_REQUEST] Error:", errorMessage);
         setCreateRequestMessage(`✗ Error: ${errorMessage}`);
       }
     } catch (err) {
