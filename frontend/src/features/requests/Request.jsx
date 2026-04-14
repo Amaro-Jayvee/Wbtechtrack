@@ -112,11 +112,11 @@ function Request() {
   const fetchDropdownData = async () => {
     try {
       const [requestersRes, productsRes] = await Promise.all([
-        fetch("http://localhost:8000/app/users/?status=active", {
+        fetch("/app/users/?status=active", {
           method: "GET",
           credentials: "include",
         }),
-        fetch("http://localhost:8000/app/prodname/", {
+        fetch("/app/prodname/", {
           method: "GET",
           credentials: "include",
         }),
@@ -139,7 +139,7 @@ function Request() {
 
   const fetchConfiguredProducts = async () => {
     try {
-      const response = await fetch("http://localhost:8000/app/product-config/", {
+      const response = await fetch("/app/product-config/", {
         method: "GET",
         credentials: "include",
       });
@@ -288,7 +288,7 @@ function Request() {
           new Date().toISOString().split("T")[0],
       };
 
-      const response = await fetch("http://localhost:8000/app/request/", {
+      const response = await fetch("/app/request/", {
         method: "POST",
         credentials: "include",
         headers: {

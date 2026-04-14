@@ -32,7 +32,7 @@ function ForgotPasswordModal({ isOpen, onClose }) {
     setIsLoading(true);
 
     try {
-      const response = await fetch("http://localhost:8000/app/forgot-password/request/", {
+      const response = await fetch("/app/forgot-password/request/", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

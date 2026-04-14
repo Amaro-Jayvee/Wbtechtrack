@@ -15,10 +15,10 @@
  * - Back to Dashboard button (hidden on print)
  * 
  * Data Sources:
- * - http://localhost:8000/app/reports/bar-chart/ → weekly statistics
- * - http://localhost:8000/app/reports/top-movers/ → top 5 products
- * - http://localhost:8000/app/product/ → in-progress tasks
- * - http://localhost:8000/app/cancelled-requests/ → cancelled orders
+ * - /app/reports/bar-chart/ → weekly statistics
+ * - /app/reports/top-movers/ → top 5 products
+ * - /app/product/ → in-progress tasks
+ * - /app/cancelled-requests/ → cancelled orders
  */
 
 import React, { useState, useEffect } from "react";
@@ -68,19 +68,19 @@ function PrintableReport() {
       const params = `?month=${month}&year=${year}&include_archived=${includeArchived}`;
 
       const [barResponse, moversResponse, inProgressResponse, cancelledResponse] = await Promise.all([
-        fetch(`http://localhost:8000/app/reports/bar-chart/${params}`, {
+        fetch(`/app/reports/bar-chart/${params}", {
           method: "GET",
           credentials: "include",
         }),
-        fetch(`http://localhost:8000/app/reports/top-movers/${params}&limit=5`, {
+        fetch(`/app/reports/top-movers/${params}&limit=5", {
           method: "GET",
           credentials: "include",
         }),
-        fetch(`http://localhost:8000/app/product/?include_completed=false&include_archived=${includeArchived}`, {
+        fetch(`/app/product/?include_completed=false&include_archived=${includeArchived}", {
           method: "GET",
           credentials: "include",
         }),
-        fetch("http://localhost:8000/app/cancelled-requests/", {
+        fetch("/app/cancelled-requests/", {
           method: "GET",
           credentials: "include",
         }),

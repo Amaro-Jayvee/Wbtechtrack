@@ -25,7 +25,7 @@ function ResetPassword() {
       }
 
       try {
-        const response = await fetch("http://localhost:8000/app/forgot-password/verify-token/", {
+        const response = await fetch("/app/forgot-password/verify-token/", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -83,7 +83,7 @@ function ResetPassword() {
     setIsLoading(true);
 
     try {
-      const response = await fetch("http://localhost:8000/app/forgot-password/reset/", {
+      const response = await fetch("/app/forgot-password/reset/", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

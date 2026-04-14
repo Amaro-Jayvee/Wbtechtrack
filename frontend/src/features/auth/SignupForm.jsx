@@ -57,7 +57,7 @@ function SignupForm({ onToggleMode, onSuccess }) {
     try {
       const { confirmPassword, ...signupData } = formData;
       
-      const response = await fetch("http://localhost:8000/app/signup/", {
+      const response = await fetch("/app/signup/", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

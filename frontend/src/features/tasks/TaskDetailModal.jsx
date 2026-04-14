@@ -94,7 +94,7 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
     setLoading(true);
     try {
       const response = await fetch(
-        `http://localhost:8000/app/product/${productProcessId}/`,
+        `/app/product/${productProcessId}/`,
         {
           method: "GET",
           credentials: "include",
@@ -213,7 +213,7 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
   const fetchWorkers = async () => {
     try {
       const response = await fetch(
-        "http://localhost:8000/app/worker/",
+        "/app/worker/",
         {
           method: "GET",
           credentials: "include",
@@ -460,7 +460,7 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
       console.log("================================\n");
 
       const response = await fetch(
-        `http://localhost:8000/app/product/${productProcessId}/`,
+        `/app/product/${productProcessId}/`,
         {
           method: "PATCH",
           credentials: "include",
@@ -622,7 +622,7 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
       
       // Save current step with all data (quota, defects, workers)
       const saveResponse = await fetch(
-        `http://localhost:8000/app/product/${productProcessId}/`,
+        `/app/product/${productProcessId}/`,
         {
           method: "PATCH",
           credentials: "include",
@@ -643,7 +643,7 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
 
       // Fetch all steps for this product to find the next one
       const stepsResponse = await fetch(
-        `http://localhost:8000/app/product/?include_archived=false`,
+        `/app/product/?include_archived=false`,
         {
           method: "GET",
           credentials: "include",
@@ -920,7 +920,7 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
 
     try {
       const response = await fetch(
-        `http://localhost:8000/app/request-products/${requestProductId}/`,
+        `/app/request-products/${requestProductId}/`,
         {
           method: "PATCH",
           credentials: "include",
@@ -977,7 +977,7 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
         progressBeforeCancel
       });
       
-      const archiveRes = await fetch(`http://localhost:8000/app/request-products/${requestProductId}/`, {
+      const archiveRes = await fetch(`/app/request-products/${requestProductId}/`, {
         method: "PATCH",
         credentials: "include",
         headers: { "Content-Type": "application/json" },

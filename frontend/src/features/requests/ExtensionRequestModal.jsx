@@ -42,7 +42,7 @@ function ExtensionRequestModal({ taskData, requestProductId, onClose, onSuccess 
     setIsSubmitting(true);
     try {
       const response = await fetch(
-        `http://localhost:8000/app/request-products/${requestProductId}/request-extension/`,
+        `/app/request-products/${requestProductId}/request-extension/`,
         {
           method: "POST",
           credentials: "include",

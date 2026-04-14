@@ -18,7 +18,7 @@ function ExtensionApprovalModal({ notification, onClose, onSuccess }) {
     setError("");
     try {
       const response = await fetch(
-        `http://localhost:8000/app/request-products/${requestProductId}/approve-extension/`,
+        `/app/request-products/${requestProductId}/approve-extension/",
         {
           method: "POST",
           credentials: "include",
@@ -57,7 +57,7 @@ function ExtensionApprovalModal({ notification, onClose, onSuccess }) {
     setError("");
     try {
       const response = await fetch(
-        `http://localhost:8000/app/request-products/${requestProductId}/reject-extension/`,
+        `/app/request-products/${requestProductId}/reject-extension/`,
         {
           method: "POST",
           credentials: "include",

@@ -183,11 +183,11 @@ function AdminRequestApproval() {
     const fetchProductsAndCustomers = async () => {
       try {
         const [productsRes, customersRes] = await Promise.all([
-          fetch("http://localhost:8000/app/prodname/", {
+          fetch("/app/prodname/", {
             method: "GET",
             credentials: "include",
           }),
-          fetch("http://localhost:8000/app/admin/available-customers/", {
+          fetch("/app/admin/available-customers/", {
             method: "GET",
             credentials: "include",
           }),
@@ -472,7 +472,7 @@ function AdminRequestApproval() {
       // Get today's date as the issuance_date (when the PO would have been issued if it wasn't cancelled)
       const today = new Date().toISOString().split('T')[0];
       
-      const response = await fetch("http://localhost:8000/app/cancelled-draft-products/", {
+      const response = await fetch("/app/cancelled-draft-products/", {
         method: "POST",
         credentials: "include",
         headers: {
@@ -565,7 +565,7 @@ function AdminRequestApproval() {
         console.log(`[CREATE_REQUEST] Product ${index}:`, p);
       });
 
-      const response = await fetch("http://localhost:8000/app/admin/create-request/", {
+      const response = await fetch("/app/admin/create-request/", {
         method: "POST",
         credentials: "include",
         headers: {

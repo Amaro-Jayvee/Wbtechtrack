@@ -22,7 +22,7 @@ function Login() {
   useEffect(() => {
     const fetchLoginBackground = async () => {
       try {
-        const response = await fetch("http://localhost:8000/app/public/login-background/");
+        const response = await fetch("/app/public/login-background/");
         if (!response.ok) {
           return;
         }
@@ -48,7 +48,7 @@ function Login() {
     setMessage(""); // Clear previous message
     
     try {
-      let url = "http://localhost:8000/app/login/";
+      let url = "/app/login/";
       let body = { username: formData.username, password: formData.password };
 
       const response = await fetch(url, {

@@ -18,7 +18,7 @@ export function UserProvider({ children }) {
     try {
       setIsLoadingUser(true);
       
-      const response = await fetch("http://localhost:8000/app/whoami/", {
+      const response = await fetch("/app/whoami/", {
         method: "GET",
         credentials: "include",
         headers: {

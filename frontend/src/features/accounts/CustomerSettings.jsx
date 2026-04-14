@@ -55,7 +55,7 @@ function CustomerSettings() {
 
   const fetchProfile = async () => {
     try {
-      const response = await fetch("http://localhost:8000/app/profile/", {
+      const response = await fetch("/app/profile/", {
         method: "GET",
         credentials: "include",
       });
@@ -77,7 +77,7 @@ function CustomerSettings() {
 
   const fetchNotifications = async () => {
     try {
-      const response = await fetch("http://localhost:8000/app/notifications/", {
+      const response = await fetch("/app/notifications/", {
         method: "GET",
         credentials: "include",
       });
@@ -103,7 +103,7 @@ function CustomerSettings() {
       setUnreadCount(newUnreadCount);
       
       // Mark as read on server (fire and forget, don't refetch)
-      const response = await fetch(`http://localhost:8000/app/notifications/${notificationId}/read/`, {
+      const response = await fetch(`/app/notifications/${notificationId}/read/`, {
         method: "POST",
         credentials: "include",
       });
@@ -129,7 +129,7 @@ function CustomerSettings() {
     setMessage("");
 
     try {
-      const response = await fetch("http://localhost:8000/app/profile/", {
+      const response = await fetch("/app/profile/", {
         method: "PUT",
         credentials: "include",
         headers: {
@@ -197,7 +197,7 @@ function CustomerSettings() {
     setChangePassword({ ...changePassword, loading: true });
 
     try {
-      const response = await fetch("http://localhost:8000/app/change-password/", {
+      const response = await fetch("/app/change-password/", {
         method: "POST",
         credentials: "include",
         headers: {
@@ -242,7 +242,7 @@ function CustomerSettings() {
   const performLogout = async () => {
     setIsLoggingOut(true);
     try {
-      await fetch("http://localhost:8000/app/logout/", {
+      await fetch("/app/logout/", {
         method: "POST",
         credentials: "include",
       });

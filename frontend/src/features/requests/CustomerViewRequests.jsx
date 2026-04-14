@@ -99,7 +99,7 @@ function CustomerViewRequests() {
 
   const fetchNotifications = async () => {
     try {
-      const response = await fetch("http://localhost:8000/app/notifications/", {
+      const response = await fetch("/app/notifications/", {
         method: "GET",
         credentials: "include",
       });
@@ -124,7 +124,7 @@ function CustomerViewRequests() {
       setUnreadCount(newUnreadCount);
       
       // Mark as read on server (fire and forget, don't refetch)
-      const response = await fetch(`http://localhost:8000/app/notifications/${notificationId}/read/`, {
+      const response = await fetch(`/app/notifications/${notificationId}/read/`, {
         method: "POST",
         credentials: "include",
       });
@@ -146,7 +146,7 @@ function CustomerViewRequests() {
       setDeleteToastMessage("Notification deleted successfully");
       
       // Delete on server (fire and forget, don't refetch)
-      const response = await fetch(`http://localhost:8000/app/notifications/${notificationId}/delete/`, {
+      const response = await fetch(`/app/notifications/${notificationId}/delete/`, {
         method: "POST",
         credentials: "include",
       });
@@ -180,7 +180,7 @@ function CustomerViewRequests() {
 
       for (const status of statusesToFetch) {
         const requestsResponse = await fetch(
-          `http://localhost:8000/app/customer/my-requests/?request_status=${status}&t=${Date.now()}`,
+          `/app/customer/my-requests/?request_status=${status}&t=${Date.now()}`,
           {
             method: "GET",
             credentials: "include",
@@ -219,7 +219,7 @@ function CustomerViewRequests() {
 
       setLoading(true);
       const response = await fetch(
-        `http://localhost:8000/app/customer/cancelled-requests/`,
+        `/app/customer/cancelled-requests/`,
         {
           method: "GET",
           credentials: "include",
@@ -252,7 +252,7 @@ function CustomerViewRequests() {
   const performLogout = async () => {
     setIsLoggingOut(true);
     try {
-      const response = await fetch("http://localhost:8000/app/logout/", {
+      const response = await fetch("/app/logout/", {
         method: "POST",
         credentials: "include",
         headers: {

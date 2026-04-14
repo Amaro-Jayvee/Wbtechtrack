@@ -57,7 +57,7 @@ function RequestList() {
       params.append("include_archived", "false");
 
       const response = await fetch(
-        `http://localhost:8000/app/request/?${params.toString()}`,
+        `/app/request/?${params.toString()}`,
         {
           method: "GET",
           credentials: "include",
@@ -176,7 +176,7 @@ function RequestList() {
     try {
       // Check if any ProductProcess tasks exist for this request's products
       const response = await fetch(
-        "http://localhost:8000/app/productprocess/",
+        "/app/productprocess/",
         {
           method: "GET",
           credentials: "include",
@@ -215,7 +215,7 @@ function RequestList() {
       
       // Call the new unified start-project endpoint
       const response = await fetch(
-        `http://localhost:8000/app/request/${selectedRequest.RequestID}/start-project/`,
+        `/app/request/${selectedRequest.RequestID}/start-project/`,
         {
           method: "POST",
           credentials: "include",
@@ -281,7 +281,7 @@ function RequestList() {
     try {
       const finalReason = reason || cancellationReason || 'Cancelled by admin/manager';
       const response = await fetch(
-        `http://localhost:8000/app/request/${selectedRequest.RequestID}/archive/`,
+        `/app/request/${selectedRequest.RequestID}/archive/`,
         {
           method: "PATCH",
           credentials: "include",
@@ -325,7 +325,7 @@ function RequestList() {
   const deleteRequest = async (requestId) => {
     try {
       const response = await fetch(
-        `http://localhost:8000/app/request/${requestId}/`,
+        `/app/request/${requestId}/`,
         {
           method: "DELETE",
           credentials: "include",

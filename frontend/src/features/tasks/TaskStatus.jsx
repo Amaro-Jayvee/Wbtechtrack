@@ -128,7 +128,7 @@ function TaskStatus() {
         return;
       }
 
-      const response = await fetch("http://localhost:8000/app/create-product-with-processes/", {
+      const response = await fetch("/app/create-product-with-processes/", {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
@@ -178,7 +178,7 @@ function TaskStatus() {
 
       // Fetch ProductProcess (steps) data
       const response = await fetch(
-        `http://localhost:8000/app/product/?${params.toString()}`,
+        `/app/product/?${params.toString()}`,
         {
           method: "GET",
           credentials: "include",

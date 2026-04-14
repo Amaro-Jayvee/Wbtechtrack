@@ -31,7 +31,7 @@ function ActivityLogsPanel({ title = "Activity Logs", limit = 10 }) {
         params.append("end_date", endDate);
       }
       
-      const response = await fetch(`http://localhost:8000/app/activity-logs/?${params.toString()}`, {
+      const response = await fetch(`/app/activity-logs/?${params.toString()}", {
         method: "GET",
         credentials: "include",
         headers: {

@@ -63,7 +63,7 @@ function Settings() {
 
   const fetchSettings = async () => {
     try {
-      const response = await fetch("http://localhost:8000/app/settings/", {
+      const response = await fetch("/app/settings/", {
         method: "GET",
         credentials: "include",
       });
@@ -86,7 +86,7 @@ function Settings() {
 
   const fetchUserProfile = async () => {
     try {
-      const response = await fetch("http://localhost:8000/app/profile/", {
+      const response = await fetch("/app/profile/", {
         method: "GET",
         credentials: "include",
       });
@@ -124,7 +124,7 @@ function Settings() {
     setMessage("");
 
     try {
-      const response = await fetch("http://localhost:8000/app/profile/", {
+      const response = await fetch("/app/profile/", {
         method: "PATCH",
         credentials: "include",
         headers: {
@@ -161,7 +161,7 @@ function Settings() {
         return;
       }
 
-      const response = await fetch("http://localhost:8000/app/profile/change-password/", {
+      const response = await fetch("/app/profile/change-password/", {
         method: "POST",
         credentials: "include",
         headers: {
@@ -193,7 +193,7 @@ function Settings() {
 
   const fetchArchivedRequests = async () => {
     try {
-      const response = await fetch("http://localhost:8000/app/archived-requests/", {
+      const response = await fetch("/app/archived-requests/", {
         method: "GET",
         credentials: "include",
       });
@@ -237,7 +237,7 @@ function Settings() {
     setMessage("");
 
     try {
-      const response = await fetch("http://localhost:8000/app/settings/update/", {
+      const response = await fetch("/app/settings/update/", {
         method: "PUT",
         credentials: "include",
         headers: {
@@ -303,7 +303,7 @@ function Settings() {
       const formData = new FormData();
       formData.append("background_image", loginBackgroundFile);
 
-      const response = await fetch("http://localhost:8000/app/settings/login-background/", {
+      const response = await fetch("/app/settings/login-background/", {
         method: "POST",
         credentials: "include",
         body: formData,
@@ -340,7 +340,7 @@ function Settings() {
     setRestoreTarget(null);
 
     try {
-      const response = await fetch("http://localhost:8000/app/restore-request-product/", {
+      const response = await fetch("/app/restore-request-product/", {
         method: "POST",
         credentials: "include",
         headers: {

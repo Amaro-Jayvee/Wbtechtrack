@@ -18,7 +18,7 @@ function TaskUpdateLogsPanel({ title = "Task Update History", limit = 30 }) {
       setLoading(true);
       setError("");
       
-      const response = await fetch(`http://localhost:8000/app/task-update-logs/?limit=${limit}`, {
+      const response = await fetch(`/app/task-update-logs/?limit=${limit}`, {
         method: "GET",
         credentials: "include",
         headers: {
@@ -44,7 +44,7 @@ function TaskUpdateLogsPanel({ title = "Task Update History", limit = 30 }) {
 
   const handleDeleteLog = async (logId) => {
     try {
-      const response = await fetch(`http://localhost:8000/app/task-update-logs/${logId}/`, {
+      const response = await fetch(`/app/task-update-logs/${logId}/`, {
         method: "DELETE",
         credentials: "include",
         headers: {

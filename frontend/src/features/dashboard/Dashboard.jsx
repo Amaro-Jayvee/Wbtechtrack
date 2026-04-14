@@ -79,7 +79,7 @@ function Dashboard() {
       const params = `?month=${selectedMonth}&year=${selectedYear}&include_archived=true`;
 
       // Fetch bar chart data
-      const barRes = await fetch(`http://localhost:8000/app/reports/bar-chart/${params}`, {
+      const barRes = await fetch(`/app/reports/bar-chart/${params}", {
         method: "GET",
         credentials: "include",
       });
@@ -91,7 +91,7 @@ function Dashboard() {
       }
 
       // Fetch pie chart data
-      const pieRes = await fetch(`http://localhost:8000/app/reports/pie-chart/${params}`, {
+      const pieRes = await fetch(`/app/reports/pie-chart/${params}", {
         method: "GET",
         credentials: "include",
       });
@@ -103,7 +103,7 @@ function Dashboard() {
       }
 
       // Fetch top movers data
-      const moversRes = await fetch(`http://localhost:8000/app/reports/top-movers/${params}&limit=5`, {
+      const moversRes = await fetch(`/app/reports/top-movers/${params}&limit=5", {
         method: "GET",
         credentials: "include",
       });
@@ -115,7 +115,7 @@ function Dashboard() {
       }
 
       // Fetch debug data
-      const debugRes = await fetch(`http://localhost:8000/app/reports/debug/${params}`, {
+      const debugRes = await fetch(`/app/reports/debug/${params}", {
         method: "GET",
         credentials: "include",
       });

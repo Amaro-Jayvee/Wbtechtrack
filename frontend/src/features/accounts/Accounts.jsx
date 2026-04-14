@@ -51,7 +51,7 @@ function Accounts() {
   const fetchAccounts = async () => {
     setAccountsLoading(true);
     try {
-      const response = await fetch("http://localhost:8000/app/users/?status=active", {
+      const response = await fetch("/app/users/?status=active", {
         method: "GET",
         credentials: "include",
         headers: {
@@ -75,7 +75,7 @@ function Accounts() {
   const fetchPendingSignups = async () => {
     setSignupsLoading(true);
     try {
-      const response = await fetch("http://localhost:8000/app/pending-signups/", {
+      const response = await fetch("/app/pending-signups/", {
         method: "GET",
         credentials: "include",
         headers: {
@@ -110,7 +110,7 @@ function Accounts() {
     setCreateMessage("");
 
     try {
-      const response = await fetch("http://localhost:8000/app/create-customer/", {
+      const response = await fetch("/app/create-customer/", {
         method: "POST",
         credentials: "include",
         headers: {
@@ -195,7 +195,7 @@ function Accounts() {
     setSignupActionLoading(true);
     setSignupActionMessage("");
     try {
-      const response = await fetch(`http://localhost:8000/app/signups/${selectedSignup.id}/approve/`, {
+      const response = await fetch(`/app/signups/${selectedSignup.id}/approve/`, {
         method: "POST",
         credentials: "include",
         headers: {
@@ -230,7 +230,7 @@ function Accounts() {
     setSignupActionLoading(true);
     setSignupActionMessage("");
     try {
-      const response = await fetch(`http://localhost:8000/app/signups/${selectedSignup.id}/decline/`, {
+      const response = await fetch(`/app/signups/${selectedSignup.id}/decline/`, {
         method: "POST",
         credentials: "include",
         headers: {

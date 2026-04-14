@@ -26,7 +26,7 @@ function SidebarLayout({ children }) {
 
   const fetchNotifications = async () => {
     try {
-      const response = await fetch("http://localhost:8000/app/notifications/", {
+      const response = await fetch("/app/notifications/", {
         method: "GET",
         credentials: "include",
         headers: {
@@ -92,7 +92,7 @@ function SidebarLayout({ children }) {
       
       // Mark all unread notifications as read on the server (fire and forget)
       for (const notif of unreadNotifications) {
-        await fetchWithCSRF(`http://localhost:8000/app/notifications/${notif.id}/read/`, {
+        await fetchWithCSRF(`/app/notifications/${notif.id}/read/", {
           method: "POST",
         });
       }
@@ -112,7 +112,7 @@ function SidebarLayout({ children }) {
       setUnreadCount(newUnreadCount);
       
       // Mark as read on server (fire and forget, don't refetch)
-      const response = await fetchWithCSRF(`http://localhost:8000/app/notifications/${notificationId}/read/`, {
+      const response = await fetchWithCSRF(`/app/notifications/${notificationId}/read/", {
         method: "POST",
       });
 
@@ -155,7 +155,7 @@ function SidebarLayout({ children }) {
     setShowLogoutLoading(true);
     
     try {
-      const response = await fetchWithCSRF("http://localhost:8000/app/logout/", {
+      const response = await fetchWithCSRF("/app/logout/", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -187,7 +187,7 @@ function SidebarLayout({ children }) {
   const handleAcceptTerms = async () => {
     setTermsLoading(true);
     try {
-      const response = await fetchWithCSRF("http://localhost:8000/app/accept-terms/", {
+      const response = await fetchWithCSRF("/app/accept-terms/", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
