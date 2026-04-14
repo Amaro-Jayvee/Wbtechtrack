@@ -145,8 +145,13 @@ WSGI_APPLICATION = 'djangomonitor.wsgi.application'
 # Database configuration - MySQL (supports both Docker and Railway)
 import dj_database_url
 
-# Try to use DATABASE_URL (Railway format), fallback to individual variables
-database_url = os.environ.get('DATABASE_URL')
+# Priority order:
+# 1. DATABASE_URL (Railway/Heroku standard)
+# 2. MYSQL_URL (Railway MySQL variable reference)
+# 3. Individual DB_* variables (local development)
+# 4. Default SQLite
+
+database_url = os.environ.get('DATABASE_URL') or os.environ.get('MYSQL_URL')
 
 if database_url:
     DATABASES = {
@@ -155,22 +160,32 @@ if database_url:
             conn_max_age=600
         )
     }
-else:
-    # Railway MySQL defaults: use root user with root password
-    # Individual DB variables can override for local development
+    print(f"[settings.py] Using database URL from: {'DATABASE_URL' if os.environ.get('DATABASE_URL') else 'MYSQL_URL'}")
+elif os.environ.get('DB_HOST'):
+    # Local development with explicit MySQL
     DATABASES = {
         'default': {
             'ENGINE': os.environ.get('DB_ENGINE', 'django.db.backends.mysql'),
-            'NAME': os.environ.get('DB_NAME', 'railway'),
-            'USER': os.environ.get('DB_USER', 'root'),  # Changed: Railway MySQL default is root
-            'PASSWORD': os.environ.get('DB_PASSWORD', 'root'),  # Changed: Railway MySQL default is root
-            'HOST': os.environ.get('DB_HOST', 'localhost'),
+            'NAME': os.environ.get('DB_NAME', 'techtrack_db'),
+            'USER': os.environ.get('DB_USER', 'techtrack_user'),
+            'PASSWORD': os.environ.get('DB_PASSWORD', 'techtrack_secure_password'),
+            'HOST': os.environ.get('DB_HOST'),
             'PORT': os.environ.get('DB_PORT', '3306'),
             'OPTIONS': {
                 'charset': 'utf8mb4',
             },
         }
     }
+    print(f"[settings.py] Using local MySQL at {os.environ.get('DB_HOST')}")
+else:
+    # Fallback: SQLite (shouldn't reach here if Railway vars are set correctly)
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': BASE_DIR / 'db.sqlite3',
+        }
+    }
+    print("[settings.py] WARNING: Using SQLite - no database URL/variables found")
 
 # Password validation
 # https://docs.djangoproject.com/en/5.1/ref/settings/#auth-password-validators
