@@ -32,5 +32,8 @@ RUN mkdir -p /app/logs /app/staticfiles
 # Expose port
 EXPOSE 8000
 
-# Run migrations and start server
-CMD ["sh", "-c", "python manage.py migrate && python manage.py collectstatic --noinput && gunicorn djangomonitor.wsgi:application --bind 0.0.0.0:8000 --workers 4 --worker-class sync --access-logfile /app/logs/access.log --error-logfile /app/logs/error.log"]
+# Copy startup script
+COPY run_server_docker.py .
+
+# Start server using pure Python (no shell commands)
+CMD ["python", "run_server_docker.py"]
