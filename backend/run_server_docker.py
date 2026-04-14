@@ -58,4 +58,3 @@ os.execvp('gunicorn', [
     '--access-logfile', '-',
     '--error-logfile', '-'
 ])
-])
