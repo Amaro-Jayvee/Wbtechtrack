@@ -6,14 +6,6 @@ export default defineConfig({
   server: {
     port: 5174,
     middlewareMode: false,
-    proxy: {
-      // Forward all /app requests to Django backend
-      '/app': {
-        target: process.env.VITE_API_URL || 'http://localhost:8000',
-        changeOrigin: true,
-        secure: false,
-      },
-    },
   },
   preview: {
     allowedHosts: [
