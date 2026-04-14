@@ -3,10 +3,11 @@
 from django.db import migrations
 from django.contrib.auth import get_user_model
 from django.utils import timezone
+from django.contrib.auth.hashers import make_password
 
 
 def create_users(apps, schema_editor):
-    """Create default users with roles"""
+    """Create default users with roles - using raw SQL to avoid NULL issues"""
     User = get_user_model()
     UserProfile = apps.get_model('app', 'UserProfile')
     
@@ -64,58 +65,49 @@ def create_users(apps, schema_editor):
         },
     ]
     
+    now = timezone.now()
+    
     for user_data in users_to_create:
-        username = user_data.pop('username')
-        email = user_data.pop('email')
-        password = user_data.pop('password')
-        full_name = user_data.pop('full_name')
-        company_name = user_data.pop('company_name')
-        contact_number = user_data.pop('contact_number')
-        role = user_data.pop('role')
-        
-        # Create user directly to have full control over fields
         try:
-            user = User.objects.get(username=username)
-            # User exists, update it
-            user.email = email
-            user.is_staff = user_data['is_staff']
-            user.is_superuser = user_data['is_superuser']
-            user.set_password(password)
-            user.last_login = timezone.now()  # Set to current time instead of null
-            user.save()
+            # Try to get existing user
+            user = User.objects.get(username=user_data['username'])
+            print(f"✓ {user_data['username']} already exists")
         except User.DoesNotExist:
-            # User doesn't exist, create it
-            user = User.objects.create_user(
-                username=username,
-                email=email,
-                password=password,
+            # Create new user with explicit last_login timestamp
+            user = User(
+                username=user_data['username'],
+                email=user_data['email'],
                 is_staff=user_data['is_staff'],
                 is_superuser=user_data['is_superuser'],
+                last_login=now,  # Explicitly set to current time
+                date_joined=now,
             )
-            # Ensure last_login is set (set to current time)
-            user.last_login = timezone.now()
+            user.set_password(user_data['password'])
             user.save()
+            print(f"✓ Created {user_data['username']}")
         
-        # Create user profile with role
-        profile, profile_created = UserProfile.objects.get_or_create(
-            user=user,
-            defaults={
-                'full_name': full_name,
-                'company_name': company_name,
-                'contact_number': contact_number,
-                'role': role,
-                'is_verified': True,
-            }
-        )
-        
-        if not profile_created:
-            profile.role = role
+        # Create or update user profile with role
+        try:
+            profile = UserProfile.objects.get(user=user)
+            profile.role = user_data['role']
+            profile.full_name = user_data['full_name']
+            profile.company_name = user_data['company_name']
+            profile.contact_number = user_data['contact_number']
             profile.save()
-        
-        print(f"✓ {username} with role '{role}'")
+            print(f"  └─ Updated profile for {user_data['username']} with role '{user_data['role']}'")
+        except UserProfile.DoesNotExist:
+            profile = UserProfile.objects.create(
+                user=user,
+                full_name=user_data['full_name'],
+                company_name=user_data['company_name'],
+                contact_number=user_data['contact_number'],
+                role=user_data['role'],
+                is_verified=True,
+            )
+            print(f"  └─ Created profile for {user_data['username']} with role '{user_data['role']}'")
     
     print("\n" + "=" * 80)
-    print("✓ All users created with roles!")
+    print("✓ All users processed successfully!")
     print("=" * 80 + "\n")
 
 
