@@ -107,7 +107,7 @@ CORS_ALLOWED_ORIGINS = [
     "http://railway.app",
 ]
 
-ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
+ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1,*.railway.app,*.railway.internal').split(',')
 
 
 CORS_ALLOW_CREDENTIALS = True
@@ -211,14 +211,19 @@ STATIC_ROOT = BASE_DIR / 'staticfiles'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # Security settings
-CSRF_COOKIE_SAMESITE = 'Lax'
-SESSION_COOKIE_SAMESITE = 'Lax'
-CSRF_COOKIE_HTTPONLY = False
-SESSION_COOKIE_HTTPONLY = True
+# Trust the X-Forwarded-Proto header from nginx proxy
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
-# For production setting, set the value to True
-# CSRF_COOKIE_HTTPONLY = True
-# SESSION_COOKIE_HTTPONLY = True
+# Cookie security settings for production with HTTPS proxy
+CSRF_COOKIE_SECURE = True
+SESSION_COOKIE_SECURE = True
+CSRF_COOKIE_SAMESITE = 'None'  # Required when cookies sent over proxy with different domain initially
+SESSION_COOKIE_SAMESITE = 'None'  # Required when cookies sent over proxy
+
+CSRF_COOKIE_HTTPONLY = False  # Needed for CSRF token access from JS
+SESSION_COOKIE_HTTPONLY = True  # Keep session cookie httponly for security
+
+# SESSION_COOKIE_DOMAIN = None  # Let Django use the request domain (nginx rewrites it)
 
 STATICFILE_DIRS = (
     BASE_DIR.parent.parent.joinpath('frontend', 'dist'),
