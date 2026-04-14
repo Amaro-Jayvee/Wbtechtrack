@@ -2,17 +2,18 @@
 
 from django.db import migrations
 from django.contrib.auth import get_user_model
-from app.models import UserProfile, Roles
-import sys
-import os
 
 
 def create_users(apps, schema_editor):
     """Create default users with roles"""
     User = get_user_model()
+    UserProfile = apps.get_model('app', 'UserProfile')
+    
+    # Import Roles directly
+    from app.models import Roles
     
     print("\n" + "=" * 80)
-    print("MIGRATION: Creating Users and Products")
+    print("MIGRATION: Creating Users with Roles")
     print("=" * 80 + "\n")
     
     users_to_create = [
@@ -81,14 +82,17 @@ def create_users(apps, schema_editor):
             }
         )
         
-        if created or user.email != email:
+        if not created:
             user.email = email
             user.is_staff = user_data['is_staff']
             user.is_superuser = user_data['is_superuser']
             user.set_password(password)
             user.save()
+        else:
+            user.set_password(password)
+            user.save()
         
-        # Create user profile
+        # Create user profile with role
         profile, profile_created = UserProfile.objects.get_or_create(
             user=user,
             defaults={
@@ -100,16 +104,21 @@ def create_users(apps, schema_editor):
             }
         )
         
-        print(f"✓ {username} ({role})")
+        if not profile_created:
+            profile.role = role
+            profile.save()
+        
+        print(f"✓ {username} with role '{role}'")
     
-    print("\n[Users initialized]\n")
+    print("\n" + "=" * 80)
+    print("✓ All users created with roles!")
+    print("=" * 80 + "\n")
 
 
 def reverse_users(apps, schema_editor):
     """Reverse function - delete the created users"""
     User = get_user_model()
     User.objects.filter(username__in=['admin', 'prod_manager', 'customer1', 'customer2']).delete()
-    print("Users deleted")
 
 
 class Migration(migrations.Migration):
