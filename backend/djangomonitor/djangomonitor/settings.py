@@ -241,6 +241,13 @@ USE_TZ = True
 STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 
+# User-uploaded files (e.g., login background images)
+MEDIA_URL = '/media/'
+MEDIA_ROOT = BASE_DIR / 'media'
+
+# Backward-compatibility path for older fallback uploads saved outside MEDIA_ROOT.
+LEGACY_LOGIN_BACKGROUND_ROOT = BASE_DIR / 'login_backgrounds'
+
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
 

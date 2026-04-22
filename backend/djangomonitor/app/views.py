@@ -97,6 +97,47 @@ def _read_login_background_fallback_url():
     except Exception:
         return None
 
+
+def _resolve_login_background_url(request):
+    """Return a safe, reachable absolute URL for the login background image."""
+    try:
+        settings_obj = SystemSettings.get_settings()
+        if settings_obj.login_background_image:
+            storage = settings_obj.login_background_image.storage
+            image_name = settings_obj.login_background_image.name
+            if storage and storage.exists(image_name):
+                return request.build_absolute_uri(settings_obj.login_background_image.url)
+    except Exception:
+        # Fall through to fallback URL logic.
+        pass
+
+    fallback_relative_url = _read_login_background_fallback_url()
+    if not fallback_relative_url:
+        return None
+
+    fallback_relative_url = fallback_relative_url.strip()
+    if fallback_relative_url.startswith(('http://', 'https://')):
+        return fallback_relative_url
+
+    if not fallback_relative_url.startswith('/'):
+        fallback_relative_url = f"/{fallback_relative_url}"
+
+    # Normalize legacy path format and only return URLs for files that still exist.
+    if fallback_relative_url.startswith('/login_backgrounds/'):
+        filename = os.path.basename(fallback_relative_url)
+        media_candidate = os.path.join(settings.MEDIA_ROOT, 'login_backgrounds', filename)
+        legacy_candidate = os.path.join(settings.LEGACY_LOGIN_BACKGROUND_ROOT, filename)
+
+        if os.path.exists(media_candidate):
+            media_prefix = settings.MEDIA_URL.rstrip('/')
+            return request.build_absolute_uri(f"{media_prefix}/login_backgrounds/{filename}")
+        if os.path.exists(legacy_candidate):
+            return request.build_absolute_uri(fallback_relative_url)
+        return None
+
+    # Generic relative URL fallback.
+    return request.build_absolute_uri(fallback_relative_url)
+
 @ensure_csrf_cookie
 def csrf_token_view(request):
     """
@@ -5407,7 +5448,7 @@ def upload_login_background(request):
                 base_url=f"{settings.MEDIA_URL}login_backgrounds/"
             )
             saved_filename = storage.save(uploaded_file.name, uploaded_file)
-            relative_url = storage.url(saved_filename)
+            relative_url = f"{settings.MEDIA_URL.rstrip('/')}/login_backgrounds/{saved_filename}"
             _save_login_background_fallback_url(relative_url)
 
             return JsonResponse({
@@ -5425,17 +5466,11 @@ def public_login_background(request):
     GET /app/public/login-background/
     """
     try:
-        settings_obj = SystemSettings.get_settings()
-        image_url = None
-        if settings_obj.login_background_image:
-            image_url = request.build_absolute_uri(settings_obj.login_background_image.url)
-        elif _read_login_background_fallback_url():
-            image_url = request.build_absolute_uri(_read_login_background_fallback_url())
+        image_url = _resolve_login_background_url(request)
         return JsonResponse({"login_background_image_url": image_url}, status=200)
     except Exception as e:
         print(f"[PUBLIC_LOGIN_BACKGROUND] Error: {str(e)}")
-        fallback_relative_url = _read_login_background_fallback_url()
-        fallback_url = request.build_absolute_uri(fallback_relative_url) if fallback_relative_url else None
+        fallback_url = _resolve_login_background_url(request)
         return JsonResponse({"login_background_image_url": fallback_url}, status=200)
 
 

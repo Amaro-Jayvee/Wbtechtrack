@@ -20,6 +20,14 @@ function Login() {
   const { refreshUserData, userData } = useUser();
 
   useEffect(() => {
+    const validateImageUrl = (imageUrl) =>
+      new Promise((resolve) => {
+        const image = new Image();
+        image.onload = () => resolve(true);
+        image.onerror = () => resolve(false);
+        image.src = imageUrl;
+      });
+
     const fetchLoginBackground = async () => {
       try {
         const response = await fetch("/app/public/login-background/");
@@ -29,7 +37,12 @@ function Login() {
 
         const data = await response.json();
         if (data.login_background_image_url) {
-          setLoginBackgroundUrl(data.login_background_image_url);
+          const isValid = await validateImageUrl(data.login_background_image_url);
+          if (isValid) {
+            setLoginBackgroundUrl(data.login_background_image_url);
+          } else {
+            console.warn("Login background URL is unreachable. Using default background.");
+          }
         }
       } catch (error) {
         console.warn("Unable to load login background image:", error);

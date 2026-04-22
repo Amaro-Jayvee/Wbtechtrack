@@ -26,6 +26,12 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('app/', include('app.urls')),
     re_path(r'^static/(?P<path>.*)$', serve, {'document_root': settings.STATIC_ROOT}),
+    re_path(r'^media/(?P<path>.*)$', serve, {'document_root': settings.MEDIA_ROOT}),
+    re_path(
+        r'^login_backgrounds/(?P<path>.*)$',
+        serve,
+        {'document_root': settings.LEGACY_LOGIN_BACKGROUND_ROOT},
+    ),
 ]
 
 if settings.DEBUG:
