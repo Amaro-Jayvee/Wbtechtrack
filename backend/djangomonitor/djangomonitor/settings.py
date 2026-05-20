@@ -93,13 +93,16 @@ SITE_ID = 1
 
 CORS_ORIGIN_ALLOW_ALL = True
 
-# Railway domains support
+# Railway and Render domains support
 default_allowed_hosts = [
     'localhost',
     '127.0.0.1',
     '.up.railway.app',
     '.railway.app',
     '.railway.internal',
+    '.onrender.com',
+    'techtrack-backend.render.com',
+    'techtrack-backend-pynh.onrender.com',
 ]
 ALLOWED_HOSTS = _parse_csv_env('ALLOWED_HOSTS', default_allowed_hosts)
 
