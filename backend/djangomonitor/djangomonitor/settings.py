@@ -12,8 +12,10 @@ https://docs.djangoproject.com/en/5.1/ref/settings/
 
 from pathlib import Path
 import os
-from dotenv import load_dotenv
-load_dotenv()
+# Only load .env file in development (not on Render/production)
+if not os.environ.get('RENDER'):
+    from dotenv import load_dotenv
+    load_dotenv()
 
 # Use PyMySQL as MySQL driver
 try:
@@ -162,30 +164,31 @@ WSGI_APPLICATION = 'djangomonitor.wsgi.application'
 # Database configuration - supports PostgreSQL (Render), MySQL (Docker), and SQLite
 import dj_database_url
 
-# Priority order:
-# 1. DATABASE_URL (Render PostgreSQL / Heroku standard) - HIGHEST PRIORITY
-# 2. MYSQL_URL (Railway MySQL variable)
-# 3. Individual DB_* variables (local development with Docker MySQL)
-# 4. Default SQLite - LOWEST PRIORITY
-
-database_url = os.environ.get('DATABASE_URL') or os.environ.get('MYSQL_URL')
-
-if database_url:
-    # Use dj_database_url to parse the connection string
-    # This auto-detects PostgreSQL vs MySQL based on the URL format
+# HIGHEST PRIORITY: DATABASE_URL from environment (Render PostgreSQL or Railway/Heroku)
+# If DATABASE_URL is set, use it exclusively and ignore DB_HOST
+if os.environ.get('DATABASE_URL'):
     DATABASES = {
         'default': dj_database_url.config(
-            default=database_url,
+            default=os.environ.get('DATABASE_URL'),
             conn_max_age=600,
-            engine='django.db.backends.postgresql' if 'postgresql' in database_url.lower() else 'django.db.backends.mysql'
+            # Auto-detect: dj_database_url recognizes postgresql:// vs mysql:// in URL
         )
     }
-    if 'postgresql' in database_url.lower():
-        print(f"[settings.py] ✅ Using PostgreSQL from DATABASE_URL (Render)")
+    if 'postgresql' in os.environ.get('DATABASE_URL', '').lower():
+        print(f"[settings.py] ✅ Using PostgreSQL from DATABASE_URL (Render/Production)")
     else:
-        print(f"[settings.py] ✅ Using MySQL from {('DATABASE_URL' if os.environ.get('DATABASE_URL') else 'MYSQL_URL')}")
+        print(f"[settings.py] ✅ Using MySQL from DATABASE_URL")
+# MEDIUM PRIORITY: Legacy MYSQL_URL (Railway MySQL)
+elif os.environ.get('MYSQL_URL'):
+    DATABASES = {
+        'default': dj_database_url.config(
+            default=os.environ.get('MYSQL_URL'),
+            conn_max_age=600
+        )
+    }
+    print(f"[settings.py] ✅ Using MySQL from MYSQL_URL (Railway)")
+# LOWER PRIORITY: Individual DB_* variables (local Docker development)
 elif os.environ.get('DB_HOST'):
-    # Local development with explicit MySQL (Docker)
     DATABASES = {
         'default': {
             'ENGINE': os.environ.get('DB_ENGINE', 'django.db.backends.mysql'),
@@ -200,8 +203,8 @@ elif os.environ.get('DB_HOST'):
         }
     }
     print(f"[settings.py] Using local MySQL at {os.environ.get('DB_HOST')}")
+# LOWEST PRIORITY: SQLite fallback
 else:
-    # Fallback: SQLite (shouldn't reach here if production vars are set correctly)
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.sqlite3',
