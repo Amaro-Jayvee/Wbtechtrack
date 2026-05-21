@@ -60,18 +60,15 @@ export async function fetchWithCSRF(url, options = {}) {
 
 /**
  * Get the backend API URL
- * Uses environment variable or defaults to window.location.origin for relative paths
+ * Hardcoded for production, localhost for development
  */
 function getBackendUrl() {
-  // Check for explicit backend URL environment variable
-  if (import.meta.env.VITE_BACKEND_URL) {
-    return import.meta.env.VITE_BACKEND_URL;
+  // Development: use localhost
+  if (!import.meta.env.PROD) {
+    return 'http://localhost:8000';
   }
-  // For production, use the current origin (nginx will proxy to backend)
-  // For development, default to localhost:8000
-  return import.meta.env.PROD 
-    ? window.location.origin 
-    : 'http://localhost:8000';
+  // Production: always use the Render backend domain
+  return 'https://techtrack-backend-pynh.onrender.com';
 }
 
 /**
