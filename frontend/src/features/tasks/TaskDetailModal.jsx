@@ -3,6 +3,7 @@ import "../../features/dashboard/Dashboard.css";
 import ExtensionRequestModal from "../requests/ExtensionRequestModal";
 import TaskHistoryModal from "./TaskHistoryModal";
 import CancellationReasonModalComponent from "../cancelled-orders/CancellationReasonModalComponent";
+import { apiCall } from "../../shared/utils/csrfUtils.js";
 
 function TaskDetailModal({ productProcessId, onClose, onSave }) {
   const [taskData, setTaskData] = useState(null);
@@ -93,13 +94,7 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
     const currentProductId = productProcessId; // Capture current ID for race condition check
     setLoading(true);
     try {
-      const response = await fetch(
-        `/app/product/${productProcessId}/`,
-        {
-          method: "GET",
-          credentials: "include",
-        }
-      );
+      const response = await apiCall(`/app/product/${productProcessId}/`);
 
       // Abort if productProcessId has changed (race condition check)
       if (currentProductId !== productProcessId) {
@@ -212,13 +207,7 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
 
   const fetchWorkers = async () => {
     try {
-      const response = await fetch(
-        "/app/worker/",
-        {
-          method: "GET",
-          credentials: "include",
-        }
-      );
+      const response = await apiCall("/app/worker/");
 
       if (!response.ok) {
         throw new Error(`API error: ${response.status}`);
@@ -459,14 +448,10 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
       console.log("Payload to send:", JSON.stringify(savePayload, null, 2));
       console.log("================================\n");
 
-      const response = await fetch(
+      const response = await apiCall(
         `/app/product/${productProcessId}/`,
         {
           method: "PATCH",
-          credentials: "include",
-          headers: {
-            "Content-Type": "application/json",
-          },
           body: JSON.stringify(savePayload),
         }
       );
@@ -621,14 +606,10 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
       }
       
       // Save current step with all data (quota, defects, workers)
-      const saveResponse = await fetch(
+      const saveResponse = await apiCall(
         `/app/product/${productProcessId}/`,
         {
           method: "PATCH",
-          credentials: "include",
-          headers: {
-            "Content-Type": "application/json",
-          },
           body: JSON.stringify(saveData),
         }
       );
@@ -642,13 +623,7 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
       const savedData = await saveResponse.json();
 
       // Fetch all steps for this product to find the next one
-      const stepsResponse = await fetch(
-        `/app/product/?include_archived=false`,
-        {
-          method: "GET",
-          credentials: "include",
-        }
-      );
+      const stepsResponse = await apiCall(`/app/product/?include_archived=false`);
 
       if (!stepsResponse.ok) {
         throw new Error("Failed to fetch steps list");
@@ -919,12 +894,10 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
     }
 
     try {
-      const response = await fetch(
+      const response = await apiCall(
         `/app/request-products/${requestProductId}/`,
         {
           method: "PATCH",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ archived_at: new Date().toISOString() }),
         }
       );
@@ -977,10 +950,8 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
         progressBeforeCancel
       });
       
-      const archiveRes = await fetch(`/app/request-products/${requestProductId}/`, {
+      const archiveRes = await apiCall(`/app/request-products/${requestProductId}/`, {
         method: "PATCH",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
           status: 'cancelled', 
           cancellation_reason: cancellationReason || 'Cancelled by production manager',
