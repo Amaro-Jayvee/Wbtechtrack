@@ -3,6 +3,7 @@ import SidebarLayout from "../../shared/components/SidebarLayout";
 import CancellationReportModal from "./CancellationReportModal";
 import "../../features/dashboard/Dashboard.css";
 import { useUser } from "../../shared/context/UserContext.jsx";
+import { apiCall } from "../../shared/utils/csrfUtils.js";
 
 function CancelledRequests() {
   const { userData } = useUser();
@@ -38,11 +39,10 @@ function CancelledRequests() {
   const fetchCancelledRequests = async () => {
     setLoading(true);
     try {
-      const response = await fetch(
+      const response = await apiCall(
         `/app/cancelled-requests/`,
         {
           method: "GET",
-          credentials: "include",
         }
       );
 

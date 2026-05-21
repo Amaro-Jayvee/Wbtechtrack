@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import SidebarLayout from "../../shared/components/SidebarLayout";
 import { useUser } from "../../shared/context/UserContext.jsx";
+import { apiCall } from "../../shared/utils/csrfUtils.js";
 import "../../features/dashboard/Dashboard.css";
 import "./Request.css";
 
@@ -56,11 +57,10 @@ function RequestList() {
       // Always fetch non-archived requests only
       params.append("include_archived", "false");
 
-      const response = await fetch(
+      const response = await apiCall(
         `/app/request/?${params.toString()}`,
         {
           method: "GET",
-          credentials: "include",
         }
       );
 
@@ -175,11 +175,10 @@ function RequestList() {
   const checkIfRequestHasTasks = async (requestId) => {
     try {
       // Check if any ProductProcess tasks exist for this request's products
-      const response = await fetch(
+      const response = await apiCall(
         "/app/productprocess/",
         {
           method: "GET",
-          credentials: "include",
         }
       );
       if (response.ok) {
@@ -214,14 +213,11 @@ function RequestList() {
       setShowDetailsModal(false);
       
       // Call the new unified start-project endpoint
-      const response = await fetch(
+      const response = await apiCall(
         `/app/request/${selectedRequest.RequestID}/start-project/`,
         {
           method: "POST",
-          credentials: "include",
-          headers: {
-            "Content-Type": "application/json",
-          },
+          body: JSON.stringify({}),
         }
       );
 
@@ -280,12 +276,10 @@ function RequestList() {
 
     try {
       const finalReason = reason || cancellationReason || 'Cancelled by admin/manager';
-      const response = await fetch(
+      const response = await apiCall(
         `/app/request/${selectedRequest.RequestID}/archive/`,
         {
           method: "PATCH",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ cancellation_reason: finalReason }),
         }
       );
@@ -324,14 +318,10 @@ function RequestList() {
 
   const deleteRequest = async (requestId) => {
     try {
-      const response = await fetch(
+      const response = await apiCall(
         `/app/request/${requestId}/`,
         {
           method: "DELETE",
-          credentials: "include",
-          headers: {
-            "Content-Type": "application/json",
-          }
         }
       );
 

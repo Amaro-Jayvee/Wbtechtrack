@@ -4,6 +4,7 @@ import TaskDetailModal from "./TaskDetailModal";
 import AdminRequestApproval from "../accounts/AdminRequestApproval";
 import "../../features/dashboard/Dashboard.css";
 import { useUser } from "../../shared/context/UserContext.jsx";
+import { apiCall } from "../../shared/utils/csrfUtils.js";
 
 function TaskStatus() {
   const { userData } = useUser();
@@ -128,10 +129,8 @@ function TaskStatus() {
         return;
       }
 
-      const response = await fetch("/app/create-product-with-processes/", {
+      const response = await apiCall("/app/create-product-with-processes/", {
         method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
       });
 
@@ -177,11 +176,10 @@ function TaskStatus() {
       params.append("t", Date.now());
 
       // Fetch ProductProcess (steps) data
-      const response = await fetch(
+      const response = await apiCall(
         `/app/product/?${params.toString()}`,
         {
           method: "GET",
-          credentials: "include",
         }
       );
 
