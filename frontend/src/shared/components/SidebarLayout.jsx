@@ -85,7 +85,7 @@ function SidebarLayout({ children }) {
       
       // Mark all unread notifications as read on the server (fire and forget)
       for (const notif of unreadNotifications) {
-          await fetchWithCSRF(`/app/notifications/${notif.id}/read/`, {
+          await apiCall(`/app/notifications/${notif.id}/read/`, {
           method: "POST",
         });
       }
@@ -105,7 +105,7 @@ function SidebarLayout({ children }) {
       setUnreadCount(newUnreadCount);
       
       // Mark as read on server (fire and forget, don't refetch)
-        const response = await fetchWithCSRF(`/app/notifications/${notificationId}/read/`, {
+        const response = await apiCall(`/app/notifications/${notificationId}/read/`, {
         method: "POST",
       });
 
@@ -148,12 +148,8 @@ function SidebarLayout({ children }) {
     setShowLogoutLoading(true);
     
     try {
-      const response = await fetchWithCSRF("/app/logout/", {
+      const response = await apiCall("/app/logout/", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Requested-With": "XMLHttpRequest",
-        },
       });
 
       if (!response.ok) {
@@ -180,12 +176,8 @@ function SidebarLayout({ children }) {
   const handleAcceptTerms = async () => {
     setTermsLoading(true);
     try {
-      const response = await fetchWithCSRF("/app/accept-terms/", {
+      const response = await apiCall("/app/accept-terms/", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Requested-With": "XMLHttpRequest",
-        },
       });
 
       if (response.ok) {
