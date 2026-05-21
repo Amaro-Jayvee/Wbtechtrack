@@ -7,13 +7,15 @@ import { getBackendUrl } from './shared/utils/csrfUtils.js'
 /**
  * Global fetch interceptor
  * Automatically converts relative API URLs to absolute backend URLs
+ * Only intercepts /app/* paths (API endpoints), not other relative paths
  */
 const originalFetch = window.fetch;
 window.fetch = function(url, options) {
   // Only intercept string URLs (not Request objects)
   if (typeof url === 'string') {
-    // If it's a relative URL starting with /, prepend backend URL
-    if (url.startsWith('/')) {
+    // Only convert /app/* API URLs to backend domain
+    // Don't convert other paths like /login, /assets, etc.
+    if (url.startsWith('/app/')) {
       url = `${getBackendUrl()}${url}`;
     }
   }
