@@ -37,13 +37,29 @@ def role_required(*allowed_roles):
     def decorator(view_func):
         @wraps(view_func)
         def _wrapped_view(request, *args, **kwargs):
+            # DEBUG: Log authentication info
+            import sys
+            print(f"[ROLE_REQUIRED] View: {view_func.__name__}", file=sys.stderr)
+            print(f"[ROLE_REQUIRED] is_authenticated: {request.user.is_authenticated}", file=sys.stderr)
+            print(f"[ROLE_REQUIRED] User: {request.user.username if request.user else 'None'}", file=sys.stderr)
+            print(f"[ROLE_REQUIRED] Session ID: {request.session.session_key if hasattr(request, 'session') else 'No session'}", file=sys.stderr)
+            print(f"[ROLE_REQUIRED] Cookies: {list(request.COOKIES.keys())}", file=sys.stderr)
+            
             if not request.user.is_authenticated:
+                print(f"[ROLE_REQUIRED] DENYING: Not authenticated", file=sys.stderr)
                 return JsonResponse({"detail": "Authentication required"}, status=401)
         
             profile = getattr(request.user, 'userprofile', None)
+            print(f"[ROLE_REQUIRED] Profile found: {profile is not None}", file=sys.stderr)
+            if profile:
+                print(f"[ROLE_REQUIRED] User role: {profile.role}", file=sys.stderr)
+                print(f"[ROLE_REQUIRED] Allowed roles: {allowed_roles}", file=sys.stderr)
+            
             if not profile or profile.role not in allowed_roles:
+                print(f"[ROLE_REQUIRED] DENYING: Access denied (profile={profile is not None}, role_check={profile.role in allowed_roles if profile else False})", file=sys.stderr)
                 return JsonResponse({"detail": "Access denied."}, status=403)
 
+            print(f"[ROLE_REQUIRED] ALLOWING: User {request.user.username} with role {profile.role}", file=sys.stderr)
             return view_func(request, *args, **kwargs)
         return _wrapped_view
     return decorator
