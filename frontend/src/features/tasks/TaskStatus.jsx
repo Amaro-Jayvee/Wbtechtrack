@@ -4,6 +4,7 @@ import TaskDetailModal from "./TaskDetailModal";
 import AdminRequestApproval from "../accounts/AdminRequestApproval";
 import "../../features/dashboard/Dashboard.css";
 import { useUser } from "../../shared/context/UserContext.jsx";
+import { apiCall } from "../../shared/utils/csrfUtils.js";
 
 function TaskStatus() {
   const { userData } = useUser();
@@ -177,12 +178,8 @@ function TaskStatus() {
       params.append("t", Date.now());
 
       // Fetch ProductProcess (steps) data
-      const response = await fetch(
-        `/app/product/?${params.toString()}`,
-        {
-          method: "GET",
-          credentials: "include",
-        }
+      const response = await apiCall(
+        `/app/product/?${params.toString()}`
       );
 
       let steps = await response.json();

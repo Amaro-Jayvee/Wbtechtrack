@@ -3,6 +3,7 @@ import "../../features/dashboard/Dashboard.css";
 import ExtensionRequestModal from "../requests/ExtensionRequestModal";
 import TaskHistoryModal from "./TaskHistoryModal";
 import CancellationReasonModalComponent from "../cancelled-orders/CancellationReasonModalComponent";
+import { apiCall } from "../../shared/utils/csrfUtils.js";
 
 function TaskDetailModal({ productProcessId, onClose, onSave }) {
   const [taskData, setTaskData] = useState(null);
@@ -93,13 +94,7 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
     const currentProductId = productProcessId; // Capture current ID for race condition check
     setLoading(true);
     try {
-      const response = await fetch(
-        `/app/product/${productProcessId}/`,
-        {
-          method: "GET",
-          credentials: "include",
-        }
-      );
+      const response = await apiCall(`/app/product/${productProcessId}/`);
 
       // Abort if productProcessId has changed (race condition check)
       if (currentProductId !== productProcessId) {
@@ -212,13 +207,9 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
 
   const fetchWorkers = async () => {
     try {
-      const response = await fetch(
-        "/app/worker/",
-        {
-          method: "GET",
-          credentials: "include",
-        }
-      );
+  const fetchWorkers = async () => {
+    try {
+      const response = await apiCall("/app/worker/");
 
       if (!response.ok) {
         throw new Error(`API error: ${response.status}`);
@@ -471,14 +462,10 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
         }
       );
 
-      const responseData = await response.json();
-      
-      console.log("\n================================");
-      console.log("📥 AFTER RECEIVING RESPONSE");
-      console.log("================================");
-      console.log("Response Status:", response.status);
-      console.log("Full Response:", JSON.stringify(responseData, null, 2));
-      
+      const responseData = awapiCall(
+        `/app/product/${productProcessId}/`,
+        {
+          method: "PATCH"
       if (responseData.updated_step) {
         console.log("\n📊 UPDATED STEP DATA:");
         console.log("  is_overtime:", responseData.updated_step.is_overtime);
@@ -637,14 +624,10 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
         const errorData = await saveResponse.json();
         console.error(`❌ Save error:`, errorData);
         throw new Error(errorData.detail || "Failed to save step");
-      }
-
-      const savedData = await saveResponse.json();
-
-      // Fetch all steps for this product to find the next one
-      const stepsResponse = await fetch(
-        `/app/product/?include_archived=false`,
+      }apiCall(
+        `/app/product/${productProcessId}/`,
         {
+          method: "PATCH"
           method: "GET",
           credentials: "include",
         }
@@ -662,13 +645,7 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
           step.request_product_id === taskData.request_product_id && 
           !step.archived_at
         )
-        .sort((a, b) => a.step_order - b.step_order);
-
-      // Find current step index
-      const currentIndex = productSteps.findIndex(s => s.id === productProcessId);
-      
-      const nextStep = productSteps[currentIndex + 1];
-
+        .sort((a, b) => a.step_ordapiCall(`/app/product/?include_archived=false`
       // Show success toast WHILE modal is still visible
       if (nextStep) {
         setToastMessage(`Step completed! Moving to: ${nextStep.process_name}`);
@@ -945,12 +922,10 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
       showToast("Network error: " + err.message, "error");
     }
   };
-
-  const performDelete = async () => {
-    const requestProductId = taskData?.request_product_id;
-    
-    if (!requestProductId) {
-      showToast("Cannot identify product to delete", "error");
+apiCall(
+        `/app/request-products/${requestProductId}/`,
+        {
+          method: "PATCH"or");
       return;
     }
 
@@ -999,10 +974,8 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
 
       if (!archiveRes.ok) {
         const errorMsg = archiveData?.error || archiveData?.detail || archiveData?.message || "Unknown error";
-        showToast(`❌ Error cancelling product: ${errorMsg}`, "error");
-        return;
-      }
-
+        showToast(`❌ Error cancapiCall(`/app/request-products/${requestProductId}/`, {
+        method: "PATCH"
       showToast("✅ Request cancelled successfully! The cancellation reason and progress have been recorded.", "success");
       
       // Refresh parent table and close modal AFTER showing toast

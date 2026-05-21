@@ -112,14 +112,8 @@ function Request() {
   const fetchDropdownData = async () => {
     try {
       const [requestersRes, productsRes] = await Promise.all([
-        fetch("/app/users/?status=active", {
-          method: "GET",
-          credentials: "include",
-        }),
-        fetch("/app/prodname/", {
-          method: "GET",
-          credentials: "include",
-        }),
+        apiCall("/app/users/?status=active"),
+        apiCall("/app/prodname/"),
       ]);
 
       const requestersData = await requestersRes.json();
