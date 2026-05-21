@@ -973,6 +973,41 @@ def whoami_view(request):
     }, status=200)
 
 @csrf_exempt
+@require_http_methods(["GET"])
+def debug_auth_state(request):
+    """
+    Debug endpoint to show authentication state
+    GET /api/debug/auth-state/
+    """
+    import sys
+    
+    debug_info = {
+        "is_authenticated": request.user.is_authenticated,
+        "user_id": request.user.id if request.user else None,
+        "username": request.user.username if request.user else None,
+        "user_type": str(type(request.user)),
+        "session_key": request.session.session_key if hasattr(request, 'session') else None,
+        "cookies": list(request.COOKIES.keys()),
+        "has_sessionid": 'sessionid' in request.COOKIES,
+    }
+    
+    # Try to get profile
+    try:
+        if request.user.is_authenticated:
+            profile = request.user.userprofile
+            debug_info["profile_exists"] = True
+            debug_info["profile_role"] = profile.role
+        else:
+            debug_info["profile_exists"] = False
+    except Exception as e:
+        debug_info["profile_error"] = str(e)
+    
+    # Log to stderr
+    print(f"[DEBUG_AUTH] {debug_info}", file=sys.stderr)
+    
+    return JsonResponse(debug_info, status=200)
+
+@csrf_exempt
 @require_POST
 def accept_terms_view(request):
     """

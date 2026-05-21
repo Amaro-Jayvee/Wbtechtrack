@@ -29,6 +29,7 @@ urlpatterns = [
     path('logout/', logout_view, name='api_logout'),     
     path('session/', session_view, name='api_session'),    
     path('whoami/', whoami_view, name='api_whoami'),
+    path('debug/auth-state/', debug_auth_state, name='debug_auth_state'),
     path('accept-terms/', accept_terms_view, name='api_accept_terms'),
     path('csrf-token/', csrf_token_view, name='csrf-token'),
     
