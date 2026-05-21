@@ -1,7 +1,8 @@
 from rest_framework.permissions import BasePermission
-from .models import Roles
+from .models import Roles, UserProfile
 from django.http import JsonResponse
 from functools import wraps
+import sys
 
 # class IsManagerOrAdmin(BasePermission):
 #     def has_permission(self, request, view):
@@ -38,7 +39,6 @@ def role_required(*allowed_roles):
         @wraps(view_func)
         def _wrapped_view(request, *args, **kwargs):
             # DEBUG: Log authentication info
-            import sys
             print(f"[ROLE_REQUIRED] View: {view_func.__name__}", file=sys.stderr)
             print(f"[ROLE_REQUIRED] is_authenticated: {request.user.is_authenticated}", file=sys.stderr)
             print(f"[ROLE_REQUIRED] User: {request.user.username if request.user else 'None'}", file=sys.stderr)
@@ -49,14 +49,20 @@ def role_required(*allowed_roles):
                 print(f"[ROLE_REQUIRED] DENYING: Not authenticated", file=sys.stderr)
                 return JsonResponse({"detail": "Authentication required"}, status=401)
         
-            profile = getattr(request.user, 'userprofile', None)
+            try:
+                profile = request.user.userprofile
+            except (UserProfile.DoesNotExist, AttributeError) as e:
+                profile = None
+                print(f"[ROLE_REQUIRED] Profile lookup error: {str(e)}", file=sys.stderr)
+            
             print(f"[ROLE_REQUIRED] Profile found: {profile is not None}", file=sys.stderr)
             if profile:
-                print(f"[ROLE_REQUIRED] User role: {profile.role}", file=sys.stderr)
-                print(f"[ROLE_REQUIRED] Allowed roles: {allowed_roles}", file=sys.stderr)
+                print(f"[ROLE_REQUIRED] User role: {profile.role} (type: {type(profile.role)})", file=sys.stderr)
+                print(f"[ROLE_REQUIRED] Allowed roles: {allowed_roles} (types: {[type(r) for r in allowed_roles]})", file=sys.stderr)
             
             if not profile or profile.role not in allowed_roles:
-                print(f"[ROLE_REQUIRED] DENYING: Access denied (profile={profile is not None}, role_check={profile.role in allowed_roles if profile else False})", file=sys.stderr)
+                role_check = profile.role in allowed_roles if profile else False
+                print(f"[ROLE_REQUIRED] DENYING: Access denied (profile={profile is not None}, role_match={role_check})", file=sys.stderr)
                 return JsonResponse({"detail": "Access denied."}, status=403)
 
             print(f"[ROLE_REQUIRED] ALLOWING: User {request.user.username} with role {profile.role}", file=sys.stderr)

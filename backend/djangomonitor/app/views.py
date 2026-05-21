@@ -5789,6 +5789,7 @@ def approve_deadline_extension(request, id):
         print(f"[ERROR] Approve extension error: {str(e)}")
 
 
+@csrf_exempt
 @require_http_methods(["GET"])
 def cancelled_requests_view(request):
     """
