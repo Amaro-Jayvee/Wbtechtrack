@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import Calendar from "react-calendar";
 import "react-calendar/dist/Calendar.css";
 import "../../features/dashboard/Dashboard.css";
+import { apiCall } from "../../shared/utils/csrfUtils.js";
 
 // Helper function to get minimum allowed date based on required lead days.
 const getMinimumDate = (leadDays = 4) => {
@@ -183,13 +184,11 @@ function AdminRequestApproval() {
     const fetchProductsAndCustomers = async () => {
       try {
         const [productsRes, customersRes] = await Promise.all([
-          fetch("/app/prodname/", {
+          apiCall("/app/prodname/", {
             method: "GET",
-            credentials: "include",
           }),
-          fetch("/app/admin/available-customers/", {
+          apiCall("/app/admin/available-customers/", {
             method: "GET",
-            credentials: "include",
           }),
         ]);
 
@@ -472,12 +471,8 @@ function AdminRequestApproval() {
       // Get today's date as the issuance_date (when the PO would have been issued if it wasn't cancelled)
       const today = new Date().toISOString().split('T')[0];
       
-      const response = await fetch("/app/cancelled-draft-products/", {
+      const response = await apiCall("/app/cancelled-draft-products/", {
         method: "POST",
-        credentials: "include",
-        headers: {
-          "Content-Type": "application/json",
-        },
         body: JSON.stringify({
           product_name: product.product_name,
           quantity: product.quantity,
@@ -559,12 +554,8 @@ function AdminRequestApproval() {
         deadline: formData.deadline,
       };
 
-      const response = await fetch("/app/admin/create-request/", {
+      const response = await apiCall("/app/admin/create-request/", {
         method: "POST",
-        credentials: "include",
-        headers: {
-          "Content-Type": "application/json",
-        },
         body: JSON.stringify(requestPayload),
       });
 
