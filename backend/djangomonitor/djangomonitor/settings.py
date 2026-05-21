@@ -269,16 +269,16 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # Trust the X-Forwarded-Proto header from nginx proxy
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
-# Cookie security settings for proxy setup
-# Important: For proxy setups, SameSite=None requires Secure=True in modern browsers
-# But Django must see the request as HTTPS via X-Forwarded-Proto for this to work
-CSRF_COOKIE_SECURE = False  # Set to False because backend sees HTTP (even though external is HTTPS)
-SESSION_COOKIE_SECURE = False  # Set to False because backend sees HTTP
-CSRF_COOKIE_SAMESITE = 'Lax'  # Use Lax instead of None for proxy compatibility
-SESSION_COOKIE_SAMESITE = 'Lax'  # Use Lax instead of None
+# Cookie security settings for cross-domain requests with credentials
+# SameSite=None allows cookies to be sent in cross-site requests (needed for frontend-backend on different Railway subdomains)
+# Secure=True required for SameSite=None in modern browsers - Django sees HTTPS via X-Forwarded-Proto
+CSRF_COOKIE_SECURE = True  # Secure flag required for SameSite=None
+SESSION_COOKIE_SECURE = True  # Secure flag required for SameSite=None
+CSRF_COOKIE_SAMESITE = 'None'  # Allow cross-site cookies for different Railway subdomains
+SESSION_COOKIE_SAMESITE = 'None'  # Allow cross-site cookies for different Railway subdomains
 
 CSRF_COOKIE_HTTPONLY = False  # Needed for CSRF token access from JS
-SESSION_COOKIE_HTTPONLY = True  # Keep session cookie httponly for security
+SESSION_COOKIE_HTTPONLY = True  # Keep session cookie httponly for security (but still sent with credentials: include)
 
 STATICFILE_DIRS = (
     BASE_DIR.parent.parent.joinpath('frontend', 'dist'),
