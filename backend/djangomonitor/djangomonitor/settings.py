@@ -113,8 +113,9 @@ default_cors_origins = [
     'http://127.0.0.1:5173',
     'http://localhost:5174',
     'http://127.0.0.1:5174',
-    'https://techtrack-frontend.onrender.com',  # Production frontend on Render
-    'https://techhtrack-frontend.onrender.com',  # Alternative with double h (if used)
+    'https://frontend-service-production-ea39.up.railway.app',  # Railway frontend
+    'https://techtrack-frontend.onrender.com',  # Render frontend (if needed later)
+    'https://techhtrack-frontend.onrender.com',  # Alternative Render domain
 ]
 
 frontend_url = os.environ.get('FRONTEND_URL', '').strip()
