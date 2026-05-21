@@ -21,15 +21,62 @@ export function getCsrfToken() {
 }
 
 /**
+ * Convert relative API URLs to absolute backend URLs
+ * @param {string} url - URL to convert (relative or absolute)
+ * @returns {string} - Absolute URL
+ */
+function resolveUrl(url) {
+  if (!url) return url;
+  
+  // If it's already an absolute URL (starts with http), return as-is
+  if (url.startsWith('http://') || url.startsWith('https://')) {
+    return url;
+  }
+  
+  // If it's a relative API URL (starts with /), prepend backend URL
+  if (url.startsWith('/')) {
+    return `${getBackendUrl()}${url}`;
+  }
+  
+  return url;
+}
+
+/**
+ * Fetch wrapper that automatically converts relative URLs to backend URLs
+ * Usage: Use this instead of fetch() for all API calls
+ * 
+ * @param {string} url - The API endpoint URL (relative or absolute)
+ * @param {object} options - Fetch options (method, body, headers, etc.)
+ * @returns {Promise} - Fetch response promise
+ */
+export async function apiFetch(url, options = {}) {
+  const resolvedUrl = resolveUrl(url);
+  
+  // Initialize headers if not provided
+  options.headers = options.headers || {};
+  
+  // Always include credentials (for session cookies)
+  options.credentials = options.credentials || 'include';
+  
+  // Add default Accept header
+  if (!options.headers['Accept']) {
+    options.headers['Accept'] = 'application/json';
+  }
+  
+  return fetch(resolvedUrl, options);
+}
+
+/**
  * Fetch wrapper that automatically includes CSRF token in headers
  * Usage: Replace fetch() with fetchWithCSRF() for POST/PUT/PATCH/DELETE requests
  * 
- * @param {string} url - The API endpoint URL
+ * @param {string} url - The API endpoint URL (relative or absolute)
  * @param {object} options - Fetch options (method, body, headers, etc.)
  * @returns {Promise} - Fetch response promise
  */
 export async function fetchWithCSRF(url, options = {}) {
   const csrfToken = getCsrfToken();
+  const resolvedUrl = resolveUrl(url);
   
   // Initialize headers if not provided
   options.headers = options.headers || {};
@@ -55,14 +102,14 @@ export async function fetchWithCSRF(url, options = {}) {
     options.headers['Accept'] = 'application/json';
   }
   
-  return fetch(url, options);
+  return fetch(resolvedUrl, options);
 }
 
 /**
  * Get the backend API URL
  * Hardcoded for production, localhost for development
  */
-function getBackendUrl() {
+export function getBackendUrl() {
   // Development: use localhost
   if (!import.meta.env.PROD) {
     return 'http://localhost:8000';
