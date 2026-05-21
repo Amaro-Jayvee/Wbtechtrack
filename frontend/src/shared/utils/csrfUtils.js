@@ -114,8 +114,8 @@ export function getBackendUrl() {
   if (!import.meta.env.PROD) {
     return 'http://localhost:8000';
   }
-  // Production: always use the Render backend domain
-  return 'https://techtrack-backend-pynh.onrender.com';
+  // Production: use Railway backend
+  return 'https://backend-service-production-08d5.up.railway.app';
 }
 
 /**
