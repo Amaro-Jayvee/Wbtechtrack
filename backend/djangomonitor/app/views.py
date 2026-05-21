@@ -1281,8 +1281,17 @@ def verify_customer(request):
 @csrf_exempt
 def requestAPI(request, id=0):
     if request.method == 'GET':
+        import sys
+        print(f"[REQUEST_API] is_authenticated: {request.user.is_authenticated}", file=sys.stderr)
+        print(f"[REQUEST_API] user: {request.user}", file=sys.stderr)
+        print(f"[REQUEST_API] session_key: {request.session.session_key}", file=sys.stderr)
+        print(f"[REQUEST_API] cookies: {list(request.COOKIES.keys())}", file=sys.stderr)
+        print(f"[REQUEST_API] has sessionid: {'sessionid' in request.COOKIES}", file=sys.stderr)
+        
         if not request.user.is_authenticated:
+            print(f"[REQUEST_API] REJECTING: Not authenticated", file=sys.stderr)
             return JsonResponse({"detail": "Authentication required"}, status=401)
+        print(f"[REQUEST_API] ALLOWING: User {request.user.username} is authenticated", file=sys.stderr)
         # Get current user's requests based on their role
         user = request.user
         
@@ -2512,8 +2521,16 @@ def create_product_with_processes(request):
 @csrf_exempt
 def productProcessAPI(request, id=0):
     if request.method == 'GET':
+        import sys
+        print(f"[PRODUCT_API] is_authenticated: {request.user.is_authenticated}", file=sys.stderr)
+        print(f"[PRODUCT_API] user: {request.user}", file=sys.stderr)
+        print(f"[PRODUCT_API] session_key: {request.session.session_key}", file=sys.stderr)
+        print(f"[PRODUCT_API] cookies: {list(request.COOKIES.keys())}", file=sys.stderr)
+        
         if not request.user.is_authenticated:
+            print(f"[PRODUCT_API] REJECTING: Not authenticated", file=sys.stderr)
             return JsonResponse({"detail": "Authentication required"}, status=401)
+        print(f"[PRODUCT_API] ALLOWING: User {request.user.username} is authenticated", file=sys.stderr)
         # If ID is provided, return single ProductProcess
         if id:
             try:
