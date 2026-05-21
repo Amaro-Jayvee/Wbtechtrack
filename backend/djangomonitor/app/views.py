@@ -1048,8 +1048,8 @@ def accept_terms_view(request):
             detail=str(e)
         )
 
-@role_required('admin', 'production_manager')
 @csrf_exempt
+@role_required('admin', 'production_manager')
 def workerAPI(request, id=0):
     if request.method == 'GET':
         workers = Worker.objects.all()
@@ -1152,8 +1152,8 @@ def workerAPI(request, id=0):
         return JsonResponse("Deleted successfully!", safe=False)
 
 
-@role_required('admin', 'production_manager')
 @csrf_exempt
+@role_required('admin', 'production_manager')
 @require_POST
 def verify_customer(request):
     if not request.user.is_authenticated:
@@ -1278,8 +1278,8 @@ def verify_customer(request):
 
 #         return JsonResponse({"message": "Deleted successfully!"}, status=200)
 
-@role_required('admin', 'production_manager', 'customer')
 @csrf_exempt
+@role_required('admin', 'production_manager', 'customer')
 def requestAPI(request, id=0):
     if request.method == 'GET':
         # Get current user's requests based on their role
@@ -3841,10 +3841,9 @@ def decline_signup(request):
     except Exception as e:
         return JsonResponse({"error": str(e)}, status=500)
 
-@require_http_methods(['GET'])
-@require_http_methods(['GET'])
-@role_required('admin', 'production_manager')
 @csrf_exempt
+@role_required('admin', 'production_manager')
+@require_http_methods(['GET'])
 def full_report_csv(request):
     try:
         today = date.today()
@@ -3900,9 +3899,9 @@ def full_report_csv(request):
         return JsonResponse({"error": str(e)}, status=500)
 
 
-@require_http_methods(['GET'])
-@role_required('admin', 'production_manager')
 @csrf_exempt
+@role_required('admin', 'production_manager')
+@require_http_methods(['GET'])
 def generate_pdf_report(request):
     try:
         today = date.today()
@@ -4081,9 +4080,9 @@ def generate_pdf_report(request):
         return JsonResponse({"error": str(e)}, status=500)
 
 
-@require_http_methods(['POST', 'PATCH'])
-@role_required('admin', 'production_manager')
 @csrf_exempt
+@role_required('admin', 'production_manager')
+@require_http_methods(['POST', 'PATCH'])
 def archive_request(request, id):
     try:
         req = Requests.objects.get(RequestID=id)
@@ -4133,9 +4132,9 @@ def archive_request(request, id):
         "cancellation_reason": cancellation_reason
     }, status=200)
 
-@require_http_methods(['POST', 'PATCH'])
-@role_required('admin', 'production_manager')
 @csrf_exempt
+@role_required('admin', 'production_manager')
+@require_http_methods(['POST', 'PATCH'])
 def unarchive_request(request, id):
     try:
         req = Requests.objects.get(RequestID=id)
@@ -4270,9 +4269,9 @@ def archive_task(request, id):
             "detail": "An unexpected error occurred while archiving the task"
         }, status=500)
 
-@require_http_methods(['POST', 'PATCH'])
-@role_required('admin', 'manager')
 @csrf_exempt
+@role_required('admin', 'manager')
+@require_http_methods(['POST', 'PATCH'])
 def unarchive_task(request, id):
     try:
         task = ProductProcess.objects.get(id=id)
@@ -4298,11 +4297,9 @@ def unarchive_task(request, id):
         "archived_at": task.archived_at
     }, status=200)
 
+@csrf_exempt
+@role_required('admin', 'manager')
 @require_http_methods(['GET'])
-@role_required('admin', 'manager')
-@csrf_exempt
-@role_required('admin', 'manager')
-@csrf_exempt
 def get_archived_tasks(request):
     try:
         print(f'[get_archived_tasks] Request from user: {request.user}')
@@ -4348,8 +4345,8 @@ def auditlog_view(request):
     serializer = AuditLogSerializer(logs, many=True)
     return JsonResponse(serializer.data, safe=False, status=200)
 
-@role_required('admin', 'manager')
 @csrf_exempt
+@role_required('admin', 'manager')
 def auditlog_delete(request, pk: int):
     try:
         log = AuditLog.objects.get(pk=pk)
@@ -5147,8 +5144,8 @@ def completed_requests_view(request):
 #         )
 #         return JsonResponse({"message": "Progress deleted successfully!"}, status=200)
 
-@role_required('admin')
 @csrf_exempt
+@role_required('admin')
 def producttemplateAPI(request, id=0):
     if request.method == 'GET':
         prodtemp = ProcessTemplate.objects.all()
