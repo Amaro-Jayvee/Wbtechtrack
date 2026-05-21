@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useUser } from "../../shared/context/UserContext.jsx";
-import { getBackendUrl } from "../../shared/utils/csrfUtils.js";
+import { getBackendUrl, fetchWithCSRF } from "../../shared/utils/csrfUtils.js";
 import "bootstrap/dist/css/bootstrap.min.css";
 import "./login.css";
 import SignupForm from "./SignupForm";
@@ -67,13 +67,8 @@ function Login() {
       let url = `${backendUrl}/app/login/`;
       let body = { username: formData.username, password: formData.password };
 
-      const response = await fetch(url, {
+      const response = await fetchWithCSRF(url, {
         method: "POST",
-        headers: { 
-          "Content-Type": "application/json",
-          "Accept": "application/json"
-        },
-        credentials: "include",
         body: JSON.stringify(body),
       });
 

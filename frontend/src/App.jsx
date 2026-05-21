@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
 import Login from "./features/auth/login";
 import Accounts from "./features/accounts/Accounts";
@@ -16,8 +16,14 @@ import CompletedTasksReport from "./features/completed-tasks/reports/CompletedTa
 import CancelledOrdersReport from "./features/cancelled-orders/reports/CancelledOrdersReport";
 import ResetPassword from "./features/auth/ResetPassword";
 import { UserProvider } from "./shared/context/UserContext.jsx";
+import { initializeCsrfToken } from "./shared/utils/csrfUtils.js";
 
 function App() {
+  // Initialize CSRF token when app loads
+  useEffect(() => {
+    initializeCsrfToken();
+  }, []);
+
   return (
     <Router>
       <UserProvider>
