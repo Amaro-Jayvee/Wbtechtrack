@@ -1279,9 +1279,10 @@ def verify_customer(request):
 #         return JsonResponse({"message": "Deleted successfully!"}, status=200)
 
 @csrf_exempt
-@role_required('admin', 'production_manager', 'customer')
 def requestAPI(request, id=0):
     if request.method == 'GET':
+        if not request.user.is_authenticated:
+            return JsonResponse({"detail": "Authentication required"}, status=401)
         # Get current user's requests based on their role
         user = request.user
         
@@ -2509,9 +2510,10 @@ def create_product_with_processes(request):
 #         return JsonResponse("Step deleted successfully!", safe=False)
 
 @csrf_exempt
-@role_required('admin', 'production_manager')
 def productProcessAPI(request, id=0):
     if request.method == 'GET':
+        if not request.user.is_authenticated:
+            return JsonResponse({"detail": "Authentication required"}, status=401)
         # If ID is provided, return single ProductProcess
         if id:
             try:
@@ -5828,6 +5830,9 @@ def cancelled_requests_view(request):
     Returns a list of all cancelled product requests.
     Available to admin and production_manager roles.
     """
+    if not request.user.is_authenticated:
+        return error_response("Authentication required", code=401)
+    
     try:
         # Get user role
         user_role = request.user.userprofile.role if hasattr(request.user, 'userprofile') else None
