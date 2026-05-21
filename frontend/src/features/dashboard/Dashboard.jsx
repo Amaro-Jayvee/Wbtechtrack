@@ -12,6 +12,7 @@ import {
   Legend,
 } from "chart.js";
 import SidebarLayout from "../../shared/components/SidebarLayout";
+import { apiCall } from "../../shared/utils/csrfUtils.js";
 import "./Dashboard.css";
 
 // Custom plugin to display labels on pie chart (only for pie charts)
@@ -79,10 +80,7 @@ function Dashboard() {
       const params = `?month=${selectedMonth}&year=${selectedYear}&include_archived=true`;
 
       // Fetch bar chart data
-      const barRes = await fetch(`/app/reports/bar-chart/${params}`, {
-        method: "GET",
-        credentials: "include",
-      });
+      const barRes = await apiCall(`/app/reports/bar-chart/${params}`);
       if (barRes.ok) {
         const barData = await barRes.json();
         setBarData(barData);
@@ -91,10 +89,7 @@ function Dashboard() {
       }
 
       // Fetch pie chart data
-      const pieRes = await fetch(`/app/reports/pie-chart/${params}`, {
-        method: "GET",
-        credentials: "include",
-      });
+      const pieRes = await apiCall(`/app/reports/pie-chart/${params}`);
       if (pieRes.ok) {
         const pieData = await pieRes.json();
         setPieData(pieData);
@@ -103,10 +98,7 @@ function Dashboard() {
       }
 
       // Fetch top movers data
-      const moversRes = await fetch(`/app/reports/top-movers/${params}&limit=5`, {
-        method: "GET",
-        credentials: "include",
-      });
+      const moversRes = await apiCall(`/app/reports/top-movers/${params}&limit=5`);
       if (moversRes.ok) {
         const moversData = await moversRes.json();
         setTopMovers(moversData);
@@ -115,10 +107,7 @@ function Dashboard() {
       }
 
       // Fetch debug data
-      const debugRes = await fetch(`/app/reports/debug/${params}`, {
-        method: "GET",
-        credentials: "include",
-      });
+      const debugRes = await apiCall(`/app/reports/debug/${params}`);
       if (debugRes.ok) {
         // Debug data logged successfully
       }

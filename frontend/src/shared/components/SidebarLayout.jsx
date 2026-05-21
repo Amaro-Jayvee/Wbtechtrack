@@ -4,7 +4,7 @@ import "bootstrap/dist/css/bootstrap.min.css";
 import "../../features/dashboard/Dashboard.css";
 import ExtensionApprovalModal from "../../features/requests/ExtensionApprovalModal";
 import { useUser } from "../context/UserContext.jsx";
-import { fetchWithCSRF, initializeCsrfToken } from "../utils/csrfUtils.js";
+import { apiCall, initializeCsrfToken } from "../utils/csrfUtils.js";
 
 function SidebarLayout({ children }) {
   const navigate = useNavigate();
@@ -26,14 +26,7 @@ function SidebarLayout({ children }) {
 
   const fetchNotifications = async () => {
     try {
-      const response = await fetch("/app/notifications/", {
-        method: "GET",
-        credentials: "include",
-        headers: {
-          "Accept": "application/json",
-          "Content-Type": "application/json",
-        }
-      });
+      const response = await apiCall("/app/notifications/");
       
       if (response.ok) {
         const data = await response.json();

@@ -21,67 +21,29 @@ export function getCsrfToken() {
 }
 
 /**
- * Convert relative API URLs to absolute backend URLs
- * @param {string} url - URL to convert (relative or absolute)
- * @returns {string} - Absolute URL
- */
-function resolveUrl(url) {
-  if (!url) return url;
-  
-  // If it's already an absolute URL (starts with http), return as-is
-  if (url.startsWith('http://') || url.startsWith('https://')) {
-    return url;
-  }
-  
-  // If it's a relative API URL (starts with /), prepend backend URL
-  if (url.startsWith('/')) {
-    return `${getBackendUrl()}${url}`;
-  }
-  
-  return url;
-}
-
-/**
- * Fetch wrapper that automatically converts relative URLs to backend URLs
- * Usage: Use this instead of fetch() for all API calls
+ * Universal API fetch function for all API calls
+ * Automatically includes:
+ * - Credentials (session cookies)
+ * - Backend URL resolution
+ * - CSRF token for state-changing requests
  * 
- * @param {string} url - The API endpoint URL (relative or absolute)
- * @param {object} options - Fetch options (method, body, headers, etc.)
- * @returns {Promise} - Fetch response promise
+ * Usage: Use this for ALL API calls instead of fetch()
+ * const response = await apiCall('/app/whoami/');
+ * const response = await apiCall('/app/login/', { method: 'POST', body: {...} });
  */
-export async function apiFetch(url, options = {}) {
-  const resolvedUrl = resolveUrl(url);
-  
-  // Initialize headers if not provided
-  options.headers = options.headers || {};
-  
-  // Always include credentials (for session cookies)
-  options.credentials = options.credentials || 'include';
-  
-  // Add default Accept header
-  if (!options.headers['Accept']) {
-    options.headers['Accept'] = 'application/json';
-  }
-  
-  return fetch(resolvedUrl, options);
-}
-
-/**
- * Fetch wrapper that automatically includes CSRF token in headers
- * Usage: Replace fetch() with fetchWithCSRF() for POST/PUT/PATCH/DELETE requests
- * 
- * @param {string} url - The API endpoint URL (relative or absolute)
- * @param {object} options - Fetch options (method, body, headers, etc.)
- * @returns {Promise} - Fetch response promise
- */
-export async function fetchWithCSRF(url, options = {}) {
+export async function apiCall(url, options = {}) {
   const csrfToken = getCsrfToken();
-  const resolvedUrl = resolveUrl(url);
   
-  // Initialize headers if not provided
+  // Ensure URL is absolute (convert relative URLs to backend URLs)
+  let absoluteUrl = url;
+  if (url.startsWith('/')) {
+    absoluteUrl = `${getBackendUrl()}${url}`;
+  }
+  
+  // Initialize headers
   options.headers = options.headers || {};
   
-  // Always include credentials (for session cookies)
+  // Always include credentials for session cookies
   options.credentials = options.credentials || 'include';
   
   // Add CSRF token for state-changing requests
@@ -92,9 +54,12 @@ export async function fetchWithCSRF(url, options = {}) {
     }
   }
   
-  // Add default content type if not set
-  if (options.body && !options.headers['Content-Type']) {
-    options.headers['Content-Type'] = 'application/json';
+  // Add default content type for JSON requests
+  if (options.body && typeof options.body === 'object') {
+    options.body = JSON.stringify(options.body);
+    if (!options.headers['Content-Type']) {
+      options.headers['Content-Type'] = 'application/json';
+    }
   }
   
   // Add default Accept header
@@ -102,7 +67,7 @@ export async function fetchWithCSRF(url, options = {}) {
     options.headers['Accept'] = 'application/json';
   }
   
-  return fetch(resolvedUrl, options);
+  return fetch(absoluteUrl, options);
 }
 
 /**

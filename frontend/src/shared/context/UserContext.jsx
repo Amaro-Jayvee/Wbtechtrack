@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
+import { apiCall } from "../utils/csrfUtils.js";
 
 // Create the UserContext
 const UserContext = createContext();
@@ -18,14 +19,7 @@ export function UserProvider({ children }) {
     try {
       setIsLoadingUser(true);
       
-      const response = await fetch("/app/whoami/", {
-        method: "GET",
-        credentials: "include",
-        headers: {
-          "Accept": "application/json",
-          "Content-Type": "application/json",
-        },
-      });
+      const response = await apiCall("/app/whoami/");
 
       if (response.ok) {
         const data = await response.json();
