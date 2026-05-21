@@ -23,7 +23,6 @@
 
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { apiCall } from "../../shared/utils/csrfUtils.js";
 import "../styles/PrintableReport.css";
 
 function PrintableReport() {
@@ -69,10 +68,22 @@ function PrintableReport() {
       const params = `?month=${month}&year=${year}&include_archived=${includeArchived}`;
 
       const [barResponse, moversResponse, inProgressResponse, cancelledResponse] = await Promise.all([
-        apiCall(`/app/reports/bar-chart/${params}`),
-        apiCall(`/app/reports/top-movers/${params}&limit=5`),
-        apiCall(`/app/product/?include_completed=false&include_archived=${includeArchived}`),
-        apiCall("/app/cancelled-requests/"),
+        fetch(`/app/reports/bar-chart/${params}`, {
+          method: "GET",
+          credentials: "include",
+        }),
+        fetch(`/app/reports/top-movers/${params}&limit=5`, {
+          method: "GET",
+          credentials: "include",
+        }),
+        fetch(`/app/product/?include_completed=false&include_archived=${includeArchived}`, {
+          method: "GET",
+          credentials: "include",
+        }),
+        fetch("/app/cancelled-requests/", {
+          method: "GET",
+          credentials: "include",
+        }),
       ]);
 
       let totalCompleted = 0;

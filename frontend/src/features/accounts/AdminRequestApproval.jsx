@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import Calendar from "react-calendar";
 import "react-calendar/dist/Calendar.css";
-import { apiCall } from "../../shared/utils/csrfUtils.js";
 import "../../features/dashboard/Dashboard.css";
 
 // Helper function to get minimum allowed date based on required lead days.
@@ -184,8 +183,14 @@ function AdminRequestApproval() {
     const fetchProductsAndCustomers = async () => {
       try {
         const [productsRes, customersRes] = await Promise.all([
-          apiCall("/app/prodname/"),
-          apiCall("/app/admin/available-customers/"),
+          fetch("/app/prodname/", {
+            method: "GET",
+            credentials: "include",
+          }),
+          fetch("/app/admin/available-customers/", {
+            method: "GET",
+            credentials: "include",
+          }),
         ]);
 
         const productsData = await productsRes.json();
