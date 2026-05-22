@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { apiCall } from "../../shared/utils/csrfUtils.js";
 
 function SignupForm({ onToggleMode, onSuccess }) {
   const [formData, setFormData] = useState({
@@ -57,12 +58,9 @@ function SignupForm({ onToggleMode, onSuccess }) {
     try {
       const { confirmPassword, ...signupData } = formData;
       
-      const response = await fetch("/app/signup/", {
+      const response = await apiCall("/app/signup/", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(signupData),
+        body: signupData,
       });
 
       const data = await response.json();

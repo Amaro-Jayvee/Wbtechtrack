@@ -224,15 +224,19 @@ def create_customer_by_admin(request):
         # Check if user is authenticated and is admin
         if not request.user.is_authenticated:
             return JsonResponse({"error": "Authentication required"}, status=401)
-        
-        try:
-            user_profile = UserProfile.objects.get(user=request.user)
-            if user_profile.role != Roles.ADMIN:
-                return JsonResponse({
-                    "error": "Only admins can create customer accounts"
-                }, status=403)
-        except UserProfile.DoesNotExist:
-            return JsonResponse({"error": "User profile not found"}, status=403)
+
+        is_admin_user = request.user.is_staff or request.user.is_superuser
+        if not is_admin_user:
+            try:
+                user_profile = UserProfile.objects.get(user=request.user)
+                is_admin_user = user_profile.role == Roles.ADMIN
+            except UserProfile.DoesNotExist:
+                is_admin_user = False
+
+        if not is_admin_user:
+            return JsonResponse({
+                "error": "Only admins can create customer accounts"
+            }, status=403)
         
         data = JSONParser().parse(request)
         username = data.get("username", "").strip()
@@ -377,13 +381,17 @@ def list_pending_signups(request):
     try:
         if not request.user.is_authenticated:
             return error_response("Authentication required", code=401)
-        
-        try:
-            user_profile = UserProfile.objects.get(user=request.user)
-            if user_profile.role != Roles.ADMIN:
-                return error_response("Only admins can view signup requests", code=403)
-        except UserProfile.DoesNotExist:
-            return error_response("User profile not found", code=403)
+
+        is_admin_user = request.user.is_staff or request.user.is_superuser
+        if not is_admin_user:
+            try:
+                user_profile = UserProfile.objects.get(user=request.user)
+                is_admin_user = user_profile.role == Roles.ADMIN
+            except UserProfile.DoesNotExist:
+                is_admin_user = False
+
+        if not is_admin_user:
+            return error_response("Only admins can view signup requests", code=403)
         
         status = request.GET.get('status', 'pending')
         signups = AccountSignupRequest.objects.filter(status=status).order_by('-created_at')
@@ -407,13 +415,17 @@ def approve_signup(request, signup_id):
     try:
         if not request.user.is_authenticated:
             return error_response("Authentication required", code=401)
-        
-        try:
-            user_profile = UserProfile.objects.get(user=request.user)
-            if user_profile.role != Roles.ADMIN:
-                return error_response("Only admins can approve signups", code=403)
-        except UserProfile.DoesNotExist:
-            return error_response("User profile not found", code=403)
+
+        is_admin_user = request.user.is_staff or request.user.is_superuser
+        if not is_admin_user:
+            try:
+                user_profile = UserProfile.objects.get(user=request.user)
+                is_admin_user = user_profile.role == Roles.ADMIN
+            except UserProfile.DoesNotExist:
+                is_admin_user = False
+
+        if not is_admin_user:
+            return error_response("Only admins can approve signups", code=403)
         
         signup = get_object_or_404(AccountSignupRequest, id=signup_id)
         
@@ -448,13 +460,17 @@ def decline_signup(request, signup_id):
     try:
         if not request.user.is_authenticated:
             return error_response("Authentication required", code=401)
-        
-        try:
-            user_profile = UserProfile.objects.get(user=request.user)
-            if user_profile.role != Roles.ADMIN:
-                return error_response("Only admins can decline signups", code=403)
-        except UserProfile.DoesNotExist:
-            return error_response("User profile not found", code=403)
+
+        is_admin_user = request.user.is_staff or request.user.is_superuser
+        if not is_admin_user:
+            try:
+                user_profile = UserProfile.objects.get(user=request.user)
+                is_admin_user = user_profile.role == Roles.ADMIN
+            except UserProfile.DoesNotExist:
+                is_admin_user = False
+
+        if not is_admin_user:
+            return error_response("Only admins can decline signups", code=403)
         
         signup = get_object_or_404(AccountSignupRequest, id=signup_id)
         

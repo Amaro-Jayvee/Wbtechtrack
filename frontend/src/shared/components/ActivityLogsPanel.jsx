@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { apiCall } from "../utils/csrfUtils.js";
 import "./ActivityLogsPanel.css";
 
 function ActivityLogsPanel({ title = "Activity Logs", limit = 10 }) {
@@ -31,13 +32,8 @@ function ActivityLogsPanel({ title = "Activity Logs", limit = 10 }) {
         params.append("end_date", endDate);
       }
       
-      const response = await fetch(`/app/activity-logs/?${params.toString()}`, {
+      const response = await apiCall(`/app/activity-logs/?${params.toString()}`, {
         method: "GET",
-        credentials: "include",
-        headers: {
-          "Accept": "application/json",
-          "Content-Type": "application/json",
-        },
       });
 
       if (response.ok) {

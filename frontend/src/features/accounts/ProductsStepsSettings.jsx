@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { getCsrfToken } from '../../shared/utils/csrfUtils.js';
+import { apiCall } from '../../shared/utils/csrfUtils.js';
 
 const ProductsStepsSettings = () => {
   const [products, setProducts] = useState([]);
@@ -27,12 +27,8 @@ const ProductsStepsSettings = () => {
   const fetchProducts = async () => {
     try {
       setLoading(true);
-      const response = await fetch('/app/settings/products-with-steps/', {
+      const response = await apiCall('/app/settings/products-with-steps/', {
         method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-CSRFToken': getCsrfToken(),
-        },
       });
 
       if (!response.ok) {
@@ -141,17 +137,13 @@ const ProductsStepsSettings = () => {
         step_name: s.name.trim()
       }));
 
-      const response = await fetch('/app/settings/products-with-steps/', {
+      const response = await apiCall('/app/settings/products-with-steps/', {
         method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-CSRFToken': getCsrfToken(),
-        },
-        body: JSON.stringify({
+        body: {
           product_id: productId,
           steps: stepsToUpdate,
           new_steps: stepsToAddForBackend,
-        }),
+        },
       });
 
       if (!response.ok) {
@@ -210,16 +202,12 @@ const ProductsStepsSettings = () => {
     }
 
     try {
-      const response = await fetch('/app/settings/products-with-steps/remove-step/', {
+      const response = await apiCall('/app/settings/products-with-steps/remove-step/', {
         method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-CSRFToken': getCsrfToken(),
-        },
-        body: JSON.stringify({
+        body: {
           product_id: productId,
           template_id: templateId,
-        }),
+        },
       });
 
       if (!response.ok) {
@@ -243,16 +231,12 @@ const ProductsStepsSettings = () => {
     }
 
     try {
-      const response = await fetch('/app/settings/products-with-steps/', {
+      const response = await apiCall('/app/settings/products-with-steps/', {
         method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-CSRFToken': getCsrfToken(),
-        },
-        body: JSON.stringify({
+        body: {
           product_id: productId,
           product_name: editName.trim(),
-        }),
+        },
       });
 
       if (!response.ok) {

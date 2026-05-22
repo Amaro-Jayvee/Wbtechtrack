@@ -5,6 +5,7 @@ import "react-calendar/dist/Calendar.css";
 import "bootstrap/dist/css/bootstrap.min.css";
 import "./Request.css";
 import { useUser } from "../../shared/context/UserContext.jsx";
+import { apiCall } from "../../shared/utils/csrfUtils.js";
 import CompletedOrderModal from "../cancelled-orders/CompletedOrderModal.jsx";
 
 // Helper function to get minimum allowed date (4 days from today)
@@ -99,9 +100,8 @@ function CustomerViewRequests() {
 
   const fetchNotifications = async () => {
     try {
-      const response = await fetch("/app/notifications/", {
+      const response = await apiCall("/app/notifications/", {
         method: "GET",
-        credentials: "include",
       });
       if (response.ok) {
         const data = await response.json();
@@ -124,9 +124,8 @@ function CustomerViewRequests() {
       setUnreadCount(newUnreadCount);
       
       // Mark as read on server (fire and forget, don't refetch)
-      const response = await fetch(`/app/notifications/${notificationId}/read/`, {
+      const response = await apiCall(`/app/notifications/${notificationId}/read/`, {
         method: "POST",
-        credentials: "include",
       });
     } catch (err) {
       console.error("Error marking notification read:", err);
@@ -146,9 +145,8 @@ function CustomerViewRequests() {
       setDeleteToastMessage("Notification deleted successfully");
       
       // Delete on server (fire and forget, don't refetch)
-      const response = await fetch(`/app/notifications/${notificationId}/delete/`, {
+      const response = await apiCall(`/app/notifications/${notificationId}/delete/`, {
         method: "POST",
-        credentials: "include",
       });
     } catch (err) {
       console.error("Error deleting notification:", err);
@@ -179,11 +177,10 @@ function CustomerViewRequests() {
       const allRequests = [];
 
       for (const status of statusesToFetch) {
-        const requestsResponse = await fetch(
+        const requestsResponse = await apiCall(
           `/app/customer/my-requests/?request_status=${status}&t=${Date.now()}`,
           {
             method: "GET",
-            credentials: "include",
             cache: "no-store", // Force fresh data
           }
         );
@@ -218,14 +215,10 @@ function CustomerViewRequests() {
       }
 
       setLoading(true);
-      const response = await fetch(
-        `/app/customer/cancelled-requests/`,
-        {
-          method: "GET",
-          credentials: "include",
-          cache: "no-store",
-        }
-      );
+      const response = await apiCall(`/app/customer/cancelled-requests/`, {
+        method: "GET",
+        cache: "no-store",
+      });
 
       if (!response.ok) {
         setMessage("❌ Failed to load cancelled requests");
@@ -252,13 +245,8 @@ function CustomerViewRequests() {
   const performLogout = async () => {
     setIsLoggingOut(true);
     try {
-      const response = await fetch("/app/logout/", {
+      const response = await apiCall("/app/logout/", {
         method: "POST",
-        credentials: "include",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Requested-With": "XMLHttpRequest",
-        },
       });
 
       if (!response.ok) {

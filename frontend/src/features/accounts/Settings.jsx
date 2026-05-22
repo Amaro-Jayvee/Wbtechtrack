@@ -3,6 +3,7 @@ import SidebarLayout from "../../shared/components/SidebarLayout";
 import ActivityLogsPanel from "../../shared/components/ActivityLogsPanel";
 import TaskUpdateLogsPanel from "../../shared/components/TaskUpdateLogsPanel";
 import ProductsStepsSettings from "./ProductsStepsSettings";
+import { apiCall } from "../../shared/utils/csrfUtils.js";
 import "../../features/dashboard/Dashboard.css";
 
 function Settings() {
@@ -63,9 +64,8 @@ function Settings() {
 
   const fetchSettings = async () => {
     try {
-      const response = await fetch("/app/settings/", {
+      const response = await apiCall("/app/settings/", {
         method: "GET",
-        credentials: "include",
       });
 
       if (response.ok) {
@@ -86,9 +86,8 @@ function Settings() {
 
   const fetchUserProfile = async () => {
     try {
-      const response = await fetch("/app/profile/", {
+      const response = await apiCall("/app/profile/", {
         method: "GET",
-        credentials: "include",
       });
       if (response.ok) {
         const data = await response.json();
@@ -124,14 +123,9 @@ function Settings() {
     setMessage("");
 
     try {
-      const response = await fetch("/app/profile/", {
+      const response = await apiCall("/app/profile/", {
         method: "PATCH",
-        credentials: "include",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Requested-With": "XMLHttpRequest",
-        },
-        body: JSON.stringify(profileEdit),
+        body: profileEdit,
       });
 
       if (response.ok) {
@@ -161,14 +155,9 @@ function Settings() {
         return;
       }
 
-      const response = await fetch("/app/profile/change-password/", {
+      const response = await apiCall("/app/profile/change-password/", {
         method: "POST",
-        credentials: "include",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Requested-With": "XMLHttpRequest",
-        },
-        body: JSON.stringify(passwordChange),
+        body: passwordChange,
       });
 
       if (response.ok) {
@@ -193,9 +182,8 @@ function Settings() {
 
   const fetchArchivedRequests = async () => {
     try {
-      const response = await fetch("/app/archived-requests/", {
+      const response = await apiCall("/app/archived-requests/", {
         method: "GET",
-        credentials: "include",
       });
       
       if (response.ok) {
@@ -237,14 +225,9 @@ function Settings() {
     setMessage("");
 
     try {
-      const response = await fetch("/app/settings/update/", {
+      const response = await apiCall("/app/settings/update/", {
         method: "PUT",
-        credentials: "include",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Requested-With": "XMLHttpRequest",
-        },
-        body: JSON.stringify(settings),
+        body: settings,
       });
 
       if (response.ok) {
@@ -303,9 +286,8 @@ function Settings() {
       const formData = new FormData();
       formData.append("background_image", loginBackgroundFile);
 
-      const response = await fetch("/app/settings/login-background/", {
+      const response = await apiCall("/app/settings/login-background/", {
         method: "POST",
-        credentials: "include",
         body: formData,
       });
 
@@ -340,14 +322,9 @@ function Settings() {
     setRestoreTarget(null);
 
     try {
-      const response = await fetch("/app/restore-request-product/", {
+      const response = await apiCall("/app/restore-request-product/", {
         method: "POST",
-        credentials: "include",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Requested-With": "XMLHttpRequest",
-        },
-        body: JSON.stringify({ request_product_id: requestProductId }),
+        body: { request_product_id: requestProductId },
       });
 
       let data;

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import SidebarLayout from "../../shared/components/SidebarLayout";
 import { useUser } from "../../shared/context/UserContext.jsx";
+import { apiCall } from "../../shared/utils/csrfUtils.js";
 import "../../features/dashboard/Dashboard.css";
 
 function Accounts() {
@@ -51,12 +52,8 @@ function Accounts() {
   const fetchAccounts = async () => {
     setAccountsLoading(true);
     try {
-      const response = await fetch("/app/users/?status=active", {
+      const response = await apiCall("/app/users/?status=active", {
         method: "GET",
-        credentials: "include",
-        headers: {
-          "Content-Type": "application/json",
-        },
       });
 
       if (response.ok) {
@@ -75,12 +72,8 @@ function Accounts() {
   const fetchPendingSignups = async () => {
     setSignupsLoading(true);
     try {
-      const response = await fetch("/app/pending-signups/", {
+      const response = await apiCall("/app/pending-signups/", {
         method: "GET",
-        credentials: "include",
-        headers: {
-          "Content-Type": "application/json",
-        },
       });
 
       if (response.ok) {
@@ -110,13 +103,9 @@ function Accounts() {
     setCreateMessage("");
 
     try {
-      const response = await fetch("/app/create-customer/", {
+      const response = await apiCall("/app/create-customer/", {
         method: "POST",
-        credentials: "include",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(createForm),
+        body: createForm,
       });
 
       const data = await response.json();
@@ -195,13 +184,9 @@ function Accounts() {
     setSignupActionLoading(true);
     setSignupActionMessage("");
     try {
-      const response = await fetch(`/app/signups/${selectedSignup.id}/approve/`, {
+      const response = await apiCall(`/app/signups/${selectedSignup.id}/approve/`, {
         method: "POST",
-        credentials: "include",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ review_notes: signupReviewNotes }),
+        body: { review_notes: signupReviewNotes },
       });
 
       const data = await response.json();
@@ -230,13 +215,9 @@ function Accounts() {
     setSignupActionLoading(true);
     setSignupActionMessage("");
     try {
-      const response = await fetch(`/app/signups/${selectedSignup.id}/decline/`, {
+      const response = await apiCall(`/app/signups/${selectedSignup.id}/decline/`, {
         method: "POST",
-        credentials: "include",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ review_notes: signupReviewNotes }),
+        body: { review_notes: signupReviewNotes },
       });
 
       const data = await response.json();

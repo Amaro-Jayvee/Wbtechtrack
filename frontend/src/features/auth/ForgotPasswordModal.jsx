@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
+import { apiCall } from "../../shared/utils/csrfUtils.js";
 
 function ForgotPasswordModal({ isOpen, onClose }) {
   const [step, setStep] = useState("email");
@@ -32,13 +33,9 @@ function ForgotPasswordModal({ isOpen, onClose }) {
     setIsLoading(true);
 
     try {
-      const response = await fetch("/app/forgot-password/request/", {
+      const response = await apiCall("/app/forgot-password/request/", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Accept": "application/json",
-        },
-        body: JSON.stringify({ email: email.toLowerCase() }),
+        body: { email: email.toLowerCase() },
       });
 
       const data = await response.json();

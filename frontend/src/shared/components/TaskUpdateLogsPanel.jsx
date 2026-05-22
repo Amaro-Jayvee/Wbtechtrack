@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { apiCall } from "../utils/csrfUtils.js";
 import "./TaskUpdateLogsPanel.css";
 
 function TaskUpdateLogsPanel({ title = "Task Update History", limit = 30 }) {
@@ -18,13 +19,8 @@ function TaskUpdateLogsPanel({ title = "Task Update History", limit = 30 }) {
       setLoading(true);
       setError("");
       
-      const response = await fetch(`/app/task-update-logs/?limit=${limit}`, {
+      const response = await apiCall(`/app/task-update-logs/?limit=${limit}`, {
         method: "GET",
-        credentials: "include",
-        headers: {
-          "Accept": "application/json",
-          "Content-Type": "application/json",
-        },
       });
 
       if (response.ok) {
@@ -44,12 +40,8 @@ function TaskUpdateLogsPanel({ title = "Task Update History", limit = 30 }) {
 
   const handleDeleteLog = async (logId) => {
     try {
-      const response = await fetch(`/app/task-update-logs/${logId}/`, {
+      const response = await apiCall(`/app/task-update-logs/${logId}/`, {
         method: "DELETE",
-        credentials: "include",
-        headers: {
-          "Content-Type": "application/json",
-        },
       });
 
       if (response.ok) {

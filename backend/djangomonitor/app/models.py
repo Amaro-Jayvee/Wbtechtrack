@@ -68,13 +68,11 @@ class AccountSignupRequest(models.Model):
     
     def approve(self, admin_user, notes=""):
         """Approve signup and create user account"""
-        from django.contrib.auth.hashers import make_password
-        
-        # Create Django user with the stored password hash
-        user = User.objects.create_user(
+        # Persist the pre-hashed password directly to avoid hashing it again.
+        user = User.objects.create(
             username=self.username,
             email=self.email,
-            password=self.password_hash  # This will be hashed by create_user
+            password=self.password_hash,
         )
         
         # Create UserProfile

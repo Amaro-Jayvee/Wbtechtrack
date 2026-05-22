@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useUser } from "../../shared/context/UserContext.jsx";
 import ActivityLogsPanel from "../../shared/components/ActivityLogsPanel";
+import { apiCall } from "../../shared/utils/csrfUtils.js";
 import "../../features/dashboard/Dashboard.css";
 
 function CustomerSettings() {
@@ -55,9 +56,8 @@ function CustomerSettings() {
 
   const fetchProfile = async () => {
     try {
-      const response = await fetch("/app/profile/", {
+      const response = await apiCall("/app/profile/", {
         method: "GET",
-        credentials: "include",
       });
 
       if (response.ok) {
@@ -77,9 +77,8 @@ function CustomerSettings() {
 
   const fetchNotifications = async () => {
     try {
-      const response = await fetch("/app/notifications/", {
+      const response = await apiCall("/app/notifications/", {
         method: "GET",
-        credentials: "include",
       });
 
       if (response.ok) {
@@ -103,9 +102,8 @@ function CustomerSettings() {
       setUnreadCount(newUnreadCount);
       
       // Mark as read on server (fire and forget, don't refetch)
-      const response = await fetch(`/app/notifications/${notificationId}/read/`, {
+      const response = await apiCall(`/app/notifications/${notificationId}/read/`, {
         method: "POST",
-        credentials: "include",
       });
 
       if (!response.ok) {
@@ -129,18 +127,14 @@ function CustomerSettings() {
     setMessage("");
 
     try {
-      const response = await fetch("/app/profile/", {
+      const response = await apiCall("/app/profile/", {
         method: "PUT",
-        credentials: "include",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
+        body: {
           email: profile.email,
           full_name: profile.full_name,
           company_name: profile.company_name,
           contact_number: profile.contact_number,
-        }),
+        },
       });
 
       if (response.ok) {
@@ -197,17 +191,12 @@ function CustomerSettings() {
     setChangePassword({ ...changePassword, loading: true });
 
     try {
-      const response = await fetch("/app/change-password/", {
+      const response = await apiCall("/app/change-password/", {
         method: "POST",
-        credentials: "include",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Requested-With": "XMLHttpRequest",
-        },
-        body: JSON.stringify({
+        body: {
           current_password: changePassword.current_password,
           new_password: changePassword.new_password,
-        }),
+        },
       });
 
       if (response.ok) {
@@ -242,9 +231,8 @@ function CustomerSettings() {
   const performLogout = async () => {
     setIsLoggingOut(true);
     try {
-      await fetch("/app/logout/", {
+      await apiCall("/app/logout/", {
         method: "POST",
-        credentials: "include",
       });
     } catch (err) {
       console.error("Logout error:", err);

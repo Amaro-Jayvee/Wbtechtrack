@@ -5,6 +5,7 @@ import "react-calendar/dist/Calendar.css";
 import "bootstrap/dist/css/bootstrap.min.css";
 import SidebarLayout from "../../shared/components/SidebarLayout";
 import { useUser } from "../../shared/context/UserContext.jsx";
+import { apiCall } from "../../shared/utils/csrfUtils.js";
 import "../../features/dashboard/Dashboard.css";
 import "./Request.css";
 
@@ -112,13 +113,11 @@ function Request() {
   const fetchDropdownData = async () => {
     try {
       const [requestersRes, productsRes] = await Promise.all([
-        fetch("/app/users/?status=active", {
+        apiCall("/app/users/?status=active", {
           method: "GET",
-          credentials: "include",
         }),
-        fetch("/app/prodname/", {
+        apiCall("/app/prodname/", {
           method: "GET",
-          credentials: "include",
         }),
       ]);
 
@@ -139,9 +138,8 @@ function Request() {
 
   const fetchConfiguredProducts = async () => {
     try {
-      const response = await fetch("/app/product-config/", {
+      const response = await apiCall("/app/product-config/", {
         method: "GET",
-        credentials: "include",
       });
 
       if (response.ok) {
@@ -288,13 +286,9 @@ function Request() {
           new Date().toISOString().split("T")[0],
       };
 
-      const response = await fetch("/app/request/", {
+      const response = await apiCall("/app/request/", {
         method: "POST",
-        credentials: "include",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(requestPayload),
+        body: requestPayload,
       });
 
       const data = await response.json();

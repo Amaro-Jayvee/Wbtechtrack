@@ -25,7 +25,7 @@ services:
   # Django Backend
   backend:
     build:
-      context: ./backend
+      context: .
       dockerfile: Dockerfile
     container_name: techtrack-backend
     environment:
@@ -61,8 +61,10 @@ services:
   # React Frontend with Nginx
   frontend:
     build:
-      context: ./frontend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: frontend/Dockerfile
+    environment:
+      PORT: 80
     container_name: techtrack-frontend
     ports:
       - "80:80"

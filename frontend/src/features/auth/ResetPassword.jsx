@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
+import { apiCall } from "../../shared/utils/csrfUtils.js";
 import "bootstrap/dist/css/bootstrap.min.css";
 import "./ResetPassword.css";
 
@@ -25,13 +26,9 @@ function ResetPassword() {
       }
 
       try {
-        const response = await fetch("/app/forgot-password/verify-token/", {
+        const response = await apiCall("/app/forgot-password/verify-token/", {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-          },
-          body: JSON.stringify({ token }),
+          body: { token },
         });
 
         const data = await response.json();
@@ -83,17 +80,13 @@ function ResetPassword() {
     setIsLoading(true);
 
     try {
-      const response = await fetch("/app/forgot-password/reset/", {
+      const response = await apiCall("/app/forgot-password/reset/", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Accept": "application/json",
-        },
-        body: JSON.stringify({
+        body: {
           token,
           new_password: newPassword,
           confirm_password: confirmPassword,
-        }),
+        },
       });
 
       const data = await response.json();
