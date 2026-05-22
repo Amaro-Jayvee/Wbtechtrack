@@ -2520,8 +2520,8 @@ def create_product_with_processes(request):
 
 @csrf_exempt
 def productProcessAPI(request, id=0):
+    import sys
     if request.method == 'GET':
-        import sys
         print(f"[PRODUCT_API] is_authenticated: {request.user.is_authenticated}", file=sys.stderr)
         print(f"[PRODUCT_API] user: {request.user}", file=sys.stderr)
         print(f"[PRODUCT_API] session_key: {request.session.session_key}", file=sys.stderr)
