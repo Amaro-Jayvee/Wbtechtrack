@@ -124,7 +124,7 @@ After frontend deploys, get its URL (format: `https://techtrack-frontend.render.
 1. Go to **techtrack-backend** service → **Environment**
 2. Update:
    ```
-   CORS_ALLOWED_ORIGINS=https://techtrack-frontend.render.com
+      =https://techtrack-frontend.render.com
    ALLOWED_HOSTS=techtrack-backend.render.com,techtrack-frontend.render.com
    ```
 3. Click **Save** (service will auto-redeploy)
@@ -137,7 +137,7 @@ Update [frontend/src/shared/utils/api.ts](../frontend/src/shared/utils/api.ts) o
 
 ```javascript
 // Use backend URL from Render
-const API_URL = process.env.VITE_API_URL || 'https://techtrack-backend.render.com';
+const API_URL = import.meta.env.VITE_BACKEND_URL || 'https://techtrack-backend.render.com';
 
 export const apiClient = axios.create({
   baseURL: API_URL,
@@ -147,7 +147,7 @@ export const apiClient = axios.create({
 
 Add to `frontend/.env.production`:
 ```
-VITE_API_URL=https://techtrack-backend.render.com
+VITE_BACKEND_URL=https://techtrack-backend.render.com
 ```
 
 ---

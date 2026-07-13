@@ -79,8 +79,14 @@ export function getBackendUrl() {
   if (!import.meta.env.PROD) {
     return 'http://localhost:8000';
   }
-  // Production: use Railway backend
-  return 'https://backend-service-production-08d5.up.railway.app';
+
+  const configuredBackendUrl = import.meta.env.VITE_BACKEND_URL || import.meta.env.VITE_API_URL;
+  if (configuredBackendUrl) {
+    return configuredBackendUrl.replace(/\/$/, '');
+  }
+
+  // Fall back to the current origin when the frontend and backend are served together.
+  return window.location.origin;
 }
 
 /**

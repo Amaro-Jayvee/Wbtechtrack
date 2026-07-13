@@ -45,6 +45,15 @@ def _parse_csv_env(name, default_values):
     return [item.strip() for item in raw.split(',') if item.strip()]
 
 
+def _merge_csv_env(name, default_values):
+    """Merge comma-separated env values with safe defaults without duplicates."""
+    merged_values = list(default_values)
+    for value in _parse_csv_env(name, []):
+        if value not in merged_values:
+            merged_values.append(value)
+    return merged_values
+
+
 # Application definition
 
 INSTALLED_APPS = [
@@ -106,7 +115,11 @@ default_allowed_hosts = [
     'techtrack-backend.render.com',
     'techtrack-backend-pynh.onrender.com',
 ]
-ALLOWED_HOSTS = _parse_csv_env('ALLOWED_HOSTS', default_allowed_hosts)
+render_external_hostname = os.environ.get('RENDER_EXTERNAL_HOSTNAME', '').strip()
+if render_external_hostname and render_external_hostname not in default_allowed_hosts:
+    default_allowed_hosts.append(render_external_hostname)
+
+ALLOWED_HOSTS = _merge_csv_env('ALLOWED_HOSTS', default_allowed_hosts)
 
 default_cors_origins = [
     'http://localhost:5173',
@@ -122,14 +135,14 @@ frontend_url = os.environ.get('FRONTEND_URL', '').strip()
 if frontend_url:
     default_cors_origins.append(frontend_url)
 
-CORS_ALLOWED_ORIGINS = _parse_csv_env('CORS_ALLOWED_ORIGINS', default_cors_origins)
+CORS_ALLOWED_ORIGINS = _merge_csv_env('CORS_ALLOWED_ORIGINS', default_cors_origins)
 
 default_csrf_trusted_origins = list(default_cors_origins)
 backend_url = os.environ.get('BACKEND_URL', '').strip()
 if backend_url:
     default_csrf_trusted_origins.append(backend_url)
 
-CSRF_TRUSTED_ORIGINS = _parse_csv_env('CSRF_TRUSTED_ORIGINS', default_csrf_trusted_origins)
+CSRF_TRUSTED_ORIGINS = _merge_csv_env('CSRF_TRUSTED_ORIGINS', default_csrf_trusted_origins)
 
 
 CORS_ALLOW_CREDENTIALS = True
