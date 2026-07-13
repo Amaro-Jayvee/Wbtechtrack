@@ -3,10 +3,10 @@ FROM node:18-alpine AS builder
 
 WORKDIR /app
 
-COPY frontend/package.json frontend/package-lock.json ./
-RUN npm ci --prefer-offline --no-audit
+COPY package.json ./
+RUN npm install --prefer-offline --no-audit
 
-COPY frontend/ ./
+COPY . ./
 RUN npm run build
 
 # Stage 2: Serve with nginx - reverse proxy to backend
@@ -16,9 +16,9 @@ FROM nginx:alpine
 RUN rm -f /etc/nginx/conf.d/default.conf
 
 # Copy nginx configuration
-COPY frontend/nginx.conf /etc/nginx/nginx.conf
-COPY frontend/nginx-default.conf /etc/nginx/templates/default.conf.template
-COPY frontend/docker-entrypoint.d/05-default-backend.envsh /docker-entrypoint.d/05-default-backend.envsh
+COPY nginx.conf /etc/nginx/nginx.conf
+COPY nginx-default.conf /etc/nginx/templates/default.conf.template
+COPY docker-entrypoint.d/05-default-backend.envsh /docker-entrypoint.d/05-default-backend.envsh
 
 # Ensure the nginx entrypoint actually executes the fallback script.
 RUN chmod +x /docker-entrypoint.d/05-default-backend.envsh
