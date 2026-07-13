@@ -22,7 +22,7 @@ fi
 
 echo ""
 echo "[2/4] Creating user accounts..."
-cd /app
+cd "$SCRIPT_DIR"
 python create_correct_users.py 2>&1
 if [ $? -eq 0 ]; then
     echo "✓ Users created successfully"
