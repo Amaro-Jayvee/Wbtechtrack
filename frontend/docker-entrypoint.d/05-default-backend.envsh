@@ -1,6 +1,6 @@
 #!/bin/sh
 
-BACKEND_BASE_URL=${BACKEND_BASE_URL:-https://backend-service-production-08d5.up.railway.app}
+BACKEND_BASE_URL=${BACKEND_BASE_URL:-http://localhost:8000}
 NGINX_RESOLVER=${NGINX_RESOLVER:-1.1.1.1 8.8.8.8 ipv6=off valid=30s}
 
 export BACKEND_BASE_URL

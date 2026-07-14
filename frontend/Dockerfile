@@ -29,8 +29,8 @@ COPY docker-entrypoint.d/10-runtime-config.sh /docker-entrypoint.d/10-runtime-co
 # Ensure the nginx entrypoint actually executes the fallback and runtime config scripts.
 RUN chmod +x /docker-entrypoint.d/05-default-backend.envsh /docker-entrypoint.d/10-runtime-config.sh
 
-# Safe deployment defaults; Render can override these with real environment values.
-ENV BACKEND_BASE_URL=https://backend-service-production-08d5.up.railway.app
+# Safe deployment defaults; local dev override uses localhost backend.
+ENV BACKEND_BASE_URL=http://localhost:8000
 ENV NGINX_RESOLVER="1.1.1.1 8.8.8.8 ipv6=off valid=30s"
 
 # Copy built React app
