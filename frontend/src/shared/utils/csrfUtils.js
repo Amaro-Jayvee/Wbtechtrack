@@ -74,18 +74,35 @@ export async function apiCall(url, options = {}) {
  * Get the backend API URL
  * Hardcoded for production, localhost for development
  */
+function getRuntimeBackendUrl() {
+  return window.__FRONTEND_RUNTIME_CONFIG__?.BACKEND_URL || window.__BACKEND_BASE_URL__ || window.__BACKEND_URL__ || window.__API_URL__ || '';
+}
+
+function normalizeBackendUrl(url) {
+  if (!url) {
+    return '';
+  }
+  let normalized = url.trim().replace(/\/$/, '');
+  if (!/^https?:\/\//i.test(normalized)) {
+    normalized = `https://${normalized}`;
+  }
+  return normalized;
+}
+
 export function getBackendUrl() {
   // Development: use localhost
   if (!import.meta.env.PROD) {
     return 'http://localhost:8000';
   }
 
-  const configuredBackendUrl = import.meta.env.VITE_BACKEND_URL || import.meta.env.VITE_API_URL;
+  const configuredBackendUrl = import.meta.env.VITE_BACKEND_URL || import.meta.env.VITE_API_URL || getRuntimeBackendUrl();
   if (configuredBackendUrl) {
-    return configuredBackendUrl.replace(/\/$/, '');
+    return normalizeBackendUrl(configuredBackendUrl);
   }
 
-  // Fall back to the current origin when the frontend and backend are served together.
+  // In production, use same-origin proxy paths when backend URL is not built in.
+  // This supports Docker/nginx deployments where /app/ is proxied to the backend.
+  console.warn('[CSRF Utils] No VITE_BACKEND_URL configured. Using same-origin proxy for /app/ requests.');
   return window.location.origin;
 }
 

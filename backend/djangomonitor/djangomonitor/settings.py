@@ -38,17 +38,41 @@ SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-(qi_idh_-7-@6%-yr#zc7
 DEBUG = os.environ.get('DEBUG', 'False').lower() in ('true', '1', 'yes')
 
 
-def _parse_csv_env(name, default_values):
+def _parse_csv_env(name, default_values, normalize=lambda value: value):
     raw = os.environ.get(name, '')
     if not raw:
         return default_values
-    return [item.strip() for item in raw.split(',') if item.strip()]
+    values = []
+    for item in raw.split(','):
+        item = item.strip()
+        if not item:
+            continue
+        normalized = normalize(item)
+        if normalized and normalized not in values:
+            values.append(normalized)
+    return values
 
 
-def _merge_csv_env(name, default_values):
+def _normalize_host(value):
+    value = value.strip().rstrip('/')
+    if value.startswith('http://'):
+        value = value[7:]
+    elif value.startswith('https://'):
+        value = value[8:]
+    return value
+
+
+def _normalize_origin(value):
+    value = value.strip().rstrip('/')
+    if value.startswith('http://') or value.startswith('https://'):
+        return value
+    return f'https://{value}'
+
+
+def _merge_csv_env(name, default_values, normalize=lambda value: value):
     """Merge comma-separated env values with safe defaults without duplicates."""
     merged_values = list(default_values)
-    for value in _parse_csv_env(name, []):
+    for value in _parse_csv_env(name, [], normalize=normalize):
         if value not in merged_values:
             merged_values.append(value)
     return merged_values
@@ -119,7 +143,7 @@ render_external_hostname = os.environ.get('RENDER_EXTERNAL_HOSTNAME', '').strip(
 if render_external_hostname and render_external_hostname not in default_allowed_hosts:
     default_allowed_hosts.append(render_external_hostname)
 
-ALLOWED_HOSTS = _merge_csv_env('ALLOWED_HOSTS', default_allowed_hosts)
+ALLOWED_HOSTS = _merge_csv_env('ALLOWED_HOSTS', default_allowed_hosts, normalize=_normalize_host)
 
 default_cors_origins = [
     'http://localhost:5173',
@@ -133,16 +157,16 @@ default_cors_origins = [
 
 frontend_url = os.environ.get('FRONTEND_URL', '').strip()
 if frontend_url:
-    default_cors_origins.append(frontend_url)
+    default_cors_origins.append(_normalize_origin(frontend_url))
 
-CORS_ALLOWED_ORIGINS = _merge_csv_env('CORS_ALLOWED_ORIGINS', default_cors_origins)
+CORS_ALLOWED_ORIGINS = _merge_csv_env('CORS_ALLOWED_ORIGINS', default_cors_origins, normalize=_normalize_origin)
 
 default_csrf_trusted_origins = list(default_cors_origins)
 backend_url = os.environ.get('BACKEND_URL', '').strip()
 if backend_url:
-    default_csrf_trusted_origins.append(backend_url)
+    default_csrf_trusted_origins.append(_normalize_origin(backend_url))
 
-CSRF_TRUSTED_ORIGINS = _merge_csv_env('CSRF_TRUSTED_ORIGINS', default_csrf_trusted_origins)
+CSRF_TRUSTED_ORIGINS = _merge_csv_env('CSRF_TRUSTED_ORIGINS', default_csrf_trusted_origins, normalize=_normalize_origin)
 
 
 CORS_ALLOW_CREDENTIALS = True
