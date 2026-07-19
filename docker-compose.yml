@@ -61,8 +61,8 @@ services:
   # React Frontend with Nginx
   frontend:
     build:
-      context: .
-      dockerfile: frontend/Dockerfile
+      context: ./frontend
+      dockerfile: Dockerfile
     environment:
       PORT: 80
       BACKEND_BASE_URL: http://backend:8000

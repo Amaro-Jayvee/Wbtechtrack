@@ -533,7 +533,7 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
           console.log("✅ Regular quota saved!");
         }
         
-        // Show the one-time save reminder modal
+        // Show confirmation popup
         setShowSaveReminderModal(true);
         
         // Refresh notifications
@@ -544,6 +544,10 @@ function TaskDetailModal({ productProcessId, onClose, onSave }) {
           console.log("📢 Calling onSave callback to refresh parent component");
           onSave();
         }
+
+        // Show confirmation popup
+        setSuccessMessage("✅ Progress saved successfully!");
+        setShowSuccessModal(true);
       } else {
         const errorMsg = responseData.detail || responseData.error || JSON.stringify(responseData);
         console.error(`❌ Save failed:`, errorMsg);

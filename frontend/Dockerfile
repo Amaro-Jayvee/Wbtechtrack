@@ -23,11 +23,12 @@ RUN rm -f /etc/nginx/conf.d/default.conf
 # Copy nginx configuration
 COPY nginx.conf /etc/nginx/nginx.conf
 COPY nginx-default.conf /etc/nginx/templates/default.conf.template
-COPY docker-entrypoint.d/05-default-backend.envsh /docker-entrypoint.d/05-default-backend.envsh
 COPY docker-entrypoint.d/10-runtime-config.sh /docker-entrypoint.d/10-runtime-config.sh
 
+
 # Ensure the nginx entrypoint actually executes the fallback and runtime config scripts.
-RUN chmod +x /docker-entrypoint.d/05-default-backend.envsh /docker-entrypoint.d/10-runtime-config.sh
+RUN chmod +x /docker-entrypoint.d/10-runtime-config.sh
+
 
 # Safe deployment defaults; local dev override uses localhost backend.
 ENV BACKEND_BASE_URL=http://localhost:8000

@@ -204,14 +204,14 @@ function SidebarLayout({ children }) {
     if (path === "/dashboard") return "Dashboard";
     if (path === "/accounts") return "Accounts";
     if (path === "/request") return "Requests";
-    if (path === "/request-list") return "Purchase Order List";
+    if (path === "/request-list") return "Project List";
     if (path === "/customer-requests") return "My Requests";
     if (path === "/customer/settings") return "Settings";
     if (path === "/task-status") {
-      // Show "Create Purchase Order" for admin, "Task Status" for others
-      return userData.role === "admin" ? "Create Purchase Order" : "Task Status";
+      // Show "Create Project" for admin, "Project Status" for others
+      return userData.role === "admin" ? "Create Project" : "Project Status";
     }
-    if (path === "/cancelled-requests") return "Cancelled Purchase Order";
+    if (path === "/cancelled-requests") return "Cancelled Projects";
     if (path === "/printable-report") return "Print Report";
     if (path === "/settings") return "Settings";
     return "Dashboard";
@@ -275,15 +275,15 @@ function SidebarLayout({ children }) {
                 </Link>
               )}
               
-              {/* Admin - Cancelled Purchase Order */}
+              {/* Admin - Cancelled Projects */}
               {userData.role === "admin" && (
                 <Link
                   to="/cancelled-requests"
                   className={`sidebar-item ${isActive("/cancelled-requests") ? "active" : ""}`}
-                  title="Cancelled Purchase Order"
+                  title="Cancelled Projects"
                 >
-                  <img src="/Cancel Order.png" alt="Cancelled Purchase Order" className="sidebar-icon" />
-                  {!sidebarCollapsed && <span className="sidebar-label">Cancelled PO</span>}
+                  <img src="/Cancel Order.png" alt="Cancelled Projects" className="sidebar-icon" />
+                  {!sidebarCollapsed && <span className="sidebar-label">Cancelled Projects</span>}
                 </Link>
               )}
               
@@ -299,27 +299,27 @@ function SidebarLayout({ children }) {
                 </Link>
               )}
               
-              {/* Production Manager - Task Status (4th icon) */}
+              {/* Production Manager - Project Status (4th icon) */}
               {userData.role === "production_manager" && (
                 <Link
                   to="/task-status"
                   className={`sidebar-item ${isActive("/task-status") ? "active" : ""}`}
-                  title="Task Status"
+                  title="Project Status"
                 >
-                  <img src="/4th.png" alt="Task Status" className="sidebar-icon" />
-                  {!sidebarCollapsed && <span className="sidebar-label">Task Status</span>}
+                  <img src="/4th.png" alt="Project Status" className="sidebar-icon" />
+                  {!sidebarCollapsed && <span className="sidebar-label">Project Status</span>}
                 </Link>
               )}
 
-              {/* Production Manager - Cancelled Purchase Order */}
+              {/* Production Manager - Cancelled Projects */}
               {userData.role === "production_manager" && (
                 <Link
                   to="/cancelled-requests"
                   className={`sidebar-item ${isActive("/cancelled-requests") ? "active" : ""}`}
-                  title="Cancelled Purchase Order"
+                  title="Cancelled Projects"
                 >
-                  <img src="/Cancel Order.png" alt="Cancelled Purchase Order" className="sidebar-icon" />
-                  {!sidebarCollapsed && <span className="sidebar-label">Cancelled PO</span>}
+                  <img src="/Cancel Order.png" alt="Cancelled Projects" className="sidebar-icon" />
+                  {!sidebarCollapsed && <span className="sidebar-label">Cancelled Projects</span>}
                 </Link>
               )}
 

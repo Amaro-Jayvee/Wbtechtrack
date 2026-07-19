@@ -2578,21 +2578,30 @@ def productProcessAPI(request, id=0):
         include_archived = request.GET.get("include_archived", "false").lower() == "true"
 
         if include_completed:
-            # Only return steps that are linked to completed AND non-archived requests (have completed_at set)
+            # FIX: Show ALL products from requests that have at least one completed product.
+            # This ensures multi-product requests remain grouped even when partially completed.
+            # Find request IDs that have at least one completed product
+            completed_request_ids = RequestProduct.objects.filter(
+                completed_at__isnull=False,
+                archived_at__isnull=True
+            ).exclude(
+                status='cancelled'
+            ).values_list('request_id', flat=True).distinct()
+            
+            # Return ALL non-archived products for those requests (both completed AND in-progress)
             if include_archived:
-                # Show all completed steps (including archived)
                 all_steps = ProductProcess.objects.filter(
                     request_product__isnull=False,
-                    request_product__completed_at__isnull=False
+                    request_product__request_id__in=completed_request_ids,
                 ).exclude(
                     request_product__status='cancelled'
                 ).order_by('request_product_id', 'step_order')
             else:
-                # Show only completed steps from non-archived requests
                 all_steps = ProductProcess.objects.filter(
                     request_product__isnull=False,
-                    request_product__completed_at__isnull=False,
-                    request_product__archived_at__isnull=True
+                    request_product__request_id__in=completed_request_ids,
+                    request_product__archived_at__isnull=True,
+                    archived_at__isnull=True
                 ).exclude(
                     request_product__status='cancelled'
                 ).order_by('request_product_id', 'step_order')
@@ -2726,7 +2735,10 @@ def productProcessAPI(request, id=0):
                 step.refresh_from_db()
                 if was_marked_complete:
                     pass  # Step marked as completed
-
+                
+                # REMOVED CASCADE: Each step's quota is now independent.
+                # The cascade model is handled at the DISPLAY level (serializer),
+                # not by copying values between steps.
             # Handle defect_logs - new array-based defect tracking
             if 'defect_logs' in data:
                 defect_logs_data = data.get('defect_logs', [])

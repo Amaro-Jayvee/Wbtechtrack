@@ -314,47 +314,67 @@ class RequestProduct(models.Model):
     def get_completed_quota(self):
         """
         Calculate total completed work across all steps.
-        This method sums up only ACTUAL completed units, not theoretical ones.
-        Completed steps before current + work done on current step.
+        Uses the cascade model where each step's completed output feeds the next.
+        Returns the amount of work completed in the FINAL step (finished product).
         """
         all_steps = self.process_steps.order_by('step_order')
         if not all_steps.exists():
             return 0
         
-        quantity = self.quantity
-        total_steps = all_steps.count()
+        # The last step's completed_quota represents finished product quantity
+        last_step = all_steps.last()
+        if last_step:
+            return (last_step.completed_quota or 0) + (last_step.ot_quota or 0)
         
-        # First, find the current step (first incomplete one)
-        current_step = None
-        completed_before_count = 0
+        return 0
+
+    def get_step_progress(self, step):
+        """
+        Calculate progress for a specific step using the cascade denominator.
+        Step 1: completed ÷ product_quota
+        Step N: completed ÷ previous_step_completed
+        """
+        if not step:
+            return 0
         
-        for step in all_steps:
-            if step.is_completed:
-                completed_before_count += 1
-            else:
-                current_step = step
+        all_steps = self.process_steps.order_by('step_order')
+        if not all_steps.exists():
+            return 0
+        
+        # Find this step's index
+        step_index = None
+        for i, s in enumerate(all_steps):
+            if s.id == step.id:
+                step_index = i
                 break
         
-        # If all steps are completed, return full quantity
-        if current_step is None:
-            all_completed = all_steps.filter(is_completed=True).count()
-            if all_completed == total_steps:
-                return quantity
+        if step_index is None:
+            return 0
         
-        # Calculate based on:
-        # - Percentage of steps already fully done
-        # - Plus progress on current step (including both regular and OT quota)
-        if current_step:
-            # Weight: each completed step = 1/total_steps of the quantity
-            completed_from_prev_steps = (completed_before_count / total_steps) * quantity
-            # CRITICAL: Include both regular quota AND OT quota for accurate progress
-            current_progress = (current_step.completed_quota or 0) + (current_step.ot_quota or 0)
-            total_completed = completed_from_prev_steps + current_progress
+        step_total = (step.completed_quota or 0) + (step.ot_quota or 0)
+        
+        if step_index == 0:
+            # Step 1: denominator is the original product quota
+            denominator = self.quantity
         else:
-            # Shouldn't reach here, but safety check
-            total_completed = quantity
+            # Step N: denominator is the previous step's completed output
+            prev_step = all_steps[step_index - 1]
+            denominator = (prev_step.completed_quota or 0) + (prev_step.ot_quota or 0)
         
-        return int(min(total_completed, quantity))
+        if denominator <= 0:
+            return 0
+        
+        return min(round((step_total / denominator) * 100, 1), 100)
+
+    def get_finished_quantity(self):
+        """
+        Returns the quantity that has completed ALL steps (finished product).
+        This is the completed_quota of the LAST step.
+        """
+        last_step = self.process_steps.order_by('step_order').last()
+        if last_step:
+            return (last_step.completed_quota or 0) + (last_step.ot_quota or 0)
+        return 0
 
     def get_progress_percentage(self):
         """Calculate progress percentage for this request product."""

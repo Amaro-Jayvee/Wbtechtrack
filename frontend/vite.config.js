@@ -6,13 +6,19 @@ export default defineConfig({
   server: {
     port: 5174,
     middlewareMode: false,
+    // Proxy API requests to backend during dev to avoid CORS/CSRF issues
+    proxy: {
+      '/app': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+        secure: false,
+      }
+    },
   },
   preview: {
     allowedHosts: [
       'localhost',
       '127.0.0.1',
-      'frontend-services-production-ab60.up.railway.app',
-      '*.railway.app',
     ],
   },
   build: {

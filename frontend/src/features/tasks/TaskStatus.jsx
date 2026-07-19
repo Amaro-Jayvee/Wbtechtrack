@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useMemo } from "react";
 import SidebarLayout from "../../shared/components/SidebarLayout";
 import TaskDetailModal from "./TaskDetailModal";
+import TaskStatusPODetailModal from "./TaskStatusPODetailModal";
+import QuotaDefectModal from "./QuotaDefectModal";
 import AdminRequestApproval from "../accounts/AdminRequestApproval";
 import "../../features/dashboard/Dashboard.css";
 import { useUser } from "../../shared/context/UserContext.jsx";
@@ -13,13 +15,15 @@ function TaskStatus() {
   const [loading, setLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState("in-progress");
   const [showTaskDetailModal, setShowTaskDetailModal] = useState(false);
-  const [selectedTaskId, setSelectedTaskId] = useState(null);
+  const [selectedStepId, setSelectedStepId] = useState(null);
+  const [showQuotaDefectModal, setShowQuotaDefectModal] = useState(false);
+  const [selectedProductForEdit, setSelectedProductForEdit] = useState(null);
   const [showAddProductModal, setShowAddProductModal] = useState(false);
   const [sortBy, setSortBy] = useState("number"); // "date", "number", "name"
   const [sortOrder, setSortOrder] = useState("asc"); // "asc", "desc"
   const [partForm, setPartForm] = useState({
     part_name: "",
-    processes: [{ process_name: "" }]
+    processes: [{ process_names: [""] }]
   });
   const [addProductLoading, setAddProductLoading] = useState(false);
   const [addProductMessage, setAddProductMessage] = useState("");
@@ -27,8 +31,14 @@ function TaskStatus() {
   const [selectedProcessIndex, setSelectedProcessIndex] = useState(0);
   const [currentPage, setCurrentPage] = useState(1);
   const [showReportMode, setShowReportMode] = useState(false);
-  const [selectedTaskIds, setSelectedTaskIds] = useState(new Set());
+  const [selectedRequestIds, setSelectedRequestIds] = useState(new Set());
   const itemsPerPage = 10;
+
+  // NEW: Selected PO for detail view (inline, not modal)
+  const [selectedPOView, setSelectedPOView] = useState(null);
+  const [showSaveConfirmModal, setShowSaveConfirmModal] = useState(false);
+  const [saveConfirmMessage, setSaveConfirmMessage] = useState("");
+  const [pendingSaveRefresh, setPendingSaveRefresh] = useState(false);
 
   useEffect(() => {
     fetchTaskStatus(filterStatus);
@@ -110,19 +120,17 @@ function TaskStatus() {
     setAddProductMessage("");
 
     try {
-      // Create the product with all its processes in one call
       const payload = {
         product_name: partForm.part_name,
         processes: partForm.processes.flatMap((proc) =>
           proc.process_names
-            .filter(name => name.trim() !== "") // Filter out empty names
+            .filter(name => name.trim() !== "")
             .map(process_name => ({
               process_name: process_name
             }))
         )
       };
 
-      // Validate that we have at least one process
       if (payload.processes.length === 0) {
         setAddProductMessage("Please add at least one process/operation");
         setAddProductLoading(false);
@@ -162,20 +170,15 @@ function TaskStatus() {
     try {
       const params = new URLSearchParams();
       
-      // For "done" filter, show completed items; for "in-progress" show non-completed
       if (status === "done") {
         params.append("include_completed", "true");
       } else {
         params.append("include_completed", "false");
       }
       
-      // Exclude archived products (those with archived_at set on RequestProduct)
       params.append("include_archived", "false");
-      
-      // Add cache-busting parameter to force fresh data
       params.append("t", Date.now());
 
-      // Fetch ProductProcess (steps) data
       const response = await apiCall(
         `/app/product/?${params.toString()}`,
         {
@@ -185,179 +188,133 @@ function TaskStatus() {
 
       let steps = await response.json();
       
-      // Group steps by request_product_id to create aggregated product rows
-      const productMap = {};
+      // Group steps by request_id to create aggregated PO rows
+      const poMap = {};
       
       steps.forEach(step => {
-        const key = step.request_product_id;
-        if (!productMap[key]) {
-          productMap[key] = {
-            id: key,
-            request_id: step.request_id,
+        const key = step.request_id;
+        if (!poMap[key]) {
+          poMap[key] = {
+            request_id: key || step.request_product_id,
             requester_name: step.requester_name,
-            product_name: step.product_name,
-            request_product_id: key,
-            total_quota: step.total_quota,
-            due_date: step.due_date,
-            deadline_extension: step.deadline_extension,
-            archived_at: step.request_product_archived_at,
-            steps: [],
-            firstStepId: null,
+            deadline: step.due_date,
+            products: [],
+            all_steps: [],
+            is_completed: false,
+            total_products: 0,
+            completed_products_count: 0,
+            total_finished_quantity: 0,
+            total_quota_sum: 0,
+            total_defect_count: 0,
           };
         }
-        productMap[key].steps.push(step);
-      });
-      
-      // Convert to array and calculate aggregated progress for each product
-      let aggregatedData = Object.values(productMap).map(product => {
-        // Sort steps by step_order
-        product.steps.sort((a, b) => a.step_order - b.step_order);
         
-        // Get first step ID (for opening modal)
-        product.firstStepId = product.steps[0]?.id;
-        
-        // Calculate step counts
-        const totalSteps = product.steps.length;
-        const completedSteps = product.steps.filter(s => s.is_completed).length;
-        
-        // Find first incomplete step (current step being worked on)
-        const currentStep = product.steps.find(s => !s.is_completed) || product.steps[totalSteps - 1];
-        
-        // Use overall_progress from backend if available, otherwise calculate
-        let progressPercent = 0;
-        
-        if (product.steps.length > 0 && product.steps[0].overall_progress !== undefined) {
-          // Use backend's calculated overall_progress
-          progressPercent = product.steps[0].overall_progress;
-
-        } else {
-          // Fallback to old calculation method
-          // Calculate progress of current step (how much of the quota is done)
-          const currentStepProgress = currentStep 
-            ? (currentStep.completed_quota || 0) / (currentStep.total_quota || 1)
-            : 0;
-          
-          // Progress = (fully completed steps + progress in current step) / total steps
-          progressPercent = Math.round(((completedSteps + currentStepProgress) / totalSteps) * 100);
-        }
-        
-        // Check if task is completed
-        const isCompleted = product.steps[0]?.request_product_completed_at !== null && product.steps[0]?.request_product_completed_at !== undefined;
-        
-        // For completed tasks, aggregate ALL steps data; for in-progress, show current step only
-        let displayData = {};
-        if (isCompleted) {
-          // Sum defects from all steps using defect_logs array (new) or fallback to defect_count (old)
-          const totalDefects = product.steps.reduce((sum, step) => {
-            const stepDefects = step.defect_logs && step.defect_logs.length > 0
-              ? step.defect_logs.reduce((logSum, log) => logSum + (log.defect_count || 0), 0)
-              : (step.defect_count || 0);
-            return sum + stepDefects;
-          }, 0);
-          
-          // Sum OT quota and OT defects from all steps
-          const totalOTQuota = product.steps.reduce((sum, step) => sum + (step.ot_quota || 0), 0);
-          const totalOTDefects = product.steps.reduce((sum, step) => {
-            const stepOTDefects = step.ot_defect_logs && step.ot_defect_logs.length > 0
-              ? step.ot_defect_logs.reduce((logSum, log) => logSum + (log.defect_count || 0), 0)
-              : 0;
-            return sum + stepOTDefects;
-          }, 0);
-          
-          // Collect all unique defect types from all steps (from defect_logs array)
-          const defectTypes = new Set();
-          product.steps.forEach(step => {
-            // First, collect from new defect_logs array
-            if (step.defect_logs && step.defect_logs.length > 0) {
-              step.defect_logs.forEach(log => {
-                defectTypes.add(log.defect_type);
-              });
-            }
-            // Fallback to old defect_type field for backward compatibility
-            if (step.defect_type) {
-              defectTypes.add(step.defect_type);
-            }
-          });
-          
-          // Collect all unique OT defect types from all steps
-          const otDefectTypes = new Set();
-          product.steps.forEach(step => {
-            if (step.ot_defect_logs && step.ot_defect_logs.length > 0) {
-              step.ot_defect_logs.forEach(log => {
-                otDefectTypes.add(log.defect_type);
-              });
-            }
-          });
-          
-          // Collect all unique workers from all steps
-          const allWorkers = new Set();
-          product.steps.forEach(step => {
-            if (step.worker_names && Array.isArray(step.worker_names)) {
-              step.worker_names.forEach(name => allWorkers.add(name));
-            }
-          });
-          
-          // Create steps breakdown for modal display
-          const stepsBreakdown = product.steps.map(step => ({
-            step_order: step.step_order,
-            process_name: step.process_name,
+        // Track product names (deduplicate by request_product_id)
+        const existingProduct = poMap[key].products.find(p => p.request_product_id === step.request_product_id);
+        if (!existingProduct) {
+          poMap[key].products.push({
+            request_product_id: step.request_product_id,
+            product_name: step.product_name,
             total_quota: step.total_quota,
             completed_quota: step.completed_quota,
-            defect_count: step.defect_count,
-            defect_type: step.defect_type,
-            defect_description: step.defect_description,
-            defect_logs: step.defect_logs || [],
-            is_overtime: step.is_overtime || false,
-            ot_quota: step.ot_quota || 0,
-            ot_defect_logs: step.ot_defect_logs || [],
-            workers: step.worker_names || [],
-            is_pst_01: step.is_pst_01
-          }));
-          
-          displayData = {
-            completed_summary: `${product.total_quota}/${product.total_quota}`,
-            defect_count: totalDefects,
-            defect_types: Array.from(defectTypes),
-            ot_quota: totalOTQuota,
-            ot_defect_count: totalOTDefects,
-            ot_defect_types: Array.from(otDefectTypes),
-            worker_names: Array.from(allWorkers),
-            process_name: `All Steps (${totalSteps})`,
-            updated_at: product.steps[totalSteps - 1]?.updated_at || "—",
-            completed_at: product.steps[0]?.request_product_completed_at,
-            steps: stepsBreakdown
-          };
-        } else {
-          // Show current step's information
-          const isPST01 = currentStep?.is_pst_01;
-          
-          // Calculate current step defects from defect_logs array (new) or fallback to defect_count (old)
-          const currentStepDefects = currentStep && currentStep.defect_logs && currentStep.defect_logs.length > 0
-            ? currentStep.defect_logs.reduce((sum, log) => sum + (log.defect_count || 0), 0)
-            : (currentStep?.defect_count || 0);
-          
-          displayData = {
-            completed_summary: isPST01 
-              ? `✓ Withdrawal` 
-              : `${currentStep?.completed_quota || 0}/${product.total_quota}`,
-            defect_count: currentStepDefects,
-            worker_names: currentStep?.worker_names || [],
-            process_name: currentStep?.process_name || "—",
-            updated_at: currentStep?.updated_at || "—",
-            is_pst_01: isPST01
-          };
+            defect_count: step.defect_count || 0,
+            overall_progress: step.overall_progress || 0,
+            is_completed: step.request_product_completed_at !== null && step.request_product_completed_at !== undefined,
+            completed_at: step.request_product_completed_at,
+            updated_at: step.updated_at,
+            is_pst_01: step.is_pst_01,
+            steps: [],
+            firstStepId: null,
+            finished_quantity: step.finished_quantity || 0,
+          });
+          poMap[key].total_products++;
+          poMap[key].total_quota_sum += (step.total_quota || 0);
         }
         
-        return {
-          ...product,
-          ...displayData,
-          total_steps: totalSteps,
-          completed_steps: completedSteps,
-          progress: `${progressPercent}%`,
-          step_order: currentStep?.step_order || totalSteps,
-          task_status: completedSteps === totalSteps ? "done" : "in-progress",
-          is_completed: isCompleted
-        };
+        // Add step to the product
+        const targetProduct = poMap[key].products.find(p => p.request_product_id === step.request_product_id);
+        if (targetProduct) {
+          targetProduct.steps.push(step);
+          if (!targetProduct.firstStepId) {
+            targetProduct.firstStepId = step.id;
+          }
+        }
+        
+        poMap[key].all_steps.push(step);
+      });
+      
+      // Convert to array and calculate aggregated progress for each PO
+      let aggregatedData = Object.values(poMap).map(po => {
+        let completedCount = 0;
+        let totalDefects = 0;
+        let totalFinishedQty = 0;
+        
+        // Process each product within the PO
+        po.products = po.products.map(product => {
+          // Sort steps by step_order
+          product.steps.sort((a, b) => a.step_order - b.step_order);
+          
+          const totalSteps = product.steps.length;
+          const completedSteps = product.steps.filter(s => s.is_completed).length;
+          
+          // Use the new cascade-based overall_progress from backend
+          // This represents: finished_quantity / original_product_quota
+          let progressPercent = 0;
+          if (product.steps.length > 0 && product.steps[0].overall_progress !== undefined) {
+            progressPercent = product.steps[0].overall_progress;
+          } else {
+            // Fallback: use finished_quantity / total_quota
+            const finishedQty = product.finished_quantity || 0;
+            const totalQty = product.total_quota || 1;
+            progressPercent = Math.min(Math.round((finishedQty / totalQty) * 100), 100);
+          }
+          
+          // Calculate defects (sum across all steps)
+          const productDefects = product.steps.reduce((sum, step) => {
+            return sum + (step.defect_count || 0);
+          }, 0);
+          
+          // Get updated_at from last step
+          const lastStep = product.steps[product.steps.length - 1];
+          
+          if (product.is_completed) completedCount++;
+          totalDefects += productDefects;
+          totalFinishedQty += (product.finished_quantity || 0);
+          
+          return {
+            ...product,
+            progress: `${progressPercent}%`,
+            completed_steps: completedSteps,
+            total_steps: totalSteps,
+            defect_count: productDefects,
+            updated_at: lastStep?.updated_at || product.updated_at,
+          };
+        });
+        
+        // Calculate overall PO status using the new formula:
+        // Project Progress = Sum(finished_quantity) / Sum(total_quota)
+        po.completed_products_count = completedCount;
+        po.total_defect_count = totalDefects;
+        po.total_finished_quantity = totalFinishedQty;
+        po.is_completed = completedCount === po.total_products && po.total_products > 0;
+        
+        // Project progress = sum of finished products / sum of quotas
+        const projectProgress = po.total_quota_sum > 0 
+          ? Math.round((totalFinishedQty / po.total_quota_sum) * 100)
+          : 0;
+        po.overall_progress = `${projectProgress}%`;
+        
+        // Get overall deadline/updated_at
+        po.updated_at = po.all_steps.length > 0
+          ? po.all_steps.sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at))[0]?.updated_at
+          : null;
+        
+        po.task_status = po.is_completed ? "done" : "in-progress";
+        
+        // Get deadline from the first product's due_date
+        po.deadline = po.products[0]?.steps[0]?.due_date || null;
+        
+        return po;
       });
       
       // Apply status filter
@@ -366,12 +323,10 @@ function TaskStatus() {
           item.task_status === "in-progress"
         );
       } else if (status === "done") {
-        // When showing "Done", only show completed items
         aggregatedData = aggregatedData.filter(item => 
           item.is_completed === true
         );
       }
-      // For "all", show everything that came from the API (respecting include_completed param)
       
       setRequestProducts(aggregatedData);
     } catch (err) {
@@ -388,14 +343,16 @@ function TaskStatus() {
 
   const handleFilterChange = (e) => {
     setFilterStatus(e.target.value);
+    setSelectedPOView(null); // Go back to main view when filter changes
     fetchTaskStatus(e.target.value);
   };
 
   const sortedRequestProducts = useMemo(() => {
-    const filtered = requestProducts.filter((product) =>
+    const filtered = requestProducts.filter((po) =>
       searchTerm === "" ||
-      product.request_id.toString().includes(searchTerm) ||
-      (product.product_name && product.product_name.toLowerCase().includes(searchTerm.toLowerCase()))
+      (po.request_id && po.request_id.toString().includes(searchTerm)) ||
+      (po.products && po.products.some(p => p.product_name && p.product_name.toLowerCase().includes(searchTerm.toLowerCase()))) ||
+      (po.requester_name && po.requester_name.toLowerCase().includes(searchTerm.toLowerCase()))
     );
 
     const sorted = [...filtered];
@@ -403,14 +360,14 @@ function TaskStatus() {
       let comparison = 0;
 
       if (sortBy === "date") {
-        const dateA = new Date(a.due_date || a.updated_at || 0);
-        const dateB = new Date(b.due_date || b.updated_at || 0);
+        const dateA = new Date(a.deadline || a.updated_at || 0);
+        const dateB = new Date(b.deadline || b.updated_at || 0);
         comparison = dateB - dateA;
       } else if (sortBy === "number") {
         comparison = (b.request_id || 0) - (a.request_id || 0);
       } else if (sortBy === "name") {
-        const nameA = (a.product_name || "").toLowerCase();
-        const nameB = (b.product_name || "").toLowerCase();
+        const nameA = (a.requester_name || "").toLowerCase();
+        const nameB = (b.requester_name || "").toLowerCase();
         comparison = nameA.localeCompare(nameB);
       }
 
@@ -435,195 +392,160 @@ function TaskStatus() {
     }
   }, [totalPages, currentPage]);
 
-  const handleOpenTaskDetail = (product) => {
-    if (product.is_completed) {
-      // For completed tasks, pass the product data directly (aggregated view)
-      setSelectedTaskId(product);
-    } else {
-      // For in-progress tasks, find the first incomplete step
-      const stepToOpen = product.steps.find(s => !s.is_completed) || product.steps[product.steps.length - 1];
-      setSelectedTaskId(stepToOpen?.id);
-    }
-    setShowTaskDetailModal(true);
+  // NEW: Handle clicking on a PO row to view its detail inline
+  const handleOpenPODetail = (po) => {
+    setSelectedPOView(po);
   };
 
-  const handleCloseTaskDetail = () => {
-    setShowTaskDetailModal(false);
-    setSelectedTaskId(null);
+  // NEW: Handle back button to return to main table
+  const handleBackToMain = () => {
+    setSelectedPOView(null);
   };
 
-  const handleTaskSave = async (nextStepId) => {
-    
-    // Refresh the task list
-    await fetchTaskStatus(filterStatus);
-    
-    // If there's a next step, auto-open it
-    if (nextStepId) {
-      setTimeout(() => {
-        handleOpenTaskDetail(nextStepId);
-      }, 300);
-    } else {
-      // Close modal if no next step
-      setShowTaskDetailModal(false);
-      setSelectedTaskId(null);
+  const handleOpenProductTask = (product) => {
+    setSelectedProductForEdit(product);
+    setShowQuotaDefectModal(true);
+  };
+
+  const handleCloseQuotaDefect = () => {
+    setShowQuotaDefectModal(false);
+    setSelectedProductForEdit(null);
+  };
+
+  const handleQuotaDefectSave = async () => {
+    try {
+      await fetchTaskStatus(filterStatus);
+    } catch (err) {
+      console.error("Error refreshing data:", err);
     }
+    setShowQuotaDefectModal(false);
+    setSelectedProductForEdit(null);
+    // Show confirmation popup after save and refresh
+    setSaveConfirmMessage("✅ Progress saved successfully!");
+    setShowSaveConfirmModal(true);
   };
 
   const handlePrintReport = () => {
-    // Only for In-Progress
     setShowReportMode(true);
-    setSelectedTaskIds(new Set());
+    setSelectedRequestIds(new Set());
   };
 
-  // NEW: Dedicated handler for Completed Tasks Report
   const handlePrintCompletedTasksReport = () => {
-    console.log("=== PRINT COMPLETED TASKS REPORT CLICKED ===");
-    console.log("Current filterStatus:", filterStatus);
-    console.log("Current paginatedData:", paginatedData.length, "tasks");
-    console.log("First few tasks:", paginatedData.slice(0, 2).map(t => ({id: t.id, status: t.task_status, product: t.product_name})));
-    
     setShowReportMode(true);
-    setSelectedTaskIds(new Set());
+    setSelectedRequestIds(new Set());
   };
 
-  // NEW: Dedicated handler for generating Completed Tasks Report
   const handleGenerateCompletedTasksReport = () => {
     try {
-      console.log("\n========================================");
-      console.log("=== GENERATE COMPLETED TASKS REPORT ===");
-      console.log("========================================");
-      
-      if (selectedTaskIds.size === 0) {
-        alert("Please select at least one completed task to generate report");
+      if (selectedRequestIds.size === 0) {
+        alert("Please select at least one completed PO to generate report");
         return;
       }
       
-      // Filter selected tasks
-      const selectedCompletedTasks = paginatedData.filter(task => selectedTaskIds.has(task.id));
+      const selectedCompletedPOs = paginatedData.filter(po => selectedRequestIds.has(po.request_id));
       
-      console.log("Selected tasks:", selectedCompletedTasks.length);
-      
-      if (selectedCompletedTasks.length === 0) {
-        alert("No completed tasks found in selection");
+      if (selectedCompletedPOs.length === 0) {
+        alert("No completed POs found in selection");
         return;
       }
       
-      // Create report data
       const reportData = {
-        tasks: selectedCompletedTasks,
-        selectedCount: selectedCompletedTasks.length,
+        tasks: selectedCompletedPOs,
+        selectedCount: selectedCompletedPOs.length,
         filters: {
           generatedAt: new Date().toLocaleString(),
           reportType: "Completed Tasks"
         }
       };
       
-      // Encode as base64 for URL
       const jsonStr = JSON.stringify(reportData);
       const encodedData = btoa(jsonStr);
-      console.log("✓ Data encoded (size: " + encodedData.length + " bytes)");
       
-      // Open new tab WITH data in URL hash
       const reportUrl = `/completed-tasks-report#data=${encodedData}`;
-      console.log("→ Opening new tab with URL hash data");
       
       const newTab = window.open(reportUrl, '_blank');
       if (!newTab) {
-        console.error("✗ Failed to open new tab - popup may be blocked");
         alert("Could not open report tab. Please check if popups are blocked.");
-      } else {
-        console.log("✓ New tab opened successfully");
       }
       
-      // Reset UI
       setShowReportMode(false);
-      setSelectedTaskIds(new Set());
-      console.log("✓ Report mode reset");
-      console.log("========================================\n");
+      setSelectedRequestIds(new Set());
       
     } catch (error) {
-      console.error("✗ ERROR in handleGenerateCompletedTasksReport:", error);
+      console.error("ERROR in handleGenerateCompletedTasksReport:", error);
       alert(`Error generating report: ${error.message}`);
     }
   };
 
-  const handleTaskCheckboxChange = (taskId) => {
-    const newSelected = new Set(selectedTaskIds);
-    if (newSelected.has(taskId)) {
-      newSelected.delete(taskId);
+  const handleRequestCheckboxChange = (requestId) => {
+    const newSelected = new Set(selectedRequestIds);
+    if (newSelected.has(requestId)) {
+      newSelected.delete(requestId);
     } else {
-      newSelected.add(taskId);
+      newSelected.add(requestId);
     }
-    setSelectedTaskIds(newSelected);
+    setSelectedRequestIds(newSelected);
   };
 
-  const handleSelectAllTasks = (checked) => {
+  const handleSelectAllRequests = (checked) => {
     if (checked) {
-      setSelectedTaskIds(new Set(paginatedData.map(t => t.id)));
+      setSelectedRequestIds(new Set(paginatedData.map(p => p.request_id)));
     } else {
-      setSelectedTaskIds(new Set());
+      setSelectedRequestIds(new Set());
     }
   };
 
   const handleGenerateReport = () => {
     try {
-      console.log("=== GENERATE IN-PROGRESS REPORT ===");
-      
-      if (selectedTaskIds.size === 0) {
-        alert("Please select at least one task to generate report");
+      if (selectedRequestIds.size === 0) {
+        alert("Please select at least one PO to generate report");
         return;
       }
       
-      const selectedTasks = paginatedData.filter(task => selectedTaskIds.has(task.id));
+      const selectedPOs = paginatedData.filter(po => selectedRequestIds.has(po.request_id));
       
-      console.log("Selected tasks:", selectedTasks.length);
-      
-      if (selectedTasks.length === 0) {
-        alert("No tasks found in selection");
+      if (selectedPOs.length === 0) {
+        alert("No POs found in selection");
         return;
       }
       
-      // Create report data
       const reportData = {
-        tasks: selectedTasks,
-        selectedCount: selectedTaskIds.size,
+        tasks: selectedPOs,
+        selectedCount: selectedRequestIds.size,
         filters: {
           generatedAt: new Date().toLocaleString(),
           reportType: "Active Tasks"
         }
       };
       
-      // Encode as base64 for URL
       const jsonStr = JSON.stringify(reportData);
       const encodedData = btoa(jsonStr);
-      console.log("✓ Data encoded (size: " + encodedData.length + " bytes)");
       
-      // Open new tab WITH data in URL hash
       const reportUrl = `/task-status-report#data=${encodedData}`;
-      console.log("→ Opening new tab with URL hash data");
       
       const newTab = window.open(reportUrl, '_blank');
       if (!newTab) {
-        console.error("✗ Failed to open new tab - popup may be blocked");
         alert("Failed to open report tab. Please check if popups are blocked.");
-      } else {
-        console.log("✓ New tab opened successfully");
       }
       
-      // Reset report mode
       setShowReportMode(false);
-      setSelectedTaskIds(new Set());
-      console.log("✓ Report generation completed");
+      setSelectedRequestIds(new Set());
       
     } catch (error) {
-      console.error("✗ ERROR in handleGenerateReport:", error);
+      console.error("ERROR in handleGenerateReport:", error);
       alert(`Error generating report: ${error.message}`);
     }
   };
 
   const handleCancelReport = () => {
     setShowReportMode(false);
-    setSelectedTaskIds(new Set());
+    setSelectedRequestIds(new Set());
+  };
+
+  // Helper to format product names list
+  const formatProductNames = (products) => {
+    if (!products || products.length === 0) return "—";
+    return products.map(p => p.product_name).join(", ");
   };
 
   return (
@@ -634,14 +556,17 @@ function TaskStatus() {
           <AdminRequestApproval />
         )}
 
-        {/* Production Manager Task Status View */}
+        {/* Production Manager Project Status View */}
         {userData.role !== "admin" && (
           <>
+            {!selectedPOView ? (
+              <>
+            {/* MAIN VIEW - PO List Table */}
             {/* Filter and Controls Bar */}
             <div className="mb-4 d-flex align-items-end gap-3" style={{ marginTop: "30px" }}>
           <div style={{ minWidth: "140px", display: "flex", flexDirection: "column" }}>
             <label className="fw-600 text-muted small mb-2 d-block">
-              <i className="bi bi-funnel me-2"></i>Task Status Filter
+              <i className="bi bi-funnel me-2"></i>Project Status Filter
               {loading && (
                 <span className="ms-2" style={{ fontSize: "12px", fontWeight: "400", color: "#6c757d" }}>Loading...</span>
               )}
@@ -668,7 +593,7 @@ function TaskStatus() {
             >
               <option value="date">Sort By: Date</option>
               <option value="number">Sort By: Number</option>
-              <option value="name">Sort By: Name</option>
+              <option value="name">Sort By: Requester</option>
             </select>
           </div>
 
@@ -711,7 +636,6 @@ function TaskStatus() {
                   <i className="bi bi-plus-circle me-2"></i>Add Product/Part
                 </button>
                 
-                {/* UNIFIED PRINT REPORT BUTTON - SAME FOR BOTH TABS */}
                 <button
                   onClick={filterStatus === "done" ? handlePrintCompletedTasksReport : handlePrintReport}
                   className="btn fw-600"
@@ -724,19 +648,19 @@ function TaskStatus() {
                   <>
                     <button
                       onClick={filterStatus === "done" ? handleGenerateCompletedTasksReport : handleGenerateReport}
-                      disabled={selectedTaskIds.size === 0}
+                      disabled={selectedRequestIds.size === 0}
                       className="btn fw-600"
                       style={{ 
                         minWidth: "170px", 
                         padding: "0.375rem 0.75rem", 
-                        backgroundColor: selectedTaskIds.size === 0 ? "#ccc" : "#28a745", 
+                        backgroundColor: selectedRequestIds.size === 0 ? "#ccc" : "#28a745", 
                         color: "white", 
                         border: "none", 
                         fontSize: "12px",
-                        cursor: selectedTaskIds.size === 0 ? "not-allowed" : "pointer"
+                        cursor: selectedRequestIds.size === 0 ? "not-allowed" : "pointer"
                       }}
                     >
-                      <i className="bi bi-check-circle me-2"></i>Generate Report ({selectedTaskIds.size})
+                      <i className="bi bi-check-circle me-2"></i>Generate Report ({selectedRequestIds.size})
                     </button>
                     <button
                       onClick={handleCancelReport}
@@ -752,9 +676,9 @@ function TaskStatus() {
           </div>
         </div>
 
-        {/* Table */}
+        {/* PO List Table */}
         {loading ? (
-          <div className="loading">Loading task status...</div>
+          <div className="loading">Loading project status...</div>
         ) : sortedRequestProducts.length > 0 ? (
           <>
             <table className="data-table">
@@ -764,147 +688,136 @@ function TaskStatus() {
                     <th style={{ width: "40px", textAlign: "center" }}>
                       <input 
                         type="checkbox" 
-                        checked={selectedTaskIds.size === paginatedData.length && paginatedData.length > 0}
-                        onChange={(e) => handleSelectAllTasks(e.target.checked)}
+                        checked={selectedRequestIds.size === paginatedData.length && paginatedData.length > 0}
+                        onChange={(e) => handleSelectAllRequests(e.target.checked)}
                       />
                     </th>
                   )}
                   <th>Issuance No.</th>
                   <th>Requester</th>
-                  <th>Product Name</th>
+                  <th>Products</th>
                   {filterStatus === "done" ? (
                     <>
-                      <th>Total Completed Quota</th>
+                      <th>Completed Products</th>
                       <th>Total Defects</th>
-                      <th>Completed Date</th>
+                      <th>Latest Completed</th>
                     </>
                   ) : (
                     <>
                       <th>Progress</th>
-                      <th>Completed Quota</th>
+                      <th>Finished Product</th>
                       <th>Defect Count</th>
                     </>
                   )}
-                  <th>Due Date</th>
-                  <th>Deadline Extension</th>
+                  <th>Deadline</th>
                   <th>Last Update</th>
                   <th style={{ textAlign: "center", width: "50px" }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {paginatedData.map((item) => (
-                <tr key={item.id}>
-                  {showReportMode && (
-                    <td style={{ width: "40px", textAlign: "center" }}>
-                      <input 
-                        type="checkbox" 
-                        checked={selectedTaskIds.has(item.id)}
-                        onChange={() => handleTaskCheckboxChange(item.id)}
-                      />
+                {paginatedData.map((po) => {
+                  const completedProducts = po.products.filter(p => p.is_completed).length;
+                  const totalProducts = po.products.length;
+                  const productList = formatProductNames(po.products);
+                  
+                  return (
+                  <tr 
+                    key={po.request_id}
+                    onClick={() => handleOpenPODetail(po)}
+                    style={{ cursor: "pointer" }}
+                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "#f0f7ff"}
+                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = ""}
+                  >
+                    {showReportMode && (
+                      <td style={{ width: "40px", textAlign: "center" }} onClick={(e) => e.stopPropagation()}>
+                        <input 
+                          type="checkbox" 
+                          checked={selectedRequestIds.has(po.request_id)}
+                          onChange={() => handleRequestCheckboxChange(po.request_id)}
+                        />
+                      </td>
+                    )}
+                    <td>
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                        <span style={{ color: "#1D6AB7", fontWeight: "600" }}>{po.request_id}</span>
+                      </div>
                     </td>
-                  )}
-                  <td>
-                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                      {item.request_id}
-                      {item.restored_at && (
-                        <span style={{
-                          backgroundColor: "#28a745",
-                          color: "white",
-                          fontSize: "11px",
-                          padding: "2px 6px",
-                          borderRadius: "3px",
-                          fontWeight: "600",
-                          whiteSpace: "nowrap"
-                        }}>
-                          🔄 RESTORED
-                        </span>
-                      )}
-                    </div>
-                  </td>
-                  <td>{item.requester_name || "—"}</td>
-                  <td>{item.product_name || "N/A"}</td>
-                  {filterStatus === "done" ? (
-                    <>
-                      <td>{item.completed_summary || `0/${item.total_quota}`}</td>
-                      <td>
-                        <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                          <div style={{ fontWeight: "600" }}>{item.defect_count || 0}</div>
-                          {item.defect_types && item.defect_types.length > 0 && (
-                            <div style={{ fontSize: "0.85em", color: "#666" }}>
-                              {item.defect_types.map(type => {
-                                const typeLabels = {
-                                  'dimension': 'Dimension',
-                                  'thickness': 'Thickness',
-                                  'rush': 'Rush',
-                                  'other': 'Other'
-                                };
-                                return typeLabels[type] || type;
-                              }).join(', ')}
-                            </div>
-                          )}
-                        </div>
-                      </td>
-                      <td>{item.completed_at || "N/A"}</td>
-                    </>
-                  ) : (
-                    <>
-                      <td>
-                        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                          <div style={{ 
-                            backgroundColor: "#e0e0e0", 
-                            borderRadius: "4px", 
-                            width: "100px", 
-                            height: "6px", 
-                            overflow: "hidden" 
-                          }}>
+                    <td>{po.requester_name || "—"}</td>
+                    <td style={{ maxWidth: "250px" }}>
+                      <div style={{ 
+                        display: "-webkit-box", 
+                        WebkitLineClamp: 2, 
+                        WebkitBoxOrient: "vertical", 
+                        overflow: "hidden",
+                        fontSize: "13px",
+                        fontWeight: "500",
+                        lineHeight: "1.3"
+                      }}>
+                        {productList}
+                      </div>
+                    </td>
+                    {filterStatus === "done" ? (
+                      <>
+                        <td style={{ fontWeight: "600" }}>
+                          {completedProducts}/{totalProducts}
+                        </td>
+                        <td>{po.total_defect_count || 0}</td>
+                        <td>
+                          {po.products
+                            .filter(p => p.completed_at)
+                            .sort((a, b) => new Date(b.completed_at) - new Date(a.completed_at))[0]?.completed_at || "N/A"}
+                        </td>
+                      </>
+                    ) : (
+                      <>
+                        <td>
+                          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
                             <div style={{ 
-                              backgroundColor: "#1D6AB7", 
-                              height: "100%", 
-                              width: `${Math.min(parseFloat(item.progress) || 0, 100)}%`
-                            }}></div>
+                              backgroundColor: "#e0e0e0", 
+                              borderRadius: "4px", 
+                              width: "100px", 
+                              height: "6px", 
+                              overflow: "hidden" 
+                            }}>
+                              <div style={{ 
+                                backgroundColor: "#1D6AB7", 
+                                height: "100%", 
+                                width: `${Math.min(parseFloat(po.overall_progress) || 0, 100)}%`
+                              }}></div>
+                            </div>
+                            {po.overall_progress || "0%"}
                           </div>
-                          {item.progress || "0%"}
-                        </div>
-                      </td>
-                      <td>
-                        {item.is_pst_01 ? (
-                          <div style={{ textAlign: "center", color: "#1D6AB7", fontWeight: "600" }}>
-                            ✓ Withdrawal
-                          </div>
-                        ) : (
-                          <div style={{ textAlign: "center" }}>
-                            {item.completed_summary ? item.completed_summary.split("/")[0] : "0"}/{item.total_quota}
-                          </div>
-                        )}
-                      </td>
-                      <td>{item.defect_count || 0}</td>
-                    </>
-                  )}
-                  <td style={{ whiteSpace: "nowrap" }}>{item.due_date || "N/A"}</td>
-                  <td style={{ whiteSpace: "nowrap" }}>{item.deadline_extension || "N/A"}</td>
-                  <td style={{ whiteSpace: "nowrap", fontSize: "0.85rem", color: "#666" }}>
-                    {item.updated_at 
-                      ? new Date(item.updated_at).toLocaleString('en-US', {
-                          year: 'numeric',
-                          month: '2-digit',
-                          day: '2-digit',
-                          hour: '2-digit',
-                          minute: '2-digit',
-                          hour12: true
-                        })
-                      : "N/A"}
-                  </td>
-                  <td style={{ textAlign: "center" }}>
-                    <button 
-                      className="actions-menu-btn" 
-                      title="View details"
-                      onClick={() => handleOpenTaskDetail(item)}
-                    >
-                      ⋯
-                    </button>
-                  </td>
-                </tr>
-              ))}
+                        </td>
+                        <td style={{ fontWeight: "600" }}>
+                          {completedProducts}/{totalProducts}
+                        </td>
+                        <td>{po.total_defect_count || 0}</td>
+                      </>
+                    )}
+                    <td style={{ whiteSpace: "nowrap" }}>{po.deadline || "N/A"}</td>
+                    <td style={{ whiteSpace: "nowrap", fontSize: "0.85rem", color: "#666" }}>
+                      {po.updated_at 
+                        ? new Date(po.updated_at).toLocaleString('en-US', {
+                            year: 'numeric',
+                            month: '2-digit',
+                            day: '2-digit',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            hour12: true
+                          })
+                        : "N/A"}
+                    </td>
+                    <td style={{ textAlign: "center" }}>
+                      <button 
+                        className="actions-menu-btn" 
+                        title="View details"
+                        onClick={(e) => { e.stopPropagation(); handleOpenPODetail(po); }}
+                      >
+                        ⋯
+                      </button>
+                    </td>
+                  </tr>
+                )})}
             </tbody>
             </table>
 
@@ -1040,20 +953,216 @@ function TaskStatus() {
         ) : (
           <div className="no-data">
             {searchTerm ? (
-              <span>No {filterStatus === "done" ? "completed" : "in-progress"} tasks match your search.</span>
+              <span>No {filterStatus === "done" ? "completed" : "in-progress"} POs match your search.</span>
             ) : (
-              <>No {filterStatus === "done" ? "completed" : "in-progress"} tasks found. {filterStatus !== "done" && "Create a request to start tracking production."}</>
+              <>No {filterStatus === "done" ? "completed" : "in-progress"} POs found. {filterStatus !== "done" && "Create a request to start tracking production."}</>
             )}
           </div>
+        )}
+        </>
+        ) : (
+          <>
+            {/* DETAIL VIEW - Individual Products for Selected PO */}
+            <div style={{ marginBottom: "20px", marginTop: "30px" }}>
+              {/* PO Header */}
+              <div style={{
+                background: "linear-gradient(135deg, #1D6AB7, #1557a0)",
+                color: "white",
+                borderRadius: "10px",
+                padding: "20px 24px",
+                marginBottom: "20px",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                boxShadow: "0 2px 8px rgba(0,0,0,0.15)"
+              }}>
+                <div>
+                  <div style={{ fontSize: "12px", opacity: 0.8, marginBottom: "4px" }}>Issuance Detail</div>
+                  <div style={{ fontSize: "22px", fontWeight: 800 }}>
+                    Issuance No. {selectedPOView.request_id}
+                  </div>
+                  <div style={{ fontSize: "14px", opacity: 0.9, marginTop: "4px" }}>
+                    Requester: {selectedPOView.requester_name || "—"} 
+                    <span style={{ marginLeft: "20px" }}>
+                      Deadline: <strong>{selectedPOView.deadline || "N/A"}</strong>
+                    </span>
+                    <span style={{ marginLeft: "20px" }}>
+                      Products: <strong>{selectedPOView.products.length}</strong>
+                    </span>
+                  </div>
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <div style={{ fontSize: "14px", opacity: 0.8 }}>Overall Progress</div>
+                  <div style={{ fontSize: "26px", fontWeight: 800 }}>
+                    {selectedPOView.overall_progress || "0%"}
+                  </div>
+                </div>
+              </div>
+
+              {/* Products Table */}
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Product Name</th>
+                    {filterStatus === "done" ? (
+                      <>
+                        <th>Status</th>
+                        <th>Defects</th>
+                        <th>Completed Date</th>
+                      </>
+                    ) : (
+                      <>
+                        <th>Progress</th>
+                        <th>Finished Product</th>
+                        <th>Defect Count</th>
+                        <th>Current Step</th>
+                      </>
+                    )}
+                    <th>Last Update</th>
+                    <th style={{ textAlign: "center", width: "70px" }}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(selectedPOView.products || []).map((product) => (
+                    <tr key={product.request_product_id || product.id}>
+                      <td style={{ fontWeight: 700 }}>{product.product_name || "N/A"}</td>
+                      {filterStatus === "done" ? (
+                        <>
+                          <td><span style={{ color: "#16a34a", fontWeight: 800 }}>✓ Done</span></td>
+                          <td>{product.defect_count || 0}</td>
+                          <td>{product.completed_at || "N/A"}</td>
+                        </>
+                      ) : (
+                        <>
+                          <td>
+                            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                              <div style={{ 
+                                backgroundColor: "#e0e0e0", 
+                                borderRadius: "4px", 
+                                width: "80px", 
+                                height: "6px", 
+                                overflow: "hidden" 
+                              }}>
+                                <div style={{ 
+                                  backgroundColor: product.is_pst_01 ? "#52A374" : "#1D6AB7", 
+                                  height: "100%", 
+                                  width: `${Math.min(parseFloat(product.progress) || 0, 100)}%`
+                                }}></div>
+                              </div>
+                              {product.progress || "0%"}
+                            </div>
+                          </td>
+                          <td>
+                            {product.is_pst_01 ? (
+                              <span style={{ color: "#52A374", fontWeight: 600 }}>✓ Withdrawal</span>
+                            ) : (
+                              <span style={{ fontWeight: 700, color: "#16a34a" }}>
+                                {product.finished_quantity || 0}/{product.total_quota || 0}
+                              </span>
+                            )}
+                          </td>
+                          <td>{product.defect_count || 0}</td>
+                          <td style={{ fontSize: "0.85rem", color: "#555" }}>
+                            {product.steps && product.steps.length > 0 ? (
+                              <>
+                                <span style={{ fontWeight: 500 }}>
+                                  {product.steps.find(s => !s.is_completed)?.process_name || product.steps[product.steps.length - 1]?.process_name || "—"}
+                                </span>
+                                <span style={{ color: "#888", marginLeft: "6px", fontSize: "0.8rem" }}>
+                                  ({(product.steps.findIndex(s => !s.is_completed) + 1 || product.steps.length)}/{product.steps.length})
+                                </span>
+                              </>
+                            ) : "—"}
+                          </td>
+                        </>
+                      )}
+                      <td style={{ whiteSpace: "nowrap", fontSize: "0.85rem", color: "#666" }}>
+                        {product.updated_at 
+                          ? new Date(product.updated_at).toLocaleString('en-US', {
+                              year: 'numeric',
+                              month: '2-digit',
+                              day: '2-digit',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                              hour12: true
+                            })
+                          : "N/A"}
+                      </td>
+                      <td style={{ textAlign: "center" }}>
+                        <button 
+                          className="actions-menu-btn" 
+                          title="Edit quota"
+                          onClick={() => handleOpenProductTask(product)}
+                        >
+                          ⋯
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                  {/* Finished Product Row */}
+                  {(selectedPOView.products || []).map((product) => {
+                    const finishedQty = product.finished_quantity || 0;
+                    const finishedDefects = product.defect_count || 0;
+                    if (finishedQty === 0) return null;
+                    return (
+                      <tr key={`finished-${product.request_product_id || product.id}`} style={{ backgroundColor: "#f0fdf4" }}>
+                        <td style={{ fontWeight: 700, color: "#16a34a" }}>
+                          ✓ Finished Product
+                        </td>
+                        <td>
+                          <span style={{ fontWeight: 800, color: "#16a34a" }}>
+                            {Math.round((finishedQty / (product.total_quota || 1)) * 100)}%
+                          </span>
+                        </td>
+                        <td>
+                          <span style={{ fontWeight: 700 }}>
+                            {finishedQty}/{product.total_quota || 0}
+                          </span>
+                        </td>
+                        <td>{finishedDefects}</td>
+                        <td colSpan={2} style={{ fontSize: "0.85rem", color: "#555" }}>
+                          Completed and packed units
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+
+              {/* Back Button */}
+              <div style={{ display: "flex", justifyContent: "center", marginTop: "24px" }}>
+                <button
+                  onClick={handleBackToMain}
+                  className="btn fw-600"
+                  style={{
+                    padding: "10px 40px",
+                    backgroundColor: "#6c757d",
+                    color: "white",
+                    border: "none",
+                    borderRadius: "6px",
+                    fontSize: "14px",
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px"
+                  }}
+                >
+                  <i className="bi bi-arrow-left"></i> Back to Project Status
+                </button>
+              </div>
+            </div>
+          </>
         )}
             </>
         )}
       </div>
-      {showTaskDetailModal && selectedTaskId && (
-        <TaskDetailModal 
-          productProcessId={selectedTaskId}
-          onClose={handleCloseTaskDetail}
-          onSave={handleTaskSave}
+      
+      {/* Quota Defect Modal */}
+      {showQuotaDefectModal && selectedProductForEdit && (
+        <QuotaDefectModal
+          product={selectedProductForEdit}
+          onClose={handleCloseQuotaDefect}
+          onSave={handleQuotaDefectSave}
         />
       )}
 
@@ -1082,6 +1191,77 @@ function TaskStatus() {
             {toastType === "success" ? "✓" : "✕"}
           </span>
           <span>{addProductMessage}</span>
+        </div>
+      )}
+
+      {/* Save Confirmation Modal */}
+      {showSaveConfirmModal && (
+        <div 
+          className="modal-backdrop fade show" 
+          style={{ 
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            zIndex: 2050,
+            width: '100%',
+            height: '100%',
+            backgroundColor: 'rgba(0, 0, 0, 0.5)',
+            opacity: 0.6 
+          }}
+        ></div>
+      )}
+      {showSaveConfirmModal && (
+        <div 
+          className="modal show"
+          tabIndex="-1" 
+          role="dialog" 
+          aria-hidden="false"
+          style={{ 
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            zIndex: 2060,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: '100%',
+            height: '100%',
+            backgroundColor: 'transparent'
+          }}
+        >
+          <div className="modal-dialog modal-dialog-centered" role="document" style={{ zIndex: 2060 }}>
+            <div className="modal-content border-0 shadow-lg" style={{ borderTop: "4px solid #28a745" }}>
+              <div className="modal-body text-center" style={{ padding: "45px 35px" }}>
+                <div style={{
+                  fontSize: "56px",
+                  color: "#28a745",
+                  marginBottom: "20px",
+                  fontWeight: "bold"
+                }}>
+                  <i className="bi bi-check-circle-fill"></i>
+                </div>
+                <h4 style={{ marginBottom: "16px", color: "#1D6AB7", fontWeight: "700", fontSize: "22px" }}>
+                  Save Successful
+                </h4>
+                <p style={{ color: "#555", marginBottom: "0", lineHeight: "1.8", fontSize: "15px" }}>
+                  {saveConfirmMessage}
+                </p>
+                <p style={{ color: "#888", fontSize: "13px", marginTop: "12px" }}>
+                  The table has been updated with the latest data.
+                </p>
+              </div>
+              <div className="modal-footer border-0 bg-light justify-content-center pb-4">
+                <button
+                  type="button"
+                  className="btn btn-success"
+                  onClick={() => setShowSaveConfirmModal(false)}
+                  style={{ padding: "10px 40px", fontSize: "15px", fontWeight: "600" }}
+                >
+                  OK
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 

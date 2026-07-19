@@ -150,6 +150,8 @@ default_cors_origins = [
     'http://127.0.0.1:5173',
     'http://localhost:5174',
     'http://127.0.0.1:5174',
+    'http://localhost:5176',
+    'http://127.0.0.1:5176',
     'https://frontend-service-production-ea39.up.railway.app',  # Railway frontend
     'https://techtrack-frontend.onrender.com',  # Render frontend (if needed later)
     'https://techhtrack-frontend.onrender.com',  # Alternative Render domain
@@ -204,54 +206,53 @@ WSGI_APPLICATION = 'djangomonitor.wsgi.application'
 # Database configuration - supports PostgreSQL (Render), MySQL (Docker), and SQLite
 import dj_database_url
 
-# HIGHEST PRIORITY: DATABASE_URL from environment (Render PostgreSQL or Railway/Heroku)
-# If DATABASE_URL is set, use it exclusively and ignore DB_HOST
-if os.environ.get('DATABASE_URL'):
-    DATABASES = {
-        'default': dj_database_url.config(
-            default=os.environ.get('DATABASE_URL'),
-            conn_max_age=600,
-            # Auto-detect: dj_database_url recognizes postgresql:// vs mysql:// in URL
-        )
-    }
-    if 'postgresql' in os.environ.get('DATABASE_URL', '').lower():
-        print(f"[settings.py] ✅ Using PostgreSQL from DATABASE_URL (Render/Production)")
-    else:
-        print(f"[settings.py] ✅ Using MySQL from DATABASE_URL")
-# MEDIUM PRIORITY: Legacy MYSQL_URL (Railway MySQL)
-elif os.environ.get('MYSQL_URL'):
-    DATABASES = {
-        'default': dj_database_url.config(
-            default=os.environ.get('MYSQL_URL'),
-            conn_max_age=600
-        )
-    }
-    print(f"[settings.py] ✅ Using MySQL from MYSQL_URL (Railway)")
-# LOWER PRIORITY: Individual DB_* variables (local Docker development)
-elif os.environ.get('DB_HOST'):
-    DATABASES = {
-        'default': {
-            'ENGINE': os.environ.get('DB_ENGINE', 'django.db.backends.mysql'),
-            'NAME': os.environ.get('DB_NAME', 'techtrack_db'),
-            'USER': os.environ.get('DB_USER', 'techtrack_user'),
-            'PASSWORD': os.environ.get('DB_PASSWORD', 'techtrack_secure_password'),
-            'HOST': os.environ.get('DB_HOST'),
-            'PORT': os.environ.get('DB_PORT', '3306'),
-            'OPTIONS': {
-                'charset': 'utf8mb4',
-            },
+# Local dev: always use SQLite.
+# Production/hosted environments should set USE_MYSQL=1 (or DATABASE_URL).
+if os.environ.get('RENDER') or os.environ.get('USE_MYSQL', '').lower() in ('1','true','yes','y','on'):
+    # HIGHEST PRIORITY: DATABASE_URL from environment (Render PostgreSQL or Railway)
+    if os.environ.get('DATABASE_URL'):
+        DATABASES = {
+            'default': dj_database_url.config(
+                default=os.environ.get('DATABASE_URL'),
+                conn_max_age=600,
+            )
         }
-    }
-    print(f"[settings.py] Using local MySQL at {os.environ.get('DB_HOST')}")
-# LOWEST PRIORITY: SQLite fallback
+    # MEDIUM PRIORITY: Legacy MYSQL_URL (Railway MySQL)
+    elif os.environ.get('MYSQL_URL') and os.environ.get('FORCE_MYSQL', '').lower() in ('1','true','yes'):
+        DATABASES = {
+            'default': dj_database_url.config(
+                default=os.environ.get('MYSQL_URL'),
+                conn_max_age=600
+            )
+        }
+    else:
+        # Fallback to MySQL-like env vars if present
+        DATABASES = {
+            'default': {
+                'ENGINE': os.environ.get('DB_ENGINE', 'django.db.backends.mysql'),
+                'NAME': os.environ.get('DB_NAME', 'techtrack_db'),
+                'USER': os.environ.get('DB_USER', 'techtrack_user'),
+                'PASSWORD': os.environ.get('DB_PASSWORD', 'techtrack_secure_password'),
+                'HOST': os.environ.get('DB_HOST', '127.0.0.1'),
+                'PORT': os.environ.get('DB_PORT', '3306'),
+                'OPTIONS': {'charset': 'utf8mb4'},
+            }
+        }
 else:
+    # Use the existing techtrack_db if it exists, otherwise use db.sqlite3
+    default_db_name = str(BASE_DIR / 'db.sqlite3')
+    existing_db = str(BASE_DIR / 'techtrack_db')
+    if os.path.exists(existing_db):
+        default_db_name = existing_db
+        print("[settings.py] Found existing techtrack_db, using it as the database")
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.sqlite3',
-            'NAME': BASE_DIR / 'db.sqlite3',
+            'NAME': os.environ.get('DB_NAME', default_db_name),
         }
     }
-    print("[settings.py] WARNING: Using SQLite - no database URL/variables found")
+    print("[settings.py] ✅ Using SQLite for local dev")
+
 
 # Password validation
 # https://docs.djangoproject.com/en/5.1/ref/settings/#auth-password-validators
@@ -309,10 +310,21 @@ SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 # Cookie security settings for cross-domain requests with credentials
 # SameSite=None allows cookies to be sent in cross-site requests (needed for frontend-backend on different Railway subdomains)
 # Secure=True required for SameSite=None in modern browsers - Django sees HTTPS via X-Forwarded-Proto
-CSRF_COOKIE_SECURE = True  # Secure flag required for SameSite=None
-SESSION_COOKIE_SECURE = True  # Secure flag required for SameSite=None
-CSRF_COOKIE_SAMESITE = 'None'  # Allow cross-site cookies for different Railway subdomains
-SESSION_COOKIE_SAMESITE = 'None'  # Allow cross-site cookies for different Railway subdomains
+# Cookie `Secure` flags: enable in production (when DEBUG is False),
+# disable in local DEBUG to allow cookies over plain HTTP during development.
+# Cookie security settings
+# Local dev must allow session cookies over HTTP between Vite (localhost:5174) and Django (localhost:8000)
+CSRF_COOKIE_SECURE = False
+SESSION_COOKIE_SECURE = False
+if DEBUG:
+    # In local development we serve over plain HTTP and use the Vite proxy.
+    # Use 'Lax' so browsers will accept the cookie without Secure flag.
+    CSRF_COOKIE_SAMESITE = 'Lax'
+    SESSION_COOKIE_SAMESITE = 'Lax'
+else:
+    # In production we need SameSite=None for cross-subdomain cookies and Secure=True
+    CSRF_COOKIE_SAMESITE = 'None'
+    SESSION_COOKIE_SAMESITE = 'None'
 
 CSRF_COOKIE_HTTPONLY = False  # Needed for CSRF token access from JS
 SESSION_COOKIE_HTTPONLY = True  # Keep session cookie httponly for security (but still sent with credentials: include)

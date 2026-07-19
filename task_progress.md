@@ -1,0 +1,9 @@
+- [x] Analyze codebase and understand all dependencies
+- [x] Backend: Update serializer declaration changes (removed deadline_extension from serializer fields declaration)
+- [x] Frontend: Rewrite TaskStatus.jsx to group by request_id (one row per issuance)
+- [x] Frontend: Show all products in a single cell (e.g., "Product1, Product2, Product3")
+- [x] Frontend: Rename "Due Date" → "Deadline" column header
+- [x] Frontend: Remove "Deadline Extension" column header and data
+- [x] Frontend: Update TaskStatusPODetailModal.jsx for issuance-based grouping
+- [x] Frontend: Remove deadline_extension references from TaskStatusPODetailModal
+- [x] Verify all changes compile and work together (build check)

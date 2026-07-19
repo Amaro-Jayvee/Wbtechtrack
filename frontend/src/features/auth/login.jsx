@@ -31,8 +31,7 @@ function Login() {
 
     const fetchLoginBackground = async () => {
       try {
-        const backendUrl = getBackendUrl();
-        const response = await fetch(`${backendUrl}/app/public/login-background/`);
+        const response = await fetch(`${getBackendUrl()}/app/public/login-background/`);
         if (!response.ok) {
           return;
         }

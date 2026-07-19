@@ -587,6 +587,8 @@ class ProductProcessSerializer(serializers.ModelSerializer):
     request_product_completed_at = serializers.SerializerMethodField()
     is_pst_01 = serializers.SerializerMethodField()
     overall_progress = serializers.SerializerMethodField()
+    step_progress = serializers.SerializerMethodField()
+    finished_quantity = serializers.SerializerMethodField()
     quota_updated_by_name = serializers.SerializerMethodField()
     defect_updated_by_name = serializers.SerializerMethodField()
     defect_logs = DefectLogSerializer(many=True, read_only=True)
@@ -730,79 +732,42 @@ class ProductProcessSerializer(serializers.ModelSerializer):
         return False
     
     def get_overall_progress(self, obj):
-        """Calculate overall progress as work completed across all steps.
-        Progress = (Total work done) / (Total work needed across all steps)
-        Where: Total work needed = total_quantity × number_of_steps
+        """
+        Calculate overall progress for this product using the cascade model.
+        Returns the Finished Product progress = finished_quantity ÷ original_product_quota.
+        This represents TRUE delivery progress.
         """
         if not obj.request_product:
             return 0
         
-        # Get all steps for this product
-        all_steps = ProductProcess.objects.filter(
-            request_product=obj.request_product,
-            archived_at__isnull=True
-        ).order_by('step_order')
+        finished_qty = obj.request_product.get_finished_quantity()
+        total_quota = obj.request_product.quantity
         
-        if not all_steps.exists():
+        if total_quota <= 0:
             return 0
         
-        # Get the total quantity for this product
-        total_quantity = obj.request_product.quantity
-        if total_quantity <= 0:
+        progress = min(int((finished_qty / total_quota) * 100), 100)
+        return progress
+    
+    def get_step_progress(self, obj):
+        """
+        Calculate this step's individual progress using the cascade denominator.
+        Step 1: completed ÷ product_quota
+        Step N: completed ÷ previous_step_completed
+        """
+        if not obj.request_product:
             return 0
         
-        total_steps = all_steps.count()
-        
-        # Separate PST-01 and other steps
-        pst_01_steps = []
-        other_steps = []
-        
-        for s in all_steps:
-            is_pst_01 = False
-            # Check process_name first
-            if s.process_name:
-                process_name = str(s.process_name).upper()
-                if 'WITHDRAWAL' in process_name:
-                    is_pst_01 = True
-            # Check process_number - ONLY exact matches
-            if not is_pst_01 and s.process_number:
-                pst_num = str(s.process_number).strip().upper()
-                if pst_num in ['PST-01', 'PST01', 'PST 01', 'PST-1', 'PST1', 'PST 1']:
-                    is_pst_01 = True
-            
-            if is_pst_01:
-                pst_01_steps.append(s)
-            else:
-                other_steps.append(s)
-        
-        progress = 0
-        
-        # Calculate PST-01 progress (10% weight)
-        # PST-01 is binary: either completed or not
-        if pst_01_steps:
-            pst_01_completed = sum(1 for s in pst_01_steps if s.is_completed)
-            pst_01_weight = 10
-            pst_01_progress = (pst_01_completed / len(pst_01_steps)) * pst_01_weight
-            progress += pst_01_progress
-        
-        # Calculate Other steps progress (90% weight)
-        # Progress = (total work done across other steps) / (total work needed)
-        if other_steps:
-            # Total work needed for other steps = total_quantity × num_other_steps
-            total_work_needed = total_quantity * len(other_steps)
-            
-            # Total work done = sum of completed_quota across all other steps
-            total_work_done = sum(s.completed_quota for s in other_steps)
-            
-            # Progress as percentage of work done (only count up to 100%)
-            work_progress = min((total_work_done / total_work_needed) * 100, 100) if total_work_needed > 0 else 0
-            
-            # Weight it at 90%
-            other_progress = (work_progress / 100) * 90
-            progress += other_progress
-        
-        final_progress = int(min(progress, 100))  # Cap at 100%
-        return final_progress
+        return obj.request_product.get_step_progress(obj)
+    
+    def get_finished_quantity(self, obj):
+        """
+        Return the finished product quantity for this product (last step's completed quota).
+        Only meaningful for the last step, but returned for all steps for consistency.
+        """
+        if not obj.request_product:
+            return 0
+        return obj.request_product.get_finished_quantity()
     
     def get_quota_updated_by_name(self, obj):
         """Get the name of the user who last updated the quota"""
@@ -829,7 +794,7 @@ class ProductProcessSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = ProductProcess
-        fields = ['id', 'request_product', 'workers', 'process', 'process_number', 'step_order', 'completed_quota', 'defect_count', 'is_completed', 'production_date', 'created_at', 'updated_at', 'archived_at', 'progress', 'completed_summary', 'request_id', 'requester_name', 'request_product_id', 'request_product_archived_at', 'request_product_completed_at', 'total_quota', 'total_steps', 'process_name', 'product_name', 'worker_names', 'due_date', 'deadline_extension', 'production_date_formatted', 'is_pst_01', 'overall_progress', 'quota_updated_at', 'quota_updated_by', 'quota_updated_by_name', 'defect_type', 'defect_description', 'defect_updated_at', 'defect_updated_by', 'defect_updated_by_name', 'defect_logs', 'is_overtime', 'ot_quota', 'ot_defect_logs', 'ot_enabled_date']
+        fields = ['id', 'request_product', 'workers', 'process', 'process_number', 'step_order', 'completed_quota', 'defect_count', 'is_completed', 'production_date', 'created_at', 'updated_at', 'archived_at', 'progress', 'completed_summary', 'request_id', 'requester_name', 'request_product_id', 'request_product_archived_at', 'request_product_completed_at', 'total_quota', 'total_steps', 'process_name', 'product_name', 'worker_names', 'due_date', 'deadline_extension', 'production_date_formatted', 'is_pst_01', 'overall_progress', 'step_progress', 'finished_quantity', 'quota_updated_at', 'quota_updated_by', 'quota_updated_by_name', 'defect_type', 'defect_description', 'defect_updated_at', 'defect_updated_by', 'defect_updated_by_name', 'defect_logs', 'is_overtime', 'ot_quota', 'ot_defect_logs', 'ot_enabled_date']
 
 class ProcessTemplateSerializer(serializers.ModelSerializer):
     process_name = serializers.CharField(source='process.name', read_only=True)
