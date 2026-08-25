@@ -3,6 +3,7 @@ import Calendar from "react-calendar";
 import "react-calendar/dist/Calendar.css";
 import "../../features/dashboard/Dashboard.css";
 import { apiCall } from "../../shared/utils/csrfUtils.js";
+import { fetchProductionSchedule, computeMinDeadline, getScheduleSummary } from "../../shared/utils/productionSchedule.js";
 
 // Helper function to get minimum allowed date based on required lead days.
 const getMinimumDate = (leadDays = 4) => {
@@ -19,6 +20,295 @@ const formatDateToString = (date) => {
   return d.toISOString().split('T')[0];
 };
 
+const escapeHtml = (value) =>
+  String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+
+const formatDisplayDate = (value) => {
+  if (!value) return 'Not set';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return String(value);
+  return parsed.toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  });
+};
+
+const buildPurchaseOrderPrintHtml = (data) => {
+  const items = Array.isArray(data?.products) ? data.products : [];
+  const customerName = data?.requester_name || data?.requester_full_name || data?.requester || 'N/A';
+  const customerCompany = data?.requester_company || data?.company_name || '';
+  const createdAt = data?.created_at || data?.createdAt || data?.requested_at || null;
+  const rows = items.length > 0
+    ? items.map((product, index) => `
+      <tr>
+        <td class="center">${index + 1}</td>
+        <td>${escapeHtml(product.product_name || product.productName || 'N/A')}</td>
+        <td class="center">${escapeHtml(product.quantity || 0)}</td>
+      </tr>
+    `).join('')
+    : `
+      <tr>
+        <td colspan="3" class="center muted">No items were found for this project.</td>
+      </tr>
+    `;
+
+  return `
+    <!doctype html>
+    <html lang="en">
+      <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>PO-${escapeHtml(data?.requestId || 'N/A')}</title>
+        <style>
+          @page { size: A4; margin: 8mm; }
+          * { box-sizing: border-box; }
+          html, body {
+            width: 100%;
+            height: 100%;
+          }
+          body {
+            margin: 0;
+            font-family: Arial, Helvetica, sans-serif;
+            color: #1f2937;
+            background: #fff;
+          }
+          .page {
+            width: 100%;
+            min-height: calc(100vh - 16mm);
+            display: flex;
+            flex-direction: column;
+          }
+          .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 16px;
+            padding-bottom: 12px;
+            border-bottom: 2px solid #1d6ab7;
+            margin-bottom: 14px;
+          }
+          .brand {
+            display: flex;
+            gap: 12px;
+            align-items: flex-start;
+          }
+          .brand img {
+            width: 54px;
+            height: 54px;
+            object-fit: contain;
+          }
+          .brand h1 {
+            margin: 0;
+            font-size: 18px;
+            line-height: 1.1;
+            color: #1d6ab7;
+          }
+          .brand p,
+          .company p {
+            margin: 2px 0;
+            font-size: 10px;
+            line-height: 1.35;
+          }
+          .company {
+            text-align: right;
+            font-size: 10px;
+            line-height: 1.35;
+          }
+          .title {
+            text-align: center;
+            margin: 10px 0 14px;
+          }
+          .title h2 {
+            margin: 0 0 6px;
+            font-size: 22px;
+            color: #1d6ab7;
+          }
+          .title p {
+            margin: 0;
+            font-size: 12px;
+            color: #6b7280;
+          }
+          .meta {
+            display: grid;
+            grid-template-columns: 1.2fr 1fr 1fr;
+            gap: 12px;
+            margin-bottom: 12px;
+          }
+          .card {
+            border: 1px solid #dbe3ee;
+            border-radius: 10px;
+            padding: 12px 14px;
+            background: #f8fbff;
+          }
+          .label {
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: #64748b;
+            margin-bottom: 6px;
+          }
+          .value {
+            font-size: 14px;
+            font-weight: 700;
+            color: #0f172a;
+            word-break: break-word;
+          }
+          .value.accent { color: #1d6ab7; }
+          table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 4px;
+          }
+          th, td {
+            border: 1px solid #d7dee8;
+            padding: 10px;
+            font-size: 11px;
+          }
+          th {
+            background: #eff6ff;
+            color: #0f172a;
+            text-align: left;
+          }
+          td.center, th.center { text-align: center; }
+          .muted { color: #6b7280; }
+          .section-title {
+            margin: 12px 0 8px;
+            font-size: 13px;
+            font-weight: 700;
+            color: #1d6ab7;
+          }
+          .status {
+            margin-top: 12px;
+            border: 1px solid #86efac;
+            background: #f0fdf4;
+            color: #166534;
+            padding: 10px 12px;
+            border-radius: 8px;
+            font-size: 11px;
+            font-weight: 700;
+          }
+          .footer {
+            margin-top: auto;
+            padding-top: 14px;
+            border-top: 1px solid #d7dee8;
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            font-size: 10px;
+            color: #6b7280;
+          }
+          .signature { width: 220px; text-align: center; }
+          .signature-line {
+            margin-top: 28px;
+            border-top: 1px solid #111827;
+            padding-top: 4px;
+            color: #111827;
+            font-size: 10px;
+          }
+        </style>
+      </head>
+      <body>
+        <div class="page">
+          <div class="header">
+            <div class="brand">
+              <img src="/Group 1.png" alt="WB Logo" />
+              <div>
+                <h1>WB Technologies Inc.</h1>
+                <p>B2, L11, Greenland Bulihan Business Park</p>
+                <p>Tel: (02) 994.9971 | Mobile: 0922 823 7874</p>
+                <p>Email: wbtechnologiesinc@yahoo.com</p>
+                <p>worksbellphiles@yahoo.com</p>
+              </div>
+            </div>
+            <div class="company">
+              <p><strong>Project Order Report</strong></p>
+              <p>Generated: ${escapeHtml(new Date().toLocaleString('en-US', {
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+                hour12: true,
+              }))}</p>
+            </div>
+          </div>
+
+          <div class="title">
+            <h2>PROJECT ORDER CONFIRMATION</h2>
+            <p>Official printout for created project and production approval</p>
+          </div>
+
+          <div style="flex: 1; display: flex; flex-direction: column;">
+            <div class="meta">
+              <div class="card">
+                <div class="label">Customer</div>
+                <div class="value">${escapeHtml(customerName)}</div>
+                ${customerCompany ? `<div class="muted" style="margin-top: 4px; font-size: 11px;">${escapeHtml(customerCompany)}</div>` : ''}
+              </div>
+              <div class="card">
+                <div class="label">Project Order #</div>
+                <div class="value accent">PO-${escapeHtml(data?.requestId || 'N/A')}</div>
+              </div>
+              <div class="card">
+                <div class="label">Deadline</div>
+                <div class="value accent">${escapeHtml(formatDisplayDate(data?.deadline))}</div>
+              </div>
+            </div>
+
+            <div class="meta" style="grid-template-columns: 1fr 1fr 1fr;">
+              <div class="card">
+                <div class="label">Created Date</div>
+                <div class="value">${escapeHtml(formatDisplayDate(createdAt))}</div>
+              </div>
+              <div class="card">
+                <div class="label">Item Count</div>
+                <div class="value accent">${items.length}</div>
+              </div>
+              <div class="card">
+                <div class="label">Status</div>
+                <div class="value accent">Approved</div>
+              </div>
+            </div>
+
+            <div class="section-title">Items</div>
+            <table>
+              <thead>
+                <tr>
+                  <th class="center" style="width: 70px;">#</th>
+                  <th>Item</th>
+                  <th class="center" style="width: 110px;">Quantity</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${rows}
+              </tbody>
+            </table>
+
+            <div class="status">Approved and queued for production</div>
+          </div>
+
+          <div class="footer">
+            <div>
+              <div><strong>Reference:</strong> PO-${escapeHtml(data?.requestId || 'N/A')}</div>
+              <div><strong>Customer:</strong> ${escapeHtml(customerName)}</div>
+            </div>
+            <div class="signature">
+              <div class="signature-line">Authorized Approval</div>
+            </div>
+          </div>
+        </div>
+      </body>
+    </html>
+  `;
+};
+
 function AdminRequestApproval() {
   const MAX_PRODUCT_QUANTITY = 50000;
   const PRODUCTS_PER_PAGE = 5;
@@ -30,117 +320,141 @@ function AdminRequestApproval() {
     return 16;
   };
 
-  // SAFE PRINT FUNCTION - Opens in new tab
+  // INLINE PRINT - renders content in a hidden overlay and calls window.print() directly
+  const [printMode, setPrintMode] = useState(false);
+
   const handlePrintPurchaseOrder = (data) => {
-    // Create new window for printing
-    const printWindow = window.open('', '_blank');
-    
-    // Build products HTML from data
-    let productsHTML = '';
-    if (data?.products && data.products.length > 0) {
-      productsHTML = data.products.map(p => `<tr style="border-bottom: 1px solid #ddd;"><td style="padding: 8px; padding-left: 0; text-align: left;">${p.product_name}</td><td style="padding: 8px; text-align: center;">${p.quantity}</td></tr>`).join('');
-    } else {
-      productsHTML = '<tr style="border-bottom: 1px solid #ddd;"><td colspan="2" style="padding: 8px; padding-left: 0; text-align: left; color: #999;">No products</td></tr>';
+    if (!data) return;
+
+    const printWindow = window.open("", "_blank", "width=900,height=1200");
+    if (printWindow) {
+      printWindow.document.open();
+      printWindow.document.write(buildPurchaseOrderPrintHtml(data));
+      printWindow.document.close();
+      printWindow.focus();
+      printWindow.onload = () => {
+        printWindow.print();
+      };
+      printWindow.onafterprint = () => printWindow.close();
+      setShowSuccessModal(false);
+      return;
     }
 
-    const html = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <meta charset="UTF-8">
-        <title>Purchase Order ${data?.requestId}</title>
-        <style>
-          * { margin: 0; padding: 0; }
-          body { font-family: Arial, sans-serif; background: white; padding: 40px; color: #333; line-height: 1.6; }
-          @media print {
-            body { margin: 0; padding: 20px; }
-          }
-        </style>
-      </head>
-      <body>
-        <div style="font-family: Arial, sans-serif; background: white; color: #333; line-height: 1.6;">
-          
-          <!-- HEADER -->
-          <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 30px; padding-bottom: 20px; border-bottom: 2px solid #1d6ab7;">
-            <img src="/Group 1.png" alt="WB Logo" style="width: 60px; height: 60px; object-fit: contain;" />
-            <div style="text-align: right; font-size: 9px; line-height: 1.4;">
-              <div style="font-size: 11px; font-weight: bold; margin-bottom: 4px;">WB Technologies Inc.</div>
-              <div>B2, L11, Greenland Bulihan Business Park</div>
-              <div>Tel: (02) 994.9971 | Mobile: 0922 823 7874</div>
-              <div>Email: wbtechnologiesinc@yahoo.com</div>
-              <div>worksbellphiles@yahoo.com</div>
+    // Fallback for browsers that block popups.
+    setShowSuccessModal(false);
+    setTimeout(() => {
+      setPrintMode(data);
+      setTimeout(() => {
+        window.print();
+      }, 500);
+    }, 100);
+  };
+
+  // Listen for afterprint to restore normal view
+  useEffect(() => {
+    const handleAfterPrint = () => {
+      setPrintMode(false);
+    };
+    window.addEventListener('afterprint', handleAfterPrint);
+    return () => window.removeEventListener('afterprint', handleAfterPrint);
+  }, []);
+
+  // Render purchase order report as JSX
+  const renderPrintContent = (data) => {
+    if (!data) return null;
+
+    return (
+      <div className="admin-print-report-content" style={{
+        fontFamily: "Arial, sans-serif",
+        padding: "20px",
+        backgroundColor: "white",
+        color: "#333",
+        lineHeight: 1.4
+      }}>
+        {/* HEADER */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "20px", paddingBottom: "12px", borderBottom: "2px solid #1d6ab7" }}>
+          <img src="/Group 1.png" alt="WB Logo" style={{ width: "50px", height: "50px", objectFit: "contain" }} />
+          <div style={{ textAlign: "right", fontSize: "8px", lineHeight: 1.3 }}>
+            <div style={{ fontSize: "10px", fontWeight: "bold", marginBottom: "3px" }}>WB Technologies Inc.</div>
+            <div>B2, L11, Greenland Bulihan Business Park</div>
+            <div>Tel: (02) 994.9971 | Mobile: 0922 823 7874</div>
+            <div>Email: wbtechnologiesinc@yahoo.com</div>
+            <div>worksbellphiles@yahoo.com</div>
+          </div>
+        </div>
+
+        {/* TITLE */}
+        <div style={{ textAlign: "center", marginBottom: "20px" }}>
+          <div style={{ fontSize: "16px", fontWeight: "bold", color: "#1d6ab7", marginBottom: "8px" }}>PURCHASE ORDER CONFIRMATION</div>
+          <div style={{ fontSize: "10px", color: "#666" }}>Request Approval Report</div>
+        </div>
+
+          {/* REQUEST DETAILS */}
+          <div style={{ marginBottom: "15px", fontSize: "9px", display: "flex", justifyContent: "flex-start", gap: "20px", alignItems: "flex-start" }}>
+            <div style={{ flex: "1" }}>
+              <div style={{ fontWeight: "bold", color: "#666", marginBottom: "4px", lineHeight: 1.2 }}>Customer Name</div>
+              <div style={{ fontSize: "10px" }}>{data?.requester || 'N/A'}</div>
+            </div>
+            <div style={{ flex: "1", textAlign: "center" }}>
+              <div style={{ fontWeight: "bold", color: "#666", marginBottom: "4px", lineHeight: 1.2 }}>PO Number</div>
+              <div style={{ fontSize: "12px", fontWeight: "bold", color: "#1d6ab7" }}>PO-{data?.requestId || 'N/A'}</div>
             </div>
           </div>
 
-          <!-- TITLE -->
-          <div style="text-align: center; margin-bottom: 30px;">
-            <div style="font-size: 18px; font-weight: bold; color: #1d6ab7; margin-bottom: 10px;">PURCHASE ORDER CONFIRMATION</div>
-            <div style="font-size: 12px; color: #666;">Request Approval Report</div>
-          </div>
-
-          <!-- REQUEST DETAILS -->
-          <div style="margin-bottom: 30px; font-size: 11px; display: flex; justify-content: flex-start; gap: 40px; align-items: flex-start;">
-            <div style="flex: 1;">
-              <div style="font-weight: bold; color: #666; margin-bottom: 6px; line-height: 1.2;">Customer Name</div>
-              <div style="font-size: 12px;">${data?.requester || 'N/A'}</div>
-            </div>
-            <div style="flex: 1; text-align: center;">
-              <div style="font-weight: bold; color: #666; margin-bottom: 6px; line-height: 1.2;">PO Number</div>
-              <div style="font-size: 14px; font-weight: bold; color: #1d6ab7;">PO-${data?.requestId || 'N/A'}</div>
-            </div>
-          </div>
-
-          <!-- PRODUCTS -->
-          <div style="margin-bottom: 30px; margin-left: 0;">
-            <table style="width: 100%; border-collapse: collapse; font-size: 10px; margin-left: 0;">
+          {/* PRODUCTS */}
+          <div style={{ marginBottom: "20px", marginLeft: 0 }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "8px", marginLeft: 0 }}>
               <thead>
-                <tr style="background-color: #f5f5f5; border-bottom: 2px solid #1d6ab7;">
-                  <th style="padding: 8px; text-align: left; font-weight: bold; padding-left: 0;">Products</th>
-                  <th style="padding: 8px; text-align: center; font-weight: bold; width: 80px;">Qty</th>
+                <tr style={{ backgroundColor: "#f5f5f5", borderBottom: "1px solid #1d6ab7" }}>
+                  <th style={{ padding: "4px", textAlign: "left", fontWeight: "bold", paddingLeft: 0 }}>Products</th>
+                  <th style={{ padding: "4px", textAlign: "center", fontWeight: "bold", width: "60px" }}>Qty</th>
                 </tr>
               </thead>
               <tbody>
-                ${productsHTML}
+                {data?.products && data.products.length > 0 ? (
+                  data.products.map((product, idx) => (
+                    <tr key={idx} style={{ borderBottom: "1px solid #ddd" }}>
+                      <td style={{ padding: "4px", paddingLeft: 0, textAlign: "left" }}>{product.product_name || product.productName}</td>
+                      <td style={{ padding: "4px", textAlign: "center" }}>{product.quantity}</td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr style={{ borderBottom: "1px solid #ddd" }}>
+                    <td colSpan="2" style={{ padding: "4px", paddingLeft: 0, textAlign: "left", color: "#999" }}>No products</td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
 
-          <!-- STATUS -->
-          <div style="background-color: #f0fdf4; border: 1px solid #22c55e; padding: 12px; margin-bottom: 30px; border-radius: 4px; font-size: 11px; margin-left: 0;">
-            <div style="color: #22c55e; font-weight: bold; margin-bottom: 5px;">✓ APPROVED</div>
+          {/* STATUS */}
+          <div style={{ backgroundColor: "#f0fdf4", border: "1px solid #22c55e", padding: "8px", marginBottom: "20px", borderRadius: "4px", fontSize: "9px", marginLeft: 0 }}>
+            <div style={{ color: "#22c55e", fontWeight: "bold", marginBottom: "3px" }}>✓ APPROVED</div>
             <div>Request approved and sent to production manager's queue</div>
           </div>
 
-          <!-- FOOTER -->
-          <div style="margin-bottom: 30px; font-size: 11px; border-top: 1px solid #ddd; padding-top: 20px; display: table; width: 100%; margin-left: 0;">
-            <div style="display: table-row;">
-              <div style="display: table-cell; width: 33.33%; padding-right: 20px; vertical-align: bottom;">
-                <div style="font-weight: bold; color: #666;">Date</div>
-                <div style="font-size: 12px;">${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</div>
+          {/* FOOTER */}
+          <div style={{ marginBottom: "20px", fontSize: "9px", borderTop: "1px solid #ddd", paddingTop: "12px", display: "table", width: "100%", marginLeft: 0 }}>
+            <div style={{ display: "table-row" }}>
+              <div style={{ display: "table-cell", width: "33.33%", paddingRight: "15px", verticalAlign: "bottom" }}>
+                <div style={{ fontWeight: "bold", color: "#666" }}>Date</div>
+                <div style={{ fontSize: "10px" }}>{new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</div>
               </div>
-              <div style="display: table-cell; width: 33.33%; padding-right: 20px; vertical-align: bottom;">
-                <div style="font-weight: bold; color: #666;">Delivery Deadline</div>
-                <div style="font-size: 12px; color: #1d6ab7; font-weight: bold;">${data?.deadline || 'Not Set'}</div>
+              <div style={{ display: "table-cell", width: "33.33%", paddingRight: "15px", verticalAlign: "bottom" }}>
+                <div style={{ fontWeight: "bold", color: "#666" }}>Delivery Deadline</div>
+                <div style={{ fontSize: "10px", color: "#1d6ab7", fontWeight: "bold" }}>{data?.deadline || 'Not Set'}</div>
               </div>
-              <div style="display: table-cell; width: 33.33%; text-align: center; vertical-align: bottom;">
-                <div style="font-weight: bold; color: #666; margin-bottom: 4px;">Approved By</div>
-                <div style="border-bottom: 1px solid #000; padding-bottom: 2px; min-height: 20px;"></div>
+              <div style={{ display: "table-cell", width: "33.33%", textAlign: "center", verticalAlign: "bottom" }}>
+                <div style={{ fontWeight: "bold", color: "#666", marginBottom: "3px" }}>Approved By</div>
+                <div style={{ borderBottom: "1px solid #000", paddingBottom: "2px", minHeight: "15px" }}></div>
               </div>
             </div>
           </div>
-        </div>
-      </body>
-      </html>
-    `;
-
-    printWindow.document.write(html);
-    printWindow.document.close();
-    setTimeout(() => {
-      printWindow.print();
-    }, 250);
+      </div>
+    );
   };
 
-  // Create Product Purchase Order Form state
+  // Create Project Form state
   const [createRequestLoading, setCreateRequestLoading] = useState(false);
   const [createRequestMessage, setCreateRequestMessage] = useState("");
   const [showSuccessModal, setShowSuccessModal] = useState(false);
@@ -173,11 +487,41 @@ function AdminRequestApproval() {
   const [openRowActionMenuIndex, setOpenRowActionMenuIndex] = useState(null);
   const [productsPage, setProductsPage] = useState(1);
 
+  // Production schedule state
+  const [productionSchedule, setProductionSchedule] = useState(null);
+  
+  // Duplicate project warning modal state
+  const [showDuplicateWarning, setShowDuplicateWarning] = useState(false);
+  const [pendingRequesterId, setPendingRequesterId] = useState(null);
+  const [pendingRequesterName, setPendingRequesterName] = useState("");
+
   const dropdownButtonRef = useRef(null);
   const dropdownMenuRef = useRef(null);
   const customerDropdownRef = useRef(null);
   const customerMenuRef = useRef(null);
   const calendarRef = useRef(null);
+
+  // Check if customer has existing project
+  const checkCustomerProject = async (customerId) => {
+    if (!customerId) return false;
+    try {
+      const response = await apiCall(`/app/customer-has-project/${customerId}/`, {
+        method: "GET",
+      });
+      if (response.ok) {
+        const data = await response.json();
+        if (data.has_project) {
+          setPendingRequesterId(customerId);
+          setPendingRequesterName(data.customer_name || "");
+          setShowDuplicateWarning(true);
+          return true;
+        }
+      }
+    } catch (err) {
+      console.error("Error checking customer project:", err);
+    }
+    return false;
+  };
 
   useEffect(() => {
     // Fetch products and customers on component mount for the form
@@ -491,7 +835,7 @@ function AdminRequestApproval() {
       removeProduct(productToCancelIndex);
       cancelSucceeded = true;
       setCreateRequestMessage("");
-      showCancelSuccessToast(`Cancelled \"${product.product_name}\" and moved it to Cancelled Orders`);
+      showCancelSuccessToast(`Cancelled "${product.product_name}" and moved it to Cancelled Orders`);
       window.dispatchEvent(new Event("refreshNotifications"));
       window.dispatchEvent(new Event("requestCancelled"));
     } catch (err) {
@@ -562,12 +906,15 @@ function AdminRequestApproval() {
       const data = await response.json();
 
       if (response.ok) {
+        const selectedCustomer = customers.find((customer) => customer.id === Number(formData.requester_id));
         setSuccessModalData({
           requestId: data.request_id,
-          requester: data.requester,
+          requester: selectedCustomer?.full_name || data.requester || data.requester_name || 'N/A',
+          requesterCompany: selectedCustomer?.company_name || data.requester_company || '',
+          createdAt: data.created_at || data.createdAt || new Date().toISOString().slice(0, 10),
           message: data.message,
           products: addedProducts,
-          deadline: formData.deadline
+          deadline: formData.deadline,
         });
         setShowSuccessModal(true);
         window.dispatchEvent(new Event("refreshNotifications"));
@@ -577,15 +924,15 @@ function AdminRequestApproval() {
         setShowDeadlineCalendar(false);
         setProductsCompleted(false);
       } else {
-        let errorMessage = "Failed to create product purchase order";
+        let errorMessage = "Failed to create project";
         if (data.detail) errorMessage = data.detail;
         else if (data.error) errorMessage = data.error;
         else if (data.errors) errorMessage = JSON.stringify(data.errors);
         setCreateRequestMessage(`✗ Error: ${errorMessage}`);
       }
     } catch (err) {
-      console.error("Error submitting product purchase order:", err);
-      setCreateRequestMessage("✗ Error submitting product purchase order");
+      console.error("Error submitting project:", err);
+      setCreateRequestMessage("✗ Error submitting project");
     } finally {
       setCreateRequestLoading(false);
     }
@@ -657,11 +1004,11 @@ function AdminRequestApproval() {
       {/* Page Header */}
       <div style={{ marginBottom: "2rem" }}>
         <p style={{ color: "#64748b", marginBottom: 0, fontSize: "0.95rem" }}>
-          Create product purchase orders for customers. This panel now uses the light blue system color for visual consistency.
+          Create projects for customers.
         </p>
       </div>
 
-      {/* CREATE PRODUCT PURCHASE ORDER FORM */}
+      {/* CREATE PROJECT FORM */}
       <div style={{
         background: adminFormTheme.panelBackground,
         borderRadius: "18px",
@@ -718,6 +1065,120 @@ function AdminRequestApproval() {
           >
             <i className="bi bi-check-circle-fill"></i>
             <span>{cancelToast.message}</span>
+          </div>
+        )}
+
+        {/* Duplicate Project Warning Modal */}
+        {showDuplicateWarning && (
+          <div 
+            style={{ 
+              position: "fixed", 
+              top: 0, left: 0, right: 0, bottom: 0,
+              backgroundColor: "rgba(0, 0, 0, 0.5)", 
+              display: "flex", 
+              justifyContent: "center", 
+              alignItems: "center",
+              zIndex: 9999,
+              backdropFilter: "blur(4px)"
+            }}
+          >
+            <div 
+              style={{ 
+                maxWidth: "450px", 
+                background: "#fff", 
+                borderRadius: "16px", 
+                padding: "2rem",
+                textAlign: "center",
+                boxShadow: "0 20px 60px rgba(0,0,0,0.3)",
+                border: "1px solid rgba(255, 255, 255, 0.2)"
+              }}
+            >
+              <div style={{ marginBottom: "1rem" }}>
+                <div style={{
+                  width: "72px",
+                  height: "72px",
+                  margin: "0 auto",
+                  borderRadius: "50%",
+                  backgroundColor: "#fef3c7",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  border: "3px solid #fbbf24"
+                }}>
+                  <i className="bi bi-exclamation-triangle text-warning" style={{ fontSize: "2.5rem" }}></i>
+                </div>
+              </div>
+              <h5 style={{ fontWeight: "800", marginBottom: "0.75rem", fontSize: "1.25rem", color: "#1a1a1a" }}>Existing Project Detected</h5>
+              <p style={{ color: "#666", marginBottom: "1.5rem", fontSize: "0.95rem", lineHeight: "1.6" }}>
+                <strong style={{ color: "#1a1a1a" }}>{pendingRequesterName}</strong> has an existing project. Do you want to continue creating a new project for this customer?
+              </p>
+              <div style={{ display: "flex", gap: "1rem", justifyContent: "center" }}>
+                <button
+                  onClick={() => {
+                    setShowDuplicateWarning(false);
+                    setFormData({ ...formData, requester_id: "" });
+                    setPendingRequesterId(null);
+                    setPendingRequesterName("");
+                  }}
+                  style={{
+                    padding: "0.75rem 1.75rem",
+                    fontWeight: "700",
+                    fontSize: "0.9rem",
+                    background: "#fff",
+                    color: "#dc2626",
+                    border: "2px solid #dc2626",
+                    borderRadius: "10px",
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "0.5rem",
+                    transition: "all 0.2s ease"
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = "#dc2626";
+                    e.currentTarget.style.color = "#fff";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = "#fff";
+                    e.currentTarget.style.color = "#dc2626";
+                  }}
+                >
+                  <i className="bi bi-x-circle"></i>Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    setShowDuplicateWarning(false);
+                  }}
+                  style={{
+                    padding: "0.75rem 1.75rem",
+                    fontWeight: "700",
+                    fontSize: "0.9rem",
+                    background: "#2563eb",
+                    color: "#fff",
+                    border: "2px solid #2563eb",
+                    borderRadius: "10px",
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "0.5rem",
+                    boxShadow: "0 4px 12px rgba(37, 99, 235, 0.3)",
+                    transition: "all 0.2s ease"
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = "#1d4ed8";
+                    e.currentTarget.style.borderColor = "#1d4ed8";
+                    e.currentTarget.style.boxShadow = "0 6px 16px rgba(37, 99, 235, 0.4)";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = "#2563eb";
+                    e.currentTarget.style.borderColor = "#2563eb";
+                    e.currentTarget.style.boxShadow = "0 4px 12px rgba(37, 99, 235, 0.3)";
+                  }}
+                >
+                  <i className="bi bi-check-circle"></i>Confirm
+                </button>
+              </div>
+            </div>
           </div>
         )}
 
@@ -806,6 +1267,8 @@ function AdminRequestApproval() {
                           onClick={() => {
                             setFormData({ ...formData, requester_id: c.id });
                             setShowCustomerDropdown(false);
+                            // Check if customer has existing project
+                            checkCustomerProject(c.id);
                           }}
                           style={{
                             display: "flex",
@@ -1503,7 +1966,7 @@ function AdminRequestApproval() {
               ) : (
                 <>
                   <i className="bi bi-check-circle"></i>
-                  Create Product Purchase Order
+                  Create Project
                 </>
               )}
             </button>
@@ -1954,6 +2417,11 @@ function AdminRequestApproval() {
                 <p style={{ fontSize: "0.9rem", fontWeight: "600", color: "#1a1a1a", margin: 0 }}>
                   {successModalData.requester}
                 </p>
+                {successModalData.requesterCompany && (
+                  <p style={{ fontSize: "0.72rem", color: "#64748b", margin: "0.2rem 0 0 0" }}>
+                    {successModalData.requesterCompany}
+                  </p>
+                )}
               </div>
             </div>
             <div
@@ -1975,7 +2443,7 @@ function AdminRequestApproval() {
             </p>
             <div style={{ display: "flex", gap: "0.5rem", justifyContent: "center" }}>
               <button
-                onClick={() => setShowPrintPreview(true)}
+                onClick={() => handlePrintPurchaseOrder(successModalData)}
                 style={{
                   padding: "0.65rem 1.5rem",
                   background: "#3b82f6",
@@ -2068,10 +2536,24 @@ function AdminRequestApproval() {
                         <div style={{ flex: "1" }}>
                           <div style={{ fontWeight: "bold", color: "#666", marginBottom: "6px", lineHeight: "1.2" }}>Customer Name</div>
                           <div style={{ fontSize: "12px" }}>{successModalData?.requester}</div>
+                          {successModalData?.requesterCompany && (
+                            <div style={{ fontSize: "10px", color: "#64748b", marginTop: "4px" }}>{successModalData.requesterCompany}</div>
+                          )}
                         </div>
                         <div style={{ flex: "1", textAlign: "center" }}>
                           <div style={{ fontWeight: "bold", color: "#666", marginBottom: "6px", lineHeight: "1.2" }}>PO Number</div>
                           <div style={{ fontSize: "14px", fontWeight: "bold", color: "#1d6ab7" }}>PO-{successModalData?.requestId}</div>
+                        </div>
+                      </div>
+
+                      <div style={{ marginBottom: "22px", fontSize: "11px", display: "flex", justifyContent: "flex-start", gap: "40px", alignItems: "flex-start" }}>
+                        <div style={{ flex: "1" }}>
+                          <div style={{ fontWeight: "bold", color: "#666", marginBottom: "6px", lineHeight: "1.2" }}>Created Date</div>
+                          <div style={{ fontSize: "12px" }}>{formatDisplayDate(successModalData?.createdAt)}</div>
+                        </div>
+                        <div style={{ flex: "1", textAlign: "center" }}>
+                          <div style={{ fontWeight: "bold", color: "#666", marginBottom: "6px", lineHeight: "1.2" }}>Deadline</div>
+                          <div style={{ fontSize: "12px", color: "#1d6ab7", fontWeight: "bold" }}>{formatDisplayDate(successModalData?.deadline)}</div>
                         </div>
                       </div>
 
@@ -2110,12 +2592,12 @@ function AdminRequestApproval() {
                       <div style={{ marginBottom: "30px", fontSize: "11px", borderTop: "1px solid #ddd", paddingTop: "20px", display: "table", width: "100%", marginLeft: "0" }}>
                         <div style={{ display: "table-row" }}>
                           <div style={{ display: "table-cell", width: "33.33%", paddingRight: "20px", verticalAlign: "bottom" }}>
-                            <div style={{ fontWeight: "bold", color: "#666" }}>Date</div>
-                            <div style={{ fontSize: "12px" }}>{new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</div>
+                            <div style={{ fontWeight: "bold", color: "#666" }}>Date Created</div>
+                            <div style={{ fontSize: "12px" }}>{formatDisplayDate(successModalData?.createdAt)}</div>
                           </div>
                           <div style={{ display: "table-cell", width: "33.33%", paddingRight: "20px", verticalAlign: "bottom" }}>
                             <div style={{ fontWeight: "bold", color: "#666" }}>Delivery Deadline</div>
-                            <div style={{ fontSize: "12px", color: "#1d6ab7", fontWeight: "bold" }}>{successModalData?.deadline || 'Not Set'}</div>
+                            <div style={{ fontSize: "12px", color: "#1d6ab7", fontWeight: "bold" }}>{formatDisplayDate(successModalData?.deadline)}</div>
                           </div>
                           <div style={{ display: "table-cell", width: "33.33%", textAlign: "center", verticalAlign: "bottom" }}>
                             <div style={{ fontWeight: "bold", color: "#666", marginBottom: "4px" }}>Approved By</div>
@@ -2139,6 +2621,58 @@ function AdminRequestApproval() {
         </div>
       )}
 
+      {/* PRINT OVERLAY - hidden on screen, visible only when printing */}
+      {printMode && (
+        <div className="admin-print-overlay">
+          {renderPrintContent(printMode)}
+        </div>
+      )}
+
+      {/* Print-specific CSS injected into the page - uses unique class to avoid conflict with TaskStatus.jsx's .print-overlay */}
+      <style>{`
+        .admin-print-overlay {
+          display: none;
+        }
+
+        @media print {
+          body * {
+            visibility: hidden;
+          }
+          .admin-print-overlay,
+          .admin-print-overlay * {
+            visibility: visible;
+          }
+          .admin-print-overlay {
+            display: block !important;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            z-index: 99999;
+            background-color: white;
+            overflow: visible;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+          }
+          .admin-print-overlay .admin-print-report-content {
+            max-width: 100%;
+            margin: 0;
+            padding: 20px;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+          }
+          html, body {
+            overflow: visible !important;
+            margin: 0 !important;
+            padding: 0 !important;
+          }
+          @page {
+            size: A4 landscape;
+            margin: 6mm;
+          }
+        }
+      `}</style>
     </div>
   );
 }
